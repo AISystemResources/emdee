@@ -83,8 +83,12 @@ interface DocTreeProps {
 
 function displayTitle(title: string, parentTitle: string | null): string {
   if (!parentTitle) return title;
-  const prefix = `${parentTitle} — `;
-  return title.startsWith(prefix) ? title.slice(prefix.length) : title;
+  const segments = parentTitle.split(" — ");
+  for (let i = segments.length; i > 0; i--) {
+    const prefix = segments.slice(0, i).join(" — ") + " — ";
+    if (title.startsWith(prefix)) return title.slice(prefix.length);
+  }
+  return title;
 }
 
 function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed, onSelect, onToggle }: DocTreeProps) {
@@ -116,17 +120,30 @@ function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed, onSele
                 type="button"
               />
             )}
-            <button
-              className="doc-tree-row"
-              onClick={() => {
-                onSelect(n.doc.path);
-                if (hasChildren && isCollapsed) onToggle(n.doc.path);
-              }}
-              data-active={n.doc.path === activePath}
-              type="button"
-            >
-              {displayTitle(n.doc.title, parentTitle)}
-            </button>
+            <div className="doc-tree-row-wrap">
+              <button
+                className="doc-tree-row"
+                onClick={() => {
+                  onSelect(n.doc.path);
+                  if (hasChildren && isCollapsed) onToggle(n.doc.path);
+                }}
+                data-active={n.doc.path === activePath}
+                type="button"
+              >
+                {displayTitle(n.doc.title, parentTitle)}
+              </button>
+              {hasChildren && (
+                <button
+                  className="doc-tree-chevron"
+                  onClick={() => onToggle(n.doc.path)}
+                  aria-label={isCollapsed ? "Expand" : "Collapse"}
+                  type="button"
+                  data-collapsed={isCollapsed}
+                >
+                  ›
+                </button>
+              )}
+            </div>
             {hasChildren && !isCollapsed && (
               <DocTree
                 nodes={n.children}
@@ -158,6 +175,7 @@ export function App() {
   const saveTimer = useRef<number | null>(null);
   const localEdit = useRef(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const collapsedInitialized = useRef(false);
 
   const toggleCollapsed = useCallback((p: string) => {
     setCollapsed((prev) => {
@@ -210,6 +228,23 @@ export function App() {
     () => (index ? buildDocTree(index) : []),
     [index]
   );
+
+  // Collapse all parent nodes on first load; leave user-driven toggles alone after that.
+  useEffect(() => {
+    if (collapsedInitialized.current || docTree.length === 0) return;
+    collapsedInitialized.current = true;
+    const parents = new Set<string>();
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.children.length > 0) {
+          parents.add(n.doc.path);
+          collect(n.children);
+        }
+      }
+    };
+    collect(docTree);
+    setCollapsed(parents);
+  }, [docTree]);
 
   // Sidebar click sets the active path but preserves the current view —
   // in graph view it navigates the graph focus, in doc view it loads the doc.
@@ -280,6 +315,10 @@ export function App() {
                 initialContent={activeDoc.content}
                 mode={docMode}
                 onChange={handleEdit}
+                onWikiLinkClick={(title) => {
+                  const match = index?.docs.find((d) => d.title === title);
+                  if (match) selectDoc(match.path);
+                }}
               />
             </div>
           </>

@@ -23,8 +23,25 @@ const docsDir = path.resolve(process.env.SILENT_MANE_DOCS ?? path.join(process.c
 const ctx: ToolContext = { docsDir };
 
 const server = new Server(
-  { name: "silent-mane", version: "0.0.1" },
-  { capabilities: { tools: {} } }
+  {
+    name: "silent-mane",
+    version: "0.0.1",
+  },
+  {
+    capabilities: { tools: {} },
+    instructions: `You are working inside a Silent Mane vault — a plain-markdown knowledge graph.
+
+BEFORE writing or editing any doc:
+1. Call get_doc("INFO.md") to load vault conventions (doc structure, naming rules, relationship sections).
+2. If working on a specific project, call get_doc on that project's INSTRUCTIONS.md first (e.g. get_doc("projects/ATLAS/INSTRUCTIONS.md")).
+3. Use patch_section for incremental edits — never write_doc for single-section changes.
+
+Key conventions:
+- Every doc starts with one H1 + one > blockquote summary immediately below it. No summary = invisible to get_summary.
+- Sprints: Child of [[PROJECT — BUILD]] if active/spec, Child of [[PROJECT — LOGS]] if shipped. Change this when a sprint closes.
+- Learnings: individual files under learnings/, Child of [[PROJECT — LEARNINGS]]. LEARNINGS.md is a thin index only.
+- Relationships: Parent of / Child of = taxonomy. Associated with = everything else.`,
+  }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({

@@ -122,6 +122,62 @@ Or with source if the content was ported in:
 
 Provenance lives in the markdown — no metadata layer, no schema. Whatever wrote the section signs it. Future readers (human or LLM) can trace any claim back to its source. Cheap, auditable, survives every view.
 
+### Sprint authoring format
+
+Sprints live as individual files at `docs/projects/<PROJECT>/sprints/SPRINT-NNN.md`. Each sprint earns its own file (not a section in BUILD) because close-outs grow over time and each sprint becomes a wiki-link target referenced from LEARNINGS, BRAIN, and elsewhere.
+
+**Numbering:** zero-padded, monotonically increasing per project. **Always call `list_docs` or `mane list` against the project's `sprints/` folder before picking the next sprint number** — never guess from memory.
+
+**H1 convention:** `PROJECT — SPRINT-NNN` (qualified for global uniqueness, same as tier files). The sidebar's prefix-trim displays just `SPRINT-NNN` under the project.
+
+**Shape** (copy from `templates/types/PROJECT/SPRINT.md`):
+
+````
+# <PROJECT> — SPRINT-NNN
+
+> One-line summary.
+
+## Child of
+* [[<PROJECT>]]
+
+## Why
+1–2 sentences. The problem this solves and why now.
+
+## Scope
+**In:** what's included
+**Out:** what's explicitly excluded — prevents creep
+
+## Acceptance criteria
+* [ ] Measurable facts about the world
+* [ ] Each criterion stands alone — verifiable by a different agent
+
+## Deliverables
+* Concrete files, behaviors, or artifacts
+
+## Risks / open questions
+* What we don't know yet
+
+## Dependencies
+* [[OTHER-SPRINT]] (if blocking)
+
+— <author>, <YYYY-MM-DD> (spec)
+
+## Close-out (added at ship time)
+* Specced vs built deltas
+* Blockers hit + how resolved
+* LEARNINGS candidates
+
+— <author>, <YYYY-MM-DD> (close-out)
+````
+
+**`BUILD.md` and `LOGS.md` act as views, not containers:**
+
+- `BUILD.md` body lists active sprints (status `spec | in-progress`) as wiki-link bullets.
+- `LOGS.md` body lists shipped sprints (status `shipped`) as wiki-link bullets.
+- The `Status` field on each sprint file is the single source of truth; the BUILD/LOGS lists are curated indexes for navigation.
+
+When a sprint closes, the body stays in its own file (`sprints/SPRINT-NNN.md`); only the index line moves from BUILD.md to LOGS.md.
+
 ### LEARNINGS authoring format
 
 `LEARNINGS.md` entries follow a strict format proven across multiple projects. Each entry must pass a three-test filter before it earns a place:
