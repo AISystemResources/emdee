@@ -3,13 +3,24 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import path from "node:path";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { buildIndex, type DocIndex, type DocNode, type Link } from "../core/indexer.js";
+import {
+  listDocs,
+  getSummary,
+  getNeighbors,
+  getDoc,
+  search,
+  appendSection,
+  patchSection,
+  writeDocPreview,
+  writeDoc,
+} from "../lib/mcp/tools/index.js";
+import type { ToolContext } from "../lib/mcp/tools/types.js";
 
 const docsDir = path.resolve(process.env.SILENT_MANE_DOCS ?? path.join(process.cwd(), "docs"));
+const ctx: ToolContext = { docsDir };
 
 const server = new Server(
   { name: "silent-mane", version: "0.0.1" },
@@ -132,414 +143,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }));
 
-function safeResolve(rel: string): string {
-  const resolved = path.resolve(docsDir, rel);
-  if (!resolved.startsWith(docsDir)) throw new Error("path escapes docs directory");
-  return resolved;
-}
-
-function json(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
-
-// --- Section parsing (H2-scoped, fence-aware) ---
-
-interface SectionLoc {
-  heading: string;
-  headingLineIdx: number;
-  bodyStartLineIdx: number;
-  bodyEndLineIdx: number; // exclusive
-}
-
-const FENCE_RE = /^\s*(?:```|~~~)/;
-const H2_RE = /^##\s+(.+?)\s*$/;
-
-function parseSections(content: string): SectionLoc[] {
-  const lines = content.split("\n");
-  const sections: SectionLoc[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (FENCE_RE.test(lines[i])) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = lines[i].match(H2_RE);
-    if (!m) continue;
-    if (sections.length > 0) {
-      sections[sections.length - 1].bodyEndLineIdx = i;
-    }
-    sections.push({
-      heading: m[1].trim(),
-      headingLineIdx: i,
-      bodyStartLineIdx: i + 1,
-      bodyEndLineIdx: lines.length,
-    });
-  }
-  return sections;
-}
-
-function findSection(sections: SectionLoc[], heading: string): SectionLoc | undefined {
-  const target = heading.replace(/^##\s*/, "").trim().toLowerCase();
-  return sections.find((s) => s.heading.toLowerCase() === target);
-}
-
-function extractBody(content: string, loc: SectionLoc): string {
-  const lines = content.split("\n");
-  const bodyLines = lines.slice(loc.bodyStartLineIdx, loc.bodyEndLineIdx);
-  return bodyLines.join("\n").replace(/^\s*\n+/, "").replace(/\n+\s*$/, "");
-}
-
-function hashBody(body: string): string {
-  return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16);
-}
-
-// --- Diff for write_doc_preview ---
-
-function simpleDiff(before: string, after: string): string {
-  const beforeLines = before.split("\n");
-  const afterLines = after.split("\n");
-  let commonPrefix = 0;
-  while (
-    commonPrefix < beforeLines.length &&
-    commonPrefix < afterLines.length &&
-    beforeLines[commonPrefix] === afterLines[commonPrefix]
-  ) {
-    commonPrefix++;
-  }
-  let commonSuffix = 0;
-  while (
-    commonSuffix < beforeLines.length - commonPrefix &&
-    commonSuffix < afterLines.length - commonPrefix &&
-    beforeLines[beforeLines.length - 1 - commonSuffix] === afterLines[afterLines.length - 1 - commonSuffix]
-  ) {
-    commonSuffix++;
-  }
-  const out: string[] = [];
-  out.push(`--- before (${beforeLines.length} lines)`);
-  out.push(`+++ after  (${afterLines.length} lines)`);
-  if (commonPrefix > 0) out.push(`  … ${commonPrefix} unchanged …`);
-  for (let i = commonPrefix; i < beforeLines.length - commonSuffix; i++) {
-    out.push(`- ${beforeLines[i]}`);
-  }
-  for (let i = commonPrefix; i < afterLines.length - commonSuffix; i++) {
-    out.push(`+ ${afterLines[i]}`);
-  }
-  if (commonSuffix > 0) out.push(`  … ${commonSuffix} unchanged …`);
-  return out.join("\n");
-}
-
-// --- Neighbors (unchanged) ---
-
-interface NeighborRef {
-  path: string;
-  title: string;
-  summary: string;
-  note: string;
-}
-
-function buildNeighbors(idx: DocIndex, focal: DocNode) {
-  const byPath = new Map(idx.docs.map((d) => [d.path, d]));
-  const byTitle = new Map<string, DocNode>();
-  for (const d of idx.docs) byTitle.set(d.title.toLowerCase(), d);
-
-  const resolve = (titleOrPath: string): DocNode | undefined =>
-    byPath.get(titleOrPath) ?? byTitle.get(titleOrPath.toLowerCase());
-
-  const refFor = (n: DocNode, note: string): NeighborRef => ({
-    path: n.path,
-    title: n.title,
-    summary: n.summary,
-    note,
-  });
-
-  const declaredParents = new Map<string, NeighborRef>();
-  for (const l of focal.parents) {
-    const n = resolve(l.title);
-    if (n) declaredParents.set(n.path, refFor(n, l.note));
-  }
-  const declaredChildren = new Map<string, NeighborRef>();
-  for (const l of focal.children) {
-    const n = resolve(l.title);
-    if (n) declaredChildren.set(n.path, refFor(n, l.note));
-  }
-  const declaredAssoc = new Map<string, NeighborRef>();
-  for (const l of focal.associates) {
-    const n = resolve(l.title);
-    if (n) declaredAssoc.set(n.path, refFor(n, l.note));
-  }
-
-  const focalTitleLower = focal.title.toLowerCase();
-  const matchesFocal = (l: Link) => l.title.toLowerCase() === focalTitleLower;
-
-  for (const other of idx.docs) {
-    if (other.path === focal.path) continue;
-    const asChild = other.children.find(matchesFocal);
-    if (asChild && !declaredParents.has(other.path)) {
-      declaredParents.set(other.path, refFor(other, asChild.note));
-    }
-    const asParent = other.parents.find(matchesFocal);
-    if (asParent && !declaredChildren.has(other.path)) {
-      declaredChildren.set(other.path, refFor(other, asParent.note));
-    }
-    const asAssoc = other.associates.find(matchesFocal);
-    if (asAssoc && !declaredAssoc.has(other.path)) {
-      declaredAssoc.set(other.path, refFor(other, asAssoc.note));
-    }
-  }
-
-  const declared = new Set<string>([
-    ...declaredParents.keys(),
-    ...declaredChildren.keys(),
-    ...declaredAssoc.keys(),
-  ]);
-  const mentionedIn: { path: string; title: string; summary: string }[] = [];
-  for (const other of idx.docs) {
-    if (other.path === focal.path) continue;
-    if (declared.has(other.path)) continue;
-    if (other.mentions.some((m) => m.toLowerCase() === focalTitleLower)) {
-      mentionedIn.push({ path: other.path, title: other.title, summary: other.summary });
-    }
-  }
-
-  return {
-    path: focal.path,
-    title: focal.title,
-    summary: focal.summary,
-    parents: [...declaredParents.values()],
-    children: [...declaredChildren.values()],
-    associated: [...declaredAssoc.values()],
-    mentioned_in: mentionedIn,
-  };
-}
-
-function makeSnippet(content: string, query: string, radius = 60): string {
-  const i = content.toLowerCase().indexOf(query.toLowerCase());
-  if (i < 0) return "";
-  const start = Math.max(0, i - radius);
-  const end = Math.min(content.length, i + query.length + radius);
-  const prefix = start > 0 ? "…" : "";
-  const suffix = end < content.length ? "…" : "";
-  return prefix + content.slice(start, end).replace(/\s+/g, " ").trim() + suffix;
-}
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
+server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
   const { name, arguments: args } = req.params;
   const a = args ?? {};
 
   switch (name) {
-    case "list_docs": {
-      const idx = await buildIndex(docsDir);
-      return json(
-        idx.docs.map((d) => ({ path: d.path, title: d.title, summary: d.summary }))
-      );
-    }
-
-    case "get_summary": {
-      const idx = await buildIndex(docsDir);
-      const doc = idx.docs.find((d) => d.path === String(a.path));
-      if (!doc) throw new Error(`no such doc: ${a.path}`);
-      return json({ path: doc.path, title: doc.title, summary: doc.summary });
-    }
-
-    case "get_neighbors": {
-      const idx = await buildIndex(docsDir);
-      const focal = idx.docs.find((d) => d.path === String(a.path));
-      if (!focal) throw new Error(`no such doc: ${a.path}`);
-      return json(buildNeighbors(idx, focal));
-    }
-
-    case "get_doc": {
-      const idx = await buildIndex(docsDir);
-      const doc = idx.docs.find((d) => d.path === String(a.path));
-      if (!doc) throw new Error(`no such doc: ${a.path}`);
-      const sections = parseSections(doc.content).map((s) => ({
-        heading: s.heading,
-        content_hash: hashBody(extractBody(doc.content, s)),
-      }));
-      return json({
-        path: doc.path,
-        title: doc.title,
-        summary: doc.summary,
-        content: doc.content,
-        sections,
-      });
-    }
-
-    case "search": {
-      const query = String(a.query ?? "").trim();
-      if (!query) return json([]);
-      const limit = Math.max(1, Math.min(50, Number(a.limit ?? 10)));
-      const idx = await buildIndex(docsDir);
-      const q = query.toLowerCase();
-      const hits = idx.docs
-        .map((d) => {
-          const titleHit = d.title.toLowerCase().includes(q);
-          const summaryHit = d.summary.toLowerCase().includes(q);
-          const contentHit = d.content.toLowerCase().includes(q);
-          if (!titleHit && !summaryHit && !contentHit) return null;
-          const score = (titleHit ? 3 : 0) + (summaryHit ? 2 : 0) + (contentHit ? 1 : 0);
-          return {
-            score,
-            ref: {
-              path: d.path,
-              title: d.title,
-              summary: d.summary,
-              snippet: titleHit ? "" : makeSnippet(d.content, query),
-            },
-          };
-        })
-        .filter((x): x is { score: number; ref: NeighborRef & { snippet: string } } => x !== null)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((x) => x.ref);
-      return json(hits);
-    }
-
-    case "append_section": {
-      const file = safeResolve(String(a.path));
-      const heading = String(a.heading ?? "").trim();
-      const body = String(a.body ?? "");
-      const createIfMissing = Boolean(a.create_if_missing ?? false);
-      if (!heading) throw new Error("heading required");
-
-      let content = "";
-      try {
-        content = await readFile(file, "utf8");
-      } catch {
-        return json({ error: "doc_not_found", path: a.path });
-      }
-
-      const sections = parseSections(content);
-      const target = findSection(sections, heading);
-
-      if (!target) {
-        if (!createIfMissing) {
-          return json({
-            error: "section_not_found",
-            heading,
-            available: sections.map((s) => s.heading),
-            hint: "Pass create_if_missing=true to create the section at end of file.",
-          });
-        }
-        const sep = content.endsWith("\n") ? "" : "\n";
-        const newSection = `\n## ${heading}\n\n${body}\n`;
-        const newContent = content + sep + newSection;
-        await writeFile(file, newContent, "utf8");
-        return json({ ok: true, created: true, content_hash: hashBody(body.trim()) });
-      }
-
-      const lines = content.split("\n");
-      const sectionLines = lines.slice(target.headingLineIdx, target.bodyEndLineIdx);
-      while (sectionLines.length > 1 && sectionLines[sectionLines.length - 1].trim() === "") {
-        sectionLines.pop();
-      }
-      sectionLines.push("");
-      sectionLines.push(...body.split("\n"));
-      sectionLines.push("");
-
-      const newLines = [
-        ...lines.slice(0, target.headingLineIdx),
-        ...sectionLines,
-        ...lines.slice(target.bodyEndLineIdx),
-      ];
-      const newContent = newLines.join("\n");
-      await writeFile(file, newContent, "utf8");
-
-      const newSections = parseSections(newContent);
-      const newTarget = findSection(newSections, heading);
-      const newBody = newTarget ? extractBody(newContent, newTarget) : "";
-      return json({ ok: true, content_hash: hashBody(newBody) });
-    }
-
-    case "patch_section": {
-      const file = safeResolve(String(a.path));
-      const heading = String(a.heading ?? "").trim();
-      const body = String(a.body ?? "");
-      const expected = String(a.expected_content_hash ?? "");
-      if (!heading) throw new Error("heading required");
-      if (!expected) throw new Error("expected_content_hash required");
-
-      let content = "";
-      try {
-        content = await readFile(file, "utf8");
-      } catch {
-        return json({ error: "doc_not_found", path: a.path });
-      }
-
-      const sections = parseSections(content);
-      const target = findSection(sections, heading);
-      if (!target) {
-        return json({
-          error: "section_not_found",
-          heading,
-          available: sections.map((s) => s.heading),
-        });
-      }
-
-      const currentBody = extractBody(content, target);
-      const currentHash = hashBody(currentBody);
-      if (currentHash !== expected) {
-        return json({
-          error: "version_conflict",
-          heading,
-          expected_content_hash: expected,
-          actual_content_hash: currentHash,
-          message:
-            "Section was modified since you last read it. Call get_doc again and reconcile.",
-        });
-      }
-
-      const lines = content.split("\n");
-      const newBodyLines = body.split("\n");
-      const newLines = [
-        ...lines.slice(0, target.headingLineIdx + 1),
-        "",
-        ...newBodyLines,
-        "",
-        ...lines.slice(target.bodyEndLineIdx),
-      ];
-      const newContent = newLines.join("\n");
-      await writeFile(file, newContent, "utf8");
-      return json({ ok: true, content_hash: hashBody(body.trim()) });
-    }
-
-    case "write_doc_preview": {
-      const file = safeResolve(String(a.path));
-      const newContent = String(a.content ?? "");
-      let before = "";
-      try {
-        before = await readFile(file, "utf8");
-      } catch {
-        return json({
-          action: "create",
-          path: a.path,
-          new_size_lines: newContent.split("\n").length,
-        });
-      }
-      if (before === newContent) {
-        return json({ action: "no_change", path: a.path });
-      }
-      const beforeSections = parseSections(before).map((s) => s.heading);
-      const afterSections = parseSections(newContent).map((s) => s.heading);
-      const removed = beforeSections.filter((h) => !afterSections.includes(h));
-      return json({
-        action: "replace",
-        path: a.path,
-        sections_removed: removed,
-        sections_before: beforeSections,
-        sections_after: afterSections,
-        diff: simpleDiff(before, newContent),
-      });
-    }
-
-    case "write_doc": {
-      const file = safeResolve(String(a.path));
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, String(a.content ?? ""), "utf8");
-      return { content: [{ type: "text", text: `wrote ${a.path}` }] };
-    }
-
+    case "list_docs":         return await listDocs(ctx, a) as CallToolResult;
+    case "get_summary":       return await getSummary(ctx, a) as CallToolResult;
+    case "get_neighbors":     return await getNeighbors(ctx, a) as CallToolResult;
+    case "get_doc":           return await getDoc(ctx, a) as CallToolResult;
+    case "search":            return await search(ctx, a) as CallToolResult;
+    case "append_section":    return await appendSection(ctx, a) as CallToolResult;
+    case "patch_section":     return await patchSection(ctx, a) as CallToolResult;
+    case "write_doc_preview": return await writeDocPreview(ctx, a) as CallToolResult;
+    case "write_doc":         return await writeDoc(ctx, a) as CallToolResult;
     default:
       throw new Error(`unknown tool: ${name}`);
   }
