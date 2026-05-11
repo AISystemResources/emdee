@@ -4,6 +4,18 @@ dist/
 .DS_Store
 *.log
 
+# Next.js
+.next/
+next-env.d.ts
+
+# Environment — never commit secrets
+.env
+.env.local
+.env*.local
+
+# Claude Code agent workspaces
+.claude/
+
 # Private knowledge — the structure is in templates/, the contents are yours
 docs/
 !docs/.gitkeep
