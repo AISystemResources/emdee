@@ -6,14 +6,19 @@ Local-first knowledge graph backed by plain markdown. Humans browse it through a
 
 LLM agents need a stable, human-readable substrate to read and write their own context over time. Most knowledge-graph tools are either built for humans (Obsidian) or built for agents (vector stores). Silent Mane is a single substrate for both: the markdown a human edits is the exact bytes an agent reads, with no hidden index, no parallel summaries, no schema gymnastics. Build up a working journal that survives across sessions.
 
-## Quick start (consumer)
+## Status
+
+**Pre-publish.** Not yet on npm. The package isn't globally installable today — the CLI shells out to Vite and `tsx`, both devDependencies, so a `npm install -g` would 404 and even after publish wouldn't run without further prepublish work (compile TS, ship a built `dist/`, fold the few needed devDeps into runtime). Until then, use the developer path below.
+
+## Quick start (developer)
 
 ```bash
-npm install -g silent-mane
-cd ~/my-vault
-mane init      # seeds the entry doc, conventions, and a sample branch
-mane start     # launches the viewer at http://localhost:5173
-mane mcp       # runs the local MCP server over stdio
+git clone https://github.com/elz-ming/silent-mane.git
+cd silent-mane
+npm install
+./bin/mane.js init      # seeds docs/ with the entry doc, conventions, and sample branch
+npm run dev             # Vite dev server with hot reload at http://localhost:5173
+npm run mcp             # MCP server over stdio (point Claude.ai / Cursor / Codex at it)
 ```
 
 `mane init` lays down:
@@ -28,11 +33,14 @@ mane mcp       # runs the local MCP server over stdio
 
 Set `SILENT_MANE_ENTRY=your-file.md` to override the default entry name.
 
-## Quick start (developer)
+## Quick start (consumer — once published)
 
 ```bash
-npm install
-npm run dev    # Vite dev server with hot reload, reading ./docs
+npm install -g silent-mane     # not yet available
+cd ~/my-vault
+mane init
+mane start
+mane mcp
 ```
 
 ## MCP tools
@@ -74,6 +82,12 @@ The seeded `docs/INFO.md` is the full conventions reference: filename rules, the
 
 Vercel auto-detects Vite. Set `SILENT_MANE_DOCS` (or commit a `docs/` for a public vault) and it will serve the SPA plus the `/api/index` endpoint. The default `.gitignore` excludes `docs/` so your vault stays private; remove that line if you want the vault public.
 
-## Status
+## Roadmap to publish
 
-Early. Indexer + MCP + renderer all working end-to-end; conventions still evolving. Expect breaking changes to seed names and tool surfaces until 0.1.0.
+Before `npm install -g silent-mane` actually works, three things need to happen:
+
+1. **Compile to JS.** `bin/mane.js` currently spawns `tsx src/mcp/server.ts` for the MCP server. Compile to `dist/mcp/server.js` and ship that; drop `tsx` as a runtime dep.
+2. **Pre-built renderer.** `mane start` currently runs `vite dev`. Replace with `vite build` at publish time and a tiny static server (or move to esbuild + a one-file bundle) at runtime; drop `vite` as a runtime dep.
+3. **`prepublishOnly` script.** Build the `dist/` artifacts, update `package.json` `files` array to include them, verify the resulting tarball runs from a temp dir before `npm publish`.
+
+This is all mechanical but non-trivial. The current `files` array in `package.json` already lists `bin`, `dist`, `templates`, `src/mcp` — so once `dist/` exists, the shape is right.
