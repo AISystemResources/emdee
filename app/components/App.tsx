@@ -627,8 +627,8 @@ export function App({ namespace }: { namespace: string }) {
             </div>
           )}
           <nav>
-            <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
-            <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>
+            <button onClick={() => { setView("doc"); setMobileSidebarOpen(false); }} data-active={view === "doc"}>Docs</button>
+            <button onClick={() => { setView("graph"); setMobileSidebarOpen(false); }} data-active={view === "graph"}>Graph</button>
           </nav>
           <DocTree
             nodes={docTree}
@@ -642,7 +642,7 @@ export function App({ namespace }: { namespace: string }) {
           <div className="sidebar-footer">
             <button
               className="sidebar-footer-btn"
-              onClick={() => setView("log")}
+              onClick={() => { setView("log"); setMobileSidebarOpen(false); }}
               data-active={view === "log"}
               type="button"
             >

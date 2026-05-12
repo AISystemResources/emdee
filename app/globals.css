@@ -20,6 +20,7 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow-x: hidden; }
+button { -webkit-tap-highlight-color: transparent; }
 body {
   font-family: var(--font-sans);
   background: var(--bg);
