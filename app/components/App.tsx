@@ -318,6 +318,18 @@ export function App() {
       <div className="sidebar-wrap">
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
           <h1>EMDEE</h1>
+          <div className="pat-section">
+            <span className="pat-label">PAT Token</span>
+            <code className="pat-value">{patToken ? `${patToken.slice(0, 8)}…` : "—"}</code>
+            <div className="pat-actions">
+              <button className="pat-btn" onClick={copyPat} type="button" title="Copy token">
+                {patCopied ? "✓" : "Copy"}
+              </button>
+              <button className="pat-btn" onClick={rotatePat} type="button" title="Rotate token">
+                Rotate
+              </button>
+            </div>
+          </div>
           <nav>
             <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
             <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>
@@ -331,18 +343,6 @@ export function App() {
             onSelect={selectDoc}
             onToggle={toggleCollapsed}
           />
-          <div className="pat-section">
-            <span className="pat-label">PAT Token</span>
-            <code className="pat-value">{patToken ? `${patToken.slice(0, 8)}…` : "—"}</code>
-            <div className="pat-actions">
-              <button className="pat-btn" onClick={copyPat} type="button" title="Copy token">
-                {patCopied ? "✓" : "Copy"}
-              </button>
-              <button className="pat-btn" onClick={rotatePat} type="button" title="Rotate token">
-                Rotate
-              </button>
-            </div>
-          </div>
         </aside>
         <button
           className="sidebar-rail"

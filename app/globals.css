@@ -273,9 +273,9 @@ body {
 .empty { padding: 32px; color: var(--muted); }
 
 .pat-section {
-  margin-top: auto;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 6px;
