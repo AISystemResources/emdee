@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
 
 const program = new Command();
-program.name("mane").description("Silent Mane — local docs + knowledge graph + MCP").version("0.0.1");
+program.name("emdee").description("Emdee — local docs + knowledge graph + MCP").version("0.0.1");
 
 program
   .command("init")
@@ -52,7 +52,7 @@ program
 
 program
   .command("start")
-  .description("Start the Silent Mane viewer against ./docs")
+  .description("Start the Emdee viewer against ./docs")
   .option("-p, --port <port>", "port", "5173")
   .option("-d, --docs <dir>", "docs directory", "docs")
   .action((opts) => {
@@ -60,14 +60,14 @@ program
     const child = spawn("npx", ["vite", "--port", opts.port], {
       cwd: pkgRoot,
       stdio: "inherit",
-      env: { ...process.env, SILENT_MANE_DOCS: docs },
+      env: { ...process.env, EMDEE_DOCS: docs },
     });
     child.on("exit", (code) => process.exit(code ?? 0));
   });
 
 program
   .command("serve-next")
-  .description("Start the Silent Mane viewer using Next.js (App Router)")
+  .description("Start the Emdee viewer using Next.js (App Router)")
   .option("-p, --port <port>", "port", "3000")
   .option("-d, --docs <dir>", "docs directory", "docs")
   .action((opts) => {
@@ -75,21 +75,21 @@ program
     const child = spawn("npx", ["next", "dev", "--port", opts.port], {
       cwd: pkgRoot,
       stdio: "inherit",
-      env: { ...process.env, SILENT_MANE_DOCS: docs },
+      env: { ...process.env, EMDEE_DOCS: docs },
     });
     child.on("exit", (code) => process.exit(code ?? 0));
   });
 
 program
   .command("mcp")
-  .description("Run the Silent Mane MCP server over stdio")
+  .description("Run the Emdee MCP server over stdio")
   .option("-d, --docs <dir>", "docs directory", "docs")
   .action((opts) => {
     const docs = path.resolve(process.cwd(), opts.docs);
     const child = spawn("npx", ["tsx", path.join(pkgRoot, "src/mcp/server.ts")], {
       cwd: pkgRoot,
       stdio: "inherit",
-      env: { ...process.env, SILENT_MANE_DOCS: docs },
+      env: { ...process.env, EMDEE_DOCS: docs },
     });
     child.on("exit", (code) => process.exit(code ?? 0));
   });

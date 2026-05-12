@@ -228,15 +228,15 @@ export async function buildIndex(docsDir: string): Promise<DocIndex> {
     }
   }
 
-  // Entry point: canonical is mane.md. Override with SILENT_MANE_ENTRY env var
+  // Entry point: canonical is mane.md. Override with EMDEE_ENTRY env var
   // if a user wants a different filename. No silent fallback — if neither is
   // present, entry is null and the UI surfaces "no entry doc".
-  const overrideEntry = process.env.SILENT_MANE_ENTRY?.toLowerCase();
+  const overrideEntry = process.env.EMDEE_ENTRY?.toLowerCase();
   const entry =
     (overrideEntry
       ? docs.find((d) => d.path.toLowerCase() === overrideEntry)?.path
       : undefined) ??
-    docs.find((d) => d.path.toLowerCase() === "mane.md")?.path ??
+    docs.find((d) => d.path.toLowerCase() === "emdee.md")?.path ??
     null;
 
   return { docs, edges, entry };

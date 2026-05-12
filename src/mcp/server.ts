@@ -19,17 +19,17 @@ import {
 } from "../lib/mcp/tools/index.js";
 import type { ToolContext } from "../lib/mcp/tools/types.js";
 
-const docsDir = path.resolve(process.env.SILENT_MANE_DOCS ?? path.join(process.cwd(), "docs"));
+const docsDir = path.resolve(process.env.EMDEE_DOCS ?? path.join(process.cwd(), "docs"));
 const ctx: ToolContext = { docsDir };
 
 const server = new Server(
   {
-    name: "silent-mane",
+    name: "emdee",
     version: "0.0.1",
   },
   {
     capabilities: { tools: {} },
-    instructions: `You are working inside a Silent Mane vault — a plain-markdown knowledge graph.
+    instructions: `You are working inside a Emdee vault — a plain-markdown knowledge graph.
 
 BEFORE writing or editing any doc:
 1. Call get_doc("INFO.md") to load vault conventions (doc structure, naming rules, relationship sections).

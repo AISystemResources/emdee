@@ -14,7 +14,7 @@ function safeJoin(base: string, rel: string): string | null {
 export function silentManePlugin(docsDir: string): Plugin {
   const resolved = path.resolve(docsDir);
   return {
-    name: "silent-mane-dev",
+    name: "emdee-dev",
     configureServer(server) {
       server.middlewares.use("/api/index", async (_req, res) => {
         const index = await buildIndex(resolved);
@@ -60,7 +60,7 @@ export function silentManePlugin(docsDir: string): Plugin {
       const notify = () => {
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
-          server.ws.send({ type: "custom", event: "silent-mane:docs-changed" });
+          server.ws.send({ type: "custom", event: "emdee:docs-changed" });
         }, 100);
       };
 
@@ -71,7 +71,7 @@ export function silentManePlugin(docsDir: string): Plugin {
         });
         server.httpServer?.once("close", () => watcher.close());
       } catch (err) {
-        server.config.logger.warn(`[silent-mane] could not watch ${resolved}: ${(err as Error).message}`);
+        server.config.logger.warn(`[emdee] could not watch ${resolved}: ${(err as Error).message}`);
       }
     },
   };

@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "silent-mane": {
+    "emdee": {
       "command": "npx",
       "args": ["-y", "tsx", "/Users/whatelz/Documents/GitHub/silent-mane/src/mcp/server.ts"],
       "env": {
-        "SILENT_MANE_DOCS": "/Users/whatelz/Documents/GitHub/silent-mane/docs"
+        "EMDEE_DOCS": "/Users/whatelz/Documents/GitHub/silent-mane/docs"
       }
     }
   }

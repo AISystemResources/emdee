@@ -11,8 +11,8 @@ function safeJoin(base: string, rel: string): string | null {
 }
 
 export async function PUT(request: Request) {
-  const docsDir = process.env.SILENT_MANE_DOCS;
-  if (!docsDir) return new Response("SILENT_MANE_DOCS not set", { status: 500 });
+  const docsDir = process.env.EMDEE_DOCS;
+  if (!docsDir) return new Response("EMDEE_DOCS not set", { status: 500 });
 
   const url = new URL(request.url);
   const rel = url.searchParams.get("path");

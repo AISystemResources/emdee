@@ -1,10 +1,10 @@
 {
-  "name": "silent-mane",
+  "name": "emdee",
   "version": "0.0.1",
   "description": "Local-first document management with markdown rendering, knowledge graph, and MCP server.",
   "type": "module",
   "bin": {
-    "mane": "./bin/mane.js"
+    "emdee": "./bin/emdee.js"
   },
   "scripts": {
     "dev": "next dev",

@@ -1,6 +1,6 @@
 # INFO
 
-> Conventions and reference for this Silent Mane vault. Humans browse these files in the renderer; agents (Claude, Cursor, Codex) read the same files through an MCP server. Both audiences see identical bytes — anything the LLM says is traceable back to a file you wrote.
+> Conventions and reference for this Emdee vault. Humans browse these files in the renderer; agents (Claude, Cursor, Codex) read the same files through an MCP server. Both audiences see identical bytes — anything the LLM says is traceable back to a file you wrote.
 
 [[MANE]] is the thin entry point. This doc holds the bulk of the conventions, the relationship rules, and the MCP tool reference. Read it once when you start a vault, refer back to it when you forget how something works.
 
@@ -87,7 +87,7 @@ Write the way you'd write to a friend. The LLM parses English fine; structure be
 
 ## Doc types
 
-Silent Mane is type-agnostic at the engineering layer — the indexer, MCP, and renderer just read markdown. Types live as conventions documented here, with templates in `templates/types/`. To add a new type, write a new template file. No code changes.
+Emdee is type-agnostic at the engineering layer — the indexer, MCP, and renderer just read markdown. Types live as conventions documented here, with templates in `templates/types/`. To add a new type, write a new template file. No code changes.
 
 **Active work domains** (workspaces that evolve over time; front-door file + tier folder):
 
@@ -222,7 +222,7 @@ The MCP server (`mane mcp`) exposes:
 
 ## Entry point convention
 
-`MANE.md` at the docs root is the entry point. It's the doc you write first, the doc the LLM is expected to read on cold start, and the doc the renderer opens by default. If you have a strong reason to use a different filename, set `SILENT_MANE_ENTRY=your-file.md` in the environment.
+`EMDEE.md` at the docs root is the entry point. It's the doc you write first, the doc the LLM is expected to read on cold start, and the doc the renderer opens by default. If you have a strong reason to use a different filename, set `EMDEE_ENTRY=your-file.md` in the environment.
 
 ## Suggested structure
 

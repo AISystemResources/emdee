@@ -215,8 +215,8 @@ export function App() {
       }
       loadIndex(true);
     };
-    import.meta.hot.on("silent-mane:docs-changed", handler);
-    return () => import.meta.hot?.off("silent-mane:docs-changed", handler);
+    import.meta.hot.on("emdee:docs-changed", handler);
+    return () => import.meta.hot?.off("emdee:docs-changed", handler);
   }, [loadIndex]);
 
   const activeDoc = useMemo<DocNode | null>(
@@ -284,7 +284,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1>Silent Mane</h1>
+        <h1>Emdee</h1>
         <nav>
           <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
           <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>

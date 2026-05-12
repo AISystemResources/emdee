@@ -18,7 +18,7 @@ const ANIM_MS = 500;
 type Role = "parent" | "child" | "assoc";
 
 type Category =
-  | "mane"
+  | "emdee"
   | "vault"
   | "projects"
   | "people"
@@ -61,7 +61,7 @@ const ROLE_LABEL: Record<Role, string> = {
 // (darker variant of base). Fill = soft tint for node interior so labels stay
 // readable. Picked from Tailwind 500/600/100 ramps; reasonably colorblind-safe.
 const CATEGORY_BASE: Record<Category, string> = {
-  mane: "#4f46e5",
+  emdee: "#4f46e5",
   vault: "#64748b",
   projects: "#3b82f6",
   people: "#10b981",
@@ -72,7 +72,7 @@ const CATEGORY_BASE: Record<Category, string> = {
 };
 
 const CATEGORY_HIER: Record<Category, string> = {
-  mane: "#4338ca",
+  emdee: "#4338ca",
   vault: "#475569",
   projects: "#2563eb",
   people: "#059669",
@@ -83,7 +83,7 @@ const CATEGORY_HIER: Record<Category, string> = {
 };
 
 const CATEGORY_FILL: Record<Category, string> = {
-  mane: "#e0e7ff",
+  emdee: "#e0e7ff",
   vault: "#e2e8f0",
   projects: "#dbeafe",
   people: "#d1fae5",
@@ -94,7 +94,7 @@ const CATEGORY_FILL: Record<Category, string> = {
 };
 
 const CATEGORY_LABEL: Record<Category, string> = {
-  mane: "Mane",
+  emdee: "Emdee",
   vault: "Vault",
   projects: "Projects",
   people: "People",
@@ -108,7 +108,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
 // filename or by their folder prefix; tier files inherit the parent pillar.
 function categoryFor(rawPath: string): Category {
   const p = rawPath.toLowerCase();
-  if (p === "mane.md") return "mane";
+  if (p === "emdee.md") return "emdee";
   if (
     p === "vault.md" ||
     p === "info.md" ||

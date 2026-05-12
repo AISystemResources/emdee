@@ -244,7 +244,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1>Silent Mane</h1>
+        <h1>Emdee</h1>
         <nav>
           <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
           <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>

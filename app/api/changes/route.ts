@@ -4,8 +4,8 @@ import path from "node:path";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const docsDir = process.env.SILENT_MANE_DOCS;
-  if (!docsDir) return new Response("SILENT_MANE_DOCS not set", { status: 500 });
+  const docsDir = process.env.EMDEE_DOCS;
+  if (!docsDir) return new Response("EMDEE_DOCS not set", { status: 500 });
 
   const resolved = path.resolve(docsDir);
   let watcher: ReturnType<typeof watch> | null = null;
