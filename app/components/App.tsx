@@ -168,6 +168,12 @@ type View = "doc" | "graph";
 type DocMode = "raw" | "rendered";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
+function generatePat(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function App() {
   const [index, setIndex] = useState<DocIndex | null>(null);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -178,7 +184,32 @@ export function App() {
   const localEdit = useRef(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const collapsedInitialized = useRef(false);
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [patToken, setPatToken] = useState<string | null>(null);
+  const [patCopied, setPatCopied] = useState(false);
+
+  useEffect(() => {
+    let token = localStorage.getItem("emdee_pat");
+    if (!token) {
+      token = generatePat();
+      localStorage.setItem("emdee_pat", token);
+    }
+    setPatToken(token);
+  }, []);
+
+  const rotatePat = useCallback(() => {
+    const token = generatePat();
+    localStorage.setItem("emdee_pat", token);
+    setPatToken(token);
+  }, []);
+
+  const copyPat = useCallback(() => {
+    if (!patToken) return;
+    navigator.clipboard.writeText(patToken).then(() => {
+      setPatCopied(true);
+      setTimeout(() => setPatCopied(false), 2000);
+    });
+  }, [patToken]);
 
   const toggleCollapsed = useCallback((p: string) => {
     setCollapsed((prev) => {
@@ -284,35 +315,44 @@ export function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <h1>EMDEE</h1>
-        <div className="nav-section">
-          <button
-            className="nav-section-header"
-            onClick={() => setNavCollapsed((v) => !v)}
-            aria-label={navCollapsed ? "Expand views" : "Collapse views"}
-            type="button"
-          >
-            <span className="nav-section-label">Views</span>
-            <span className="nav-section-chevron" data-collapsed={navCollapsed}>›</span>
-          </button>
-          {!navCollapsed && (
-            <nav>
-              <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
-              <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>
-            </nav>
-          )}
-        </div>
-        <DocTree
-          nodes={docTree}
-          parentPath={null}
-          parentTitle={null}
-          activePath={activePath}
-          collapsed={collapsed}
-          onSelect={selectDoc}
-          onToggle={toggleCollapsed}
-        />
-      </aside>
+      <div className="sidebar-wrap">
+        <aside className="sidebar" data-collapsed={sidebarCollapsed}>
+          <h1>EMDEE</h1>
+          <nav>
+            <button onClick={() => setView("doc")} data-active={view === "doc"}>Docs</button>
+            <button onClick={() => setView("graph")} data-active={view === "graph"}>Graph</button>
+          </nav>
+          <DocTree
+            nodes={docTree}
+            parentPath={null}
+            parentTitle={null}
+            activePath={activePath}
+            collapsed={collapsed}
+            onSelect={selectDoc}
+            onToggle={toggleCollapsed}
+          />
+          <div className="pat-section">
+            <span className="pat-label">PAT Token</span>
+            <code className="pat-value">{patToken ? `${patToken.slice(0, 8)}…` : "—"}</code>
+            <div className="pat-actions">
+              <button className="pat-btn" onClick={copyPat} type="button" title="Copy token">
+                {patCopied ? "✓" : "Copy"}
+              </button>
+              <button className="pat-btn" onClick={rotatePat} type="button" title="Rotate token">
+                Rotate
+              </button>
+            </div>
+          </div>
+        </aside>
+        <button
+          className="sidebar-rail"
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+          type="button"
+        >
+          {sidebarCollapsed ? "›" : "‹"}
+        </button>
+      </div>
       <main className="content">
         {view === "doc" && activeDoc && (
           <>
