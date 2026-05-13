@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export default async function PublicWorkspace() {
   const { userId } = await auth();
   if (userId) redirect(`/${userId}`);
-  return <AppShell namespace="public" />;
+  redirect("/sign-in");
 }
