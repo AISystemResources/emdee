@@ -43,6 +43,7 @@ export async function GET(request: Request) {
 
   const prefix = ns.endsWith("/") ? ns : `${ns}/`;
   const { blobs } = await list({ token, prefix });
+  console.log("[index] ns=%s prefix=%s blobCount=%d", ns, prefix, blobs.length);
   const mdBlobs = blobs.filter((b) => b.pathname.endsWith(".md"));
 
   if (mdBlobs.length === 0) {
