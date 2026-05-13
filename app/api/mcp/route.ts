@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { clerkIdFromOAuthToken } from "@/src/lib/supabase/oauth";
-import { BlobStorage } from "@/src/lib/storage/BlobStorage";
+import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import {
   listDocs, getSummary, getNeighbors, getDoc, search,
@@ -89,7 +89,7 @@ async function handleMcp(request: Request): Promise<Response> {
   const clerkId = await clerkIdFromOAuthToken(request);
   if (!clerkId) return bearerChallenge(origin);
 
-  const storage = new BlobStorage();
+  const storage = new SupabaseStorage();
   const ctx: ToolContext = { mode: "cloud", storage, userId: clerkId };
   const server = buildMcpServer(ctx);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });

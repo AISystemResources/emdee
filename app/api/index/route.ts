@@ -1,5 +1,5 @@
 import { buildIndex, buildIndexFromContents } from "@/src/core/indexer";
-import { list } from "@vercel/blob";
+import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import path from "node:path";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,6 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const ns = url.searchParams.get("ns") ?? "public";
   const docsDir = process.env.EMDEE_DOCS;
-  console.log("[index] ns=%s docsDir=%s hasToken=%s", ns, docsDir ?? "none", !!process.env.BLOB_READ_WRITE_TOKEN);
 
   // Local dev: read from filesystem
   if (docsDir) {
@@ -36,27 +35,24 @@ export async function GET(request: Request) {
     );
   }
 
-  // Cloud: read from Vercel Blob
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
+  // Cloud: read from Supabase Storage
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return Response.json({ docs: [], edges: [], entry: null }, { headers: { "Cache-Control": "no-store" } });
   }
 
-  const prefix = ns.endsWith("/") ? ns : `${ns}/`;
-  const { blobs } = await list({ token, prefix });
-  console.log("[index] prefix=%s blobCount=%d", prefix, blobs.length);
-  const mdBlobs = blobs.filter((b) => b.pathname.endsWith(".md"));
+  const storage = new SupabaseStorage();
+  const prefix = `${ns}/`;
+  const listed = await storage.list(prefix);
 
-  if (mdBlobs.length === 0) {
+  if (listed.length === 0) {
     return Response.json({ docs: [], edges: [], entry: null }, { headers: { "Cache-Control": "no-store" } });
   }
 
   const files = await Promise.all(
-    mdBlobs.map(async (b) => {
-      const res = await fetch(b.url, { headers: { Authorization: `Bearer ${token}` } });
-      const content = res.ok ? await res.text() : "";
-      return { path: b.pathname.slice(prefix.length), content };
-    })
+    listed.map(async (f) => ({
+      path: f.path.slice(prefix.length),
+      content: (await storage.read(f.path)) ?? "",
+    }))
   );
 
   const index = buildIndexFromContents(files);

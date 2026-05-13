@@ -25,7 +25,7 @@ export type ConflictResolution = "local" | "remote";
 export class SyncManager {
   constructor(
     private local: import("./LocalStorage.ts").LocalStorage,
-    private remote: import("./BlobStorage.ts").BlobStorage,
+    private remote: import("./VaultStorage.ts").VaultStorage,
   ) {}
 
   /** Push all local files that differ from remote to the cloud. */

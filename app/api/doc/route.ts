@@ -1,7 +1,7 @@
-import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import path from "node:path";
 import { writeFile, mkdir, unlink } from "node:fs/promises";
+import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 
 export const dynamic = "force-dynamic";
 
@@ -42,12 +42,8 @@ export async function PUT(request: Request) {
     return new Response("unauthorized", { status: 403 });
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return new Response("no storage configured", { status: 500 });
-
-  const blobPath = `${ns}/${rel}`;
   try {
-    await put(blobPath, body, { access: "private", addRandomSuffix: false, token });
+    await new SupabaseStorage().write(`${ns}/${rel}`, body);
     return new Response(null, { status: 204 });
   } catch (err) {
     return new Response(`save failed: ${(err as Error).message}`, { status: 500 });
@@ -78,11 +74,8 @@ export async function DELETE(request: Request) {
   const { userId } = await auth();
   if (!userId || userId !== ns) return new Response("unauthorized", { status: 403 });
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return new Response("no storage configured", { status: 500 });
-
   try {
-    await del(`${ns}/${rel}`, { token });
+    await new SupabaseStorage().delete(`${ns}/${rel}`);
     return new Response(null, { status: 204 });
   } catch (err) {
     return new Response(`delete failed: ${(err as Error).message}`, { status: 500 });

@@ -1,4 +1,4 @@
-import { put, list } from "@vercel/blob";
+import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import { auth } from "@clerk/nextjs/server";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -30,19 +30,17 @@ export interface ConflictFile {
   manifestSyncedAt: string;
 }
 
-// POST /api/sync — uploads local docs to Vercel Blob under the user's namespace.
+// POST /api/sync — uploads local docs to Supabase Storage under the user's namespace.
 // Namespace is the Clerk userId. Returns { synced, files } or { conflicts }.
 // Pass ?force=true to skip conflict detection.
 export async function POST(request: Request) {
   const docsDir = process.env.EMDEE_DOCS;
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
   const url = new URL(request.url);
   const force = url.searchParams.get("force") === "true";
   // ns param lets the CLI specify "public" namespace; web app uses the Clerk userId
   const nsParam = url.searchParams.get("ns");
 
   if (!docsDir) return Response.json({ error: "EMDEE_DOCS not set" }, { status: 400 });
-  if (!token) return Response.json({ error: "BLOB_READ_WRITE_TOKEN not set" }, { status: 400 });
 
   // Resolve namespace: explicit ?ns param (for CLI) or Clerk userId (for web)
   let ns: string;
@@ -71,6 +69,8 @@ export async function POST(request: Request) {
     })
   );
 
+  const storage = new SupabaseStorage();
+
   if (!force) {
     const { data: manifest } = await adminClient()
       .from("sync_manifest")
@@ -81,8 +81,8 @@ export async function POST(request: Request) {
       (manifest ?? []).map((r: { file_path: string; content_hash: string; synced_at: string }) => [r.file_path, r])
     );
 
-    const { blobs } = await list({ token, prefix: `${ns}/` });
-    const blobByPath = new Map(blobs.map((b) => [b.pathname, b]));
+    const cloudFiles = await storage.list(`${ns}/`);
+    const cloudByPath = new Map(cloudFiles.map((f) => [f.path, f]));
 
     const conflicts: ConflictFile[] = [];
     for (const { rel, namespacedPath, hash } of localFiles) {
@@ -90,16 +90,16 @@ export async function POST(request: Request) {
       if (!manifest_row) continue;
 
       const localChanged = hash !== manifest_row.content_hash;
-      const blob = blobByPath.get(namespacedPath);
-      const cloudChanged = blob
-        ? new Date(blob.uploadedAt) > new Date(manifest_row.synced_at)
+      const cloudFile = cloudByPath.get(namespacedPath);
+      const cloudChanged = cloudFile
+        ? new Date(cloudFile.updatedAt) > new Date(manifest_row.synced_at)
         : false;
 
       if (localChanged && cloudChanged) {
         conflicts.push({
           path: rel,
           localHash: hash,
-          cloudUploadedAt: blob!.uploadedAt.toISOString(),
+          cloudUploadedAt: cloudFile!.updatedAt,
           manifestSyncedAt: manifest_row.synced_at,
         });
       }
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
   const now = new Date().toISOString();
   await Promise.all(
     localFiles.map(({ namespacedPath, content }) =>
-      put(namespacedPath, content, { access: "private", addRandomSuffix: false, token })
+      storage.write(namespacedPath, content)
     )
   );
 
@@ -128,8 +128,8 @@ export async function POST(request: Request) {
   return Response.json({ synced: files.length, files });
 }
 
-// GET /api/sync — returns whether sync is available (EMDEE_DOCS + blob token configured)
+// GET /api/sync — returns whether sync is available (EMDEE_DOCS + Supabase configured)
 export async function GET() {
-  const canSync = !!(process.env.EMDEE_DOCS && process.env.BLOB_READ_WRITE_TOKEN);
+  const canSync = !!(process.env.EMDEE_DOCS && process.env.SUPABASE_SERVICE_ROLE_KEY);
   return Response.json({ canSync });
 }
