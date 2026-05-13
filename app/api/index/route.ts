@@ -1,5 +1,5 @@
 import { buildIndex, buildIndexFromContents } from "@/src/core/indexer";
-import { list, get } from "@vercel/blob";
+import { list } from "@vercel/blob";
 import path from "node:path";
 
 export const dynamic = "force-dynamic";
@@ -68,8 +68,8 @@ export async function GET(request: Request) {
 
   const files = await Promise.all(
     mdBlobs.map(async (b) => {
-      const result = await get(b.pathname, { token, access: "private" });
-      const content = result ? await new Response(result.stream).text() : "";
+      const res = await fetch(b.url, { headers: { Authorization: `Bearer ${token}` } });
+      const content = res.ok ? await res.text() : "";
       return {
         path: b.pathname.slice(prefix.length),
         content,
@@ -78,5 +78,19 @@ export async function GET(request: Request) {
   );
 
   const index = buildIndexFromContents(files);
+
+  if (ns === "public") {
+    const filtered = {
+      ...index,
+      docs: index.docs.filter((d) => isPublicPath(d.path)),
+      edges: index.edges.filter((e) => {
+        const fromPublic = index.docs.some((d) => d.path === e.from && isPublicPath(d.path));
+        const toPublic = index.docs.some((d) => d.path === e.to && isPublicPath(d.path));
+        return fromPublic && toPublic;
+      }),
+    };
+    return Response.json(filtered, { headers: { "Cache-Control": "no-store" } });
+  }
+
   return Response.json(index, { headers: { "Cache-Control": "no-store" } });
 }
