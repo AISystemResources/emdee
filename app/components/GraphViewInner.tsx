@@ -489,13 +489,15 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
     cy.on("tap", "node", (e) => {
       const id = e.target.id();
       const currentFocal = focalIdRef.current;
-      if (id === currentFocal) {
-        onSelectRef.current(id);
-      } else {
+      // Clicking any node both refocuses the graph and opens it in the
+      // doc pane on the right. (Doc + graph are visible simultaneously
+      // now, so keeping their selection in sync is the desired behavior.)
+      if (id !== currentFocal) {
         if (currentFocal) setHistory((h) => [...h, currentFocal]);
         setFocalId(id);
         setPage(0);
       }
+      onSelectRef.current(id);
     });
 
     cy.on("zoom", () => {
