@@ -99,19 +99,48 @@ interface DocTreeProps {
   onToggle: (path: string) => void;
 }
 
-function displayTitle(title: string, parentTitle: string | null): string {
-  if (!parentTitle) return title;
-  const segments = parentTitle.split(" — ");
-  for (let i = segments.length; i > 0; i--) {
-    const prefix = segments.slice(0, i).join(" — ") + " — ";
-    if (title.startsWith(prefix)) return title.slice(prefix.length);
+/**
+ * Longest "X — " prefix shared by every title in a sibling group, computed
+ * segment-by-segment. Returns null when there's no shared prefix or only
+ * one sibling. Lets us strip "ATLAS — " from a flat list of
+ * ["ATLAS", "ATLAS — BUILD", "ATLAS — CONTEXT", …] so the tree renders as
+ * ["ATLAS", "BUILD", "CONTEXT", …]. (Used for synthetic SHARED children
+ * whose declared parent doesn't match the rendering parent — the existing
+ * parentTitle strip can't see it.)
+ */
+function siblingsCommonPrefix(titles: string[]): string | null {
+  if (titles.length < 2) return null;
+  const segs = titles.map((t) => t.split(" — "));
+  let i = 0;
+  while (true) {
+    const first = segs[0][i];
+    if (first === undefined) break;
+    if (!segs.every((s) => s[i] === first)) break;
+    i++;
   }
-  return title;
+  if (i === 0) return null;
+  return segs[0].slice(0, i).join(" — ") + " — ";
+}
+
+function displayTitle(title: string, parentTitle: string | null, siblingPrefix: string | null): string {
+  let out = title;
+  if (parentTitle) {
+    const segments = parentTitle.split(" — ");
+    for (let i = segments.length; i > 0; i--) {
+      const prefix = segments.slice(0, i).join(" — ") + " — ";
+      if (out.startsWith(prefix)) { out = out.slice(prefix.length); break; }
+    }
+  }
+  if (siblingPrefix && out.startsWith(siblingPrefix)) {
+    out = out.slice(siblingPrefix.length);
+  }
+  return out;
 }
 
 function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed, onSelect, onToggle }: DocTreeProps) {
   if (nodes.length === 0) return null;
   const isRoot = parentPath === null;
+  const siblingPrefix = siblingsCommonPrefix(nodes.map((n) => n.doc.title));
   return (
     <ul className="doc-tree" data-root={isRoot}>
       {!isRoot && (
@@ -148,7 +177,7 @@ function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed, onSele
                 data-active={n.doc.path === activePath}
                 type="button"
               >
-                {displayTitle(n.doc.title, parentTitle)}
+                {displayTitle(n.doc.title, parentTitle, siblingPrefix)}
               </button>
               {hasChildren && (
                 <button
