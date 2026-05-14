@@ -28,6 +28,14 @@ function generateCode(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Ensure a profiles row exists for this clerk_id so FK-bearing inserts succeed. */
+async function ensureProfile(clerkId: string): Promise<void> {
+  const { error } = await adminClient()
+    .from("profiles")
+    .upsert({ clerk_id: clerkId }, { onConflict: "clerk_id", ignoreDuplicates: true });
+  if (error) throw new Error(`failed to ensure profile: ${error.message}`);
+}
+
 export async function storeAuthCode(params: {
   clientId: string;
   clerkId: string;
@@ -36,6 +44,7 @@ export async function storeAuthCode(params: {
   codeChallengeMethod: string;
   scope: string;
 }): Promise<string> {
+  await ensureProfile(params.clerkId);
   const code = generateCode();
   const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
   const { error } = await adminClient().from("oauth_codes").insert({
