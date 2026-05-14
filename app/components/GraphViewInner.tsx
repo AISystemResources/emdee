@@ -610,29 +610,66 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
         {onRenameNode && (
           <button className="btn-action" onClick={() => onRenameNode(focalId!, focalDoc.title)}>Rename</button>
         )}
-        {onDeleteNode && (
-          <button className="btn-danger" onClick={() => onDeleteNode(focalId!, focalDoc.title)}>Delete</button>
-        )}
-        {onShareNode && (
-          <button className="btn-action btn-share" onClick={() => onShareNode(focalId!, focalDoc.title)}>Share</button>
-        )}
         <span className="spacer" />
-        <span className="graph-page">
-          {totalLayer1 === 0
-            ? "No connections"
-            : `${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, totalLayer1)} of ${totalLayer1}`}
-        </span>
-        <button
-          onClick={() => setPage((p) => (p - 1 + totalPages) % totalPages)}
-          disabled={totalPages <= 1}
-        >Prev</button>
-        <button
-          onClick={() => setPage((p) => (p + 1) % totalPages)}
-          disabled={totalPages <= 1}
-        >Next</button>
+        {onShareNode && (
+          <button
+            className="btn-icon btn-icon-share"
+            onClick={() => onShareNode(focalId!, focalDoc.title)}
+            aria-label="Share"
+            title="Share"
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <circle cx="3.2" cy="7" r="1.7" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="10.8" cy="3" r="1.7" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="10.8" cy="11" r="1.7" stroke="currentColor" strokeWidth="1.2"/>
+              <line x1="4.6" y1="6.3" x2="9.4" y2="3.9" stroke="currentColor" strokeWidth="1.2"/>
+              <line x1="4.6" y1="7.7" x2="9.4" y2="10.1" stroke="currentColor" strokeWidth="1.2"/>
+            </svg>
+          </button>
+        )}
+        {onDeleteNode && (
+          <button
+            className="btn-icon btn-icon-danger"
+            onClick={() => onDeleteNode(focalId!, focalDoc.title)}
+            aria-label="Delete"
+            title="Delete"
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 4H12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+              <path d="M5 4V2.6C5 2.32 5.22 2.1 5.5 2.1H8.5C8.78 2.1 9 2.32 9 2.6V4" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <path d="M3.2 4.5L3.9 11.9C3.94 12.45 4.4 12.9 4.95 12.9H9.05C9.6 12.9 10.06 12.45 10.1 11.9L10.8 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <path d="M6 6.5V10.5M8 6.5V10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+          </button>
+        )}
       </div>
       <div className="graph-stage">
         <div ref={ref} className="graph" />
+        <div className="graph-pager">
+          <button
+            className="graph-pager-btn"
+            onClick={() => setPage((p) => (p - 1 + totalPages) % totalPages)}
+            disabled={totalPages <= 1}
+            aria-label="Previous page"
+            title="Previous page"
+            type="button"
+          >‹</button>
+          <span className="graph-pager-text">
+            {totalLayer1 === 0
+              ? "No connections"
+              : `${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, totalLayer1)} of ${totalLayer1}`}
+          </span>
+          <button
+            className="graph-pager-btn"
+            onClick={() => setPage((p) => (p + 1) % totalPages)}
+            disabled={totalPages <= 1}
+            aria-label="Next page"
+            title="Next page"
+            type="button"
+          >›</button>
+        </div>
         <div className="zoom-control" onMouseLeave={() => setZoomMenuOpen(false)}>
           <button
             className="zoom-btn"
