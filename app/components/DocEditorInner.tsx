@@ -9,9 +9,10 @@ export interface Props {
   mode: "raw" | "rendered";
   onChange: (next: string) => void;
   onWikiLinkClick?: (title: string) => void;
+  readOnly?: boolean;
 }
 
-export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLinkClick }: Props) {
+export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLinkClick, readOnly }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const onChangeRef = useRef(onChange);
@@ -53,10 +54,14 @@ export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLin
         },
       },
       events: {
-        change: () => onChangeRef.current(editor.getMarkdown()),
+        change: () => {
+          if (readOnly) return;
+          onChangeRef.current(editor.getMarkdown());
+        },
       },
     });
     editorRef.current = editor;
+    if (readOnly) host.classList.add("doc-editor-readonly");
 
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -81,5 +86,5 @@ export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLin
     if (ed.getMarkdown() !== initialContent) ed.setMarkdown(initialContent);
   }, [initialContent]);
 
-  return <div ref={hostRef} data-mode={mode} style={{ height: "100%" }} />;
+  return <div ref={hostRef} data-mode={mode} data-readonly={readOnly ? "true" : undefined} style={{ height: "100%" }} />;
 }

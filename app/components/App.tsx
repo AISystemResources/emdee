@@ -8,6 +8,19 @@ import type { DocIndex, DocNode } from "@/src/core/indexer";
 import { useDocsChanged } from "./useDocsChanged";
 import { useDocLog } from "./useDocLog";
 
+interface SharedDoc {
+  shareId: string;
+  ownerId: string;
+  ownerEmail: string | null;
+  path: string;
+  title: string;
+  content: string;
+  permission: "read" | "write";
+}
+
+const SHARED_PREFIX = "__shared:";
+const sharedActiveKey = (s: SharedDoc) => `${SHARED_PREFIX}${s.ownerId}:${s.path}`;
+
 interface TreeNode {
   doc: DocNode;
   depth: number;
@@ -241,6 +254,7 @@ export function App({ namespace }: { namespace: string }) {
   const [deleteCtx, setDeleteCtx] = useState<GraphModalContext | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [shareCtx, setShareCtx] = useState<GraphModalContext | null>(null);
+  const [sharedDocs, setSharedDocs] = useState<SharedDoc[]>([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const docLog = useDocLog(namespace);
   const prevContentRef = useRef<Map<string, string>>(new Map());
@@ -250,6 +264,21 @@ export function App({ namespace }: { namespace: string }) {
     fetch("/api/sync").then((r) => r.json()).then((d) => setCanSync(d.canSync)).catch(() => {});
     fetch("/api/mcp-info").then((r) => r.json()).then((d) => setMcpCommand(d.command ?? null)).catch(() => {});
   }, []);
+
+  // Docs shared with me — only meaningful when viewing my own workspace.
+  // Refetched whenever the share modal closes so newly-revoked entries
+  // disappear without a manual reload.
+  const refreshShared = useCallback(() => {
+    if (!isOwnNamespace) {
+      setSharedDocs([]);
+      return;
+    }
+    fetch("/api/shared")
+      .then((r) => r.json())
+      .then((d) => setSharedDocs(d.docs ?? []))
+      .catch(() => setSharedDocs([]));
+  }, [isOwnNamespace]);
+  useEffect(() => { refreshShared(); }, [refreshShared]);
 
   // Load the linked cloud userId (set by /cloud-link/callback) and stay in
   // sync if the user re-links in another tab.
@@ -434,10 +463,26 @@ export function App({ namespace }: { namespace: string }) {
     else localEdit.current = false;
   }, [loadIndex]));
 
-  const activeDoc = useMemo<DocNode | null>(
-    () => index?.docs.find((d) => d.path === activePath) ?? null,
-    [index, activePath]
-  );
+  const activeSharedDoc = useMemo<SharedDoc | null>(() => {
+    if (!activePath || !activePath.startsWith(SHARED_PREFIX)) return null;
+    return sharedDocs.find((s) => sharedActiveKey(s) === activePath) ?? null;
+  }, [activePath, sharedDocs]);
+
+  const activeDoc = useMemo<DocNode | null>(() => {
+    if (activeSharedDoc) {
+      return {
+        path: activeSharedDoc.path,
+        title: activeSharedDoc.title,
+        content: activeSharedDoc.content,
+        summary: "",
+        parents: [],
+        children: [],
+        associates: [],
+        mentions: [],
+      };
+    }
+    return index?.docs.find((d) => d.path === activePath) ?? null;
+  }, [index, activePath, activeSharedDoc]);
 
   const docTree = useMemo(
     () => (index ? buildDocTree(index) : []),
@@ -617,10 +662,14 @@ export function App({ namespace }: { namespace: string }) {
 
   const handleEdit = useCallback((next: string) => {
     if (!activePath) return;
+    // Shared docs are read-only in MVP — editor change events shouldn't
+    // dirty the save state for them. (DocEditor also drops onChange when
+    // readOnly is set, this is belt-and-suspenders.)
+    if (activeSharedDoc) return;
     setSaveState("dirty");
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => save(activePath, next), 600);
-  }, [activePath, save]);
+  }, [activePath, activeSharedDoc, save]);
 
   const assocFilteredDocs = useMemo(() => {
     if (!index || !addAssocCtx) return [];
@@ -784,6 +833,26 @@ export function App({ namespace }: { namespace: string }) {
             onSelect={selectDoc}
             onToggle={toggleCollapsed}
           />
+          {sharedDocs.length > 0 && (
+            <div className="shared-section">
+              <p className="shared-section-title">Shared with me</p>
+              {sharedDocs.map((s) => {
+                const key = sharedActiveKey(s);
+                return (
+                  <div
+                    key={s.shareId}
+                    className="shared-doc-item"
+                    data-active={activePath === key}
+                    onClick={() => selectDoc(key)}
+                    role="button"
+                  >
+                    <span className="shared-doc-title">{s.title}</span>
+                    <span className="shared-doc-owner">from {s.ownerEmail ?? s.ownerId.slice(0, 12)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="sidebar-footer">
             <button
               className="sidebar-footer-btn"
@@ -862,20 +931,31 @@ export function App({ namespace }: { namespace: string }) {
               </button>
               {activeDoc ? (
                 <>
+                  {activeSharedDoc && (
+                    <div className="shared-banner">
+                      <span>📎</span>
+                      <span>
+                        Shared by <strong>{activeSharedDoc.ownerEmail ?? activeSharedDoc.ownerId.slice(0, 12)}</strong> — read-only
+                      </span>
+                    </div>
+                  )}
                   <div className="toolbar">
                     <button onClick={() => setDocMode("rendered")} data-active={docMode === "rendered"}>Rendered</button>
-                    <button onClick={() => setDocMode("raw")} data-active={docMode === "raw"}>Raw</button>
+                    {!activeSharedDoc && (
+                      <button onClick={() => setDocMode("raw")} data-active={docMode === "raw"}>Raw</button>
+                    )}
                     <span className="doc-path">{activeDoc.path}</span>
                     <span className="spacer" />
-                    <span className="save-state">{labelFor(saveState)}</span>
+                    {!activeSharedDoc && <span className="save-state">{labelFor(saveState)}</span>}
                   </div>
                   <div className="editor-host">
                     <DocEditor
-                      path={activeDoc.path}
+                      path={activeSharedDoc ? `${activeSharedDoc.ownerId}:${activeDoc.path}` : activeDoc.path}
                       initialContent={activeDoc.content}
-                      mode={docMode}
+                      mode={activeSharedDoc ? "rendered" : docMode}
                       onChange={handleEdit}
                       onWikiLinkClick={handleWikiLinkClick}
+                      readOnly={!!activeSharedDoc}
                     />
                   </div>
                 </>
@@ -1059,7 +1139,7 @@ export function App({ namespace }: { namespace: string }) {
         <ShareModal
           path={shareCtx.focalPath}
           title={shareCtx.focalTitle}
-          onClose={() => setShareCtx(null)}
+          onClose={() => { setShareCtx(null); refreshShared(); }}
         />
       )}
 
