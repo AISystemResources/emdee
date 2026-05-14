@@ -221,6 +221,13 @@ export function App({ namespace }: { namespace: string }) {
   const [mcpCopied, setMcpCopied] = useState(false);
   const [mcpUrlCopied, setMcpUrlCopied] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Desktop: draggable split ratio between graph (left) and doc (right), 0.15-0.85.
+  // Mobile/portrait: graph stacks above doc with a collapse toggle.
+  // Both states persist to localStorage so the layout sticks across refreshes.
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [graphCollapsed, setGraphCollapsed] = useState(false);
+  const [draggingSplit, setDraggingSplit] = useState(false);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [addChildCtx, setAddChildCtx] = useState<GraphModalContext | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [addChildBusy, setAddChildBusy] = useState(false);
@@ -264,6 +271,51 @@ export function App({ namespace }: { namespace: string }) {
   const unlinkCloudAccount = useCallback(() => {
     localStorage.removeItem("emdee_cloud_user_id");
     setCloudUserId(null);
+  }, []);
+
+  // Rehydrate the user's preferred desktop split ratio and mobile graph-collapse
+  // state on mount.
+  useEffect(() => {
+    const ratio = parseFloat(localStorage.getItem("emdee_split_ratio") ?? "");
+    if (Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85) setSplitRatio(ratio);
+    setGraphCollapsed(localStorage.getItem("emdee_graph_collapsed") === "true");
+  }, []);
+
+  // Pointer-driven resize of the .main-split divider. Listens on document so
+  // dragging works even when the pointer leaves the divider's thin hit box.
+  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
+    const container = splitContainerRef.current;
+    if (!container) return;
+    e.preventDefault();
+    setDraggingSplit(true);
+    document.body.dataset.resizingSplit = "true";
+    const rect = container.getBoundingClientRect();
+    const onMove = (ev: PointerEvent) => {
+      const x = ev.clientX - rect.left;
+      const ratio = Math.max(0.15, Math.min(0.85, x / rect.width));
+      setSplitRatio(ratio);
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      delete document.body.dataset.resizingSplit;
+      setDraggingSplit(false);
+      // Persist whatever ratio we ended at.
+      setSplitRatio((r) => {
+        localStorage.setItem("emdee_split_ratio", r.toFixed(4));
+        return r;
+      });
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, []);
+
+  const toggleGraphCollapsed = useCallback(() => {
+    setGraphCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem("emdee_graph_collapsed", String(next));
+      return next;
+    });
   }, []);
 
   const copyMcpCommand = useCallback(() => {
@@ -750,7 +802,12 @@ export function App({ namespace }: { namespace: string }) {
       </div>
       <main className="content">
         {view === "main" && (
-          <div className="main-split">
+          <div
+            className="main-split"
+            ref={splitContainerRef}
+            data-graph-collapsed={graphCollapsed}
+            style={{ "--graph-ratio": splitRatio } as React.CSSProperties}
+          >
             <div className="graph-pane">
               {index && (
                 <GraphView
@@ -763,7 +820,23 @@ export function App({ namespace }: { namespace: string }) {
                 />
               )}
             </div>
+            <div
+              className="split-divider"
+              onPointerDown={onDividerPointerDown}
+              data-dragging={draggingSplit}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize panes"
+            />
             <div className="doc-pane">
+              <button
+                className="graph-collapse-toggle"
+                onClick={toggleGraphCollapsed}
+                type="button"
+                aria-expanded={!graphCollapsed}
+              >
+                {graphCollapsed ? "▼ Show graph" : "▲ Hide graph"}
+              </button>
               {activeDoc ? (
                 <>
                   <div className="toolbar">
