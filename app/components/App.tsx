@@ -761,6 +761,24 @@ export function App({ namespace }: { namespace: string }) {
     if (match) selectDoc(match.path);
   }, [index, selectDoc]);
 
+  // PDF export — flip to rendered mode, tag <body> so print CSS scopes
+  // the print view to just the doc preview, then trigger the browser's
+  // Save as PDF dialog. No new deps; the user picks the destination.
+  const exportPdf = useCallback(() => {
+    if (!activeDoc) return;
+    setDocMode("rendered");
+    setTimeout(() => {
+      document.body.classList.add("printing-doc");
+      window.print();
+      // afterprint fires once the dialog closes (cancel or save).
+      const cleanup = () => {
+        document.body.classList.remove("printing-doc");
+        window.removeEventListener("afterprint", cleanup);
+      };
+      window.addEventListener("afterprint", cleanup);
+    }, 120);
+  }, [activeDoc]);
+
   const handleEdit = useCallback((next: string) => {
     if (!activePath) return;
     // Anything under the SHARED branch (the synthetic root or a per-doc
@@ -1034,6 +1052,9 @@ export function App({ namespace }: { namespace: string }) {
                       <span className="doc-path">{displayPath}</span>
                       <span className="spacer" />
                       {!isSharedView && <span className="save-state">{labelFor(saveState)}</span>}
+                      <button className="btn-export-pdf" onClick={exportPdf} type="button" title="Export as PDF">
+                        Export PDF
+                      </button>
                     </div>
                     <div className="editor-host">
                       <DocEditor

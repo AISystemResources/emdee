@@ -1229,3 +1229,73 @@ body[data-resizing-split="true"] {
 
   .modal { padding: 20px; }
 }
+
+/* ── PDF export (print view) ─────────────────────────────
+ * Activated by adding `printing-doc` to <body> before window.print().
+ * Strips chrome down to just the rendered markdown preview at full
+ * width, with sensible @page margins.
+ */
+@media print {
+  body.printing-doc .sidebar,
+  body.printing-doc .sidebar-rail,
+  body.printing-doc .sidebar-backdrop,
+  body.printing-doc .mobile-header,
+  body.printing-doc .graph-pane,
+  body.printing-doc .split-divider,
+  body.printing-doc .graph-collapse-toggle,
+  body.printing-doc .toolbar,
+  body.printing-doc .shared-banner,
+  body.printing-doc .save-state,
+  body.printing-doc .toastui-editor-toolbar,
+  body.printing-doc .toastui-editor-md-splitter,
+  body.printing-doc .toastui-editor-md-container .toastui-editor { display: none !important; }
+
+  body.printing-doc,
+  body.printing-doc .app,
+  body.printing-doc .content,
+  body.printing-doc .main-split,
+  body.printing-doc .doc-pane,
+  body.printing-doc .editor-host,
+  body.printing-doc .toastui-editor-defaultUI,
+  body.printing-doc .toastui-editor-main,
+  body.printing-doc .toastui-editor-md-container,
+  body.printing-doc .toastui-editor-md-preview {
+    display: block !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.printing-doc .toastui-editor-md-preview {
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+  body.printing-doc .toastui-editor-md-preview h1 { font-size: 22pt; margin-top: 0; }
+  body.printing-doc .toastui-editor-md-preview h2 { font-size: 16pt; }
+  body.printing-doc .toastui-editor-md-preview h3 { font-size: 13pt; }
+  body.printing-doc .wiki-link {
+    background: none !important;
+    color: black !important;
+    text-decoration: underline;
+    padding: 0 !important;
+  }
+
+  @page { margin: 0.75in; size: A4; }
+}
+
+.btn-export-pdf {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.btn-export-pdf:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
