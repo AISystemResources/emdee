@@ -8,6 +8,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/(.*)",
   "/.well-known/(.*)",
   "/oauth/(.*)",
+  // Localhost callback for the cloud-link handshake: dev Clerk session
+  // may not exist, and the page just reads a query param into localStorage.
+  "/cloud-link/callback",
 ]);
 
 // Protected routes (e.g. personal workspace) redirect to sign-in if not authenticated.

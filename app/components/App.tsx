@@ -213,6 +213,7 @@ export function App({ namespace }: { namespace: string }) {
   const collapsedInitialized = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [canSync, setCanSync] = useState(false);
+  const [cloudUserId, setCloudUserId] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [conflicts, setConflicts] = useState<ConflictFile[]>([]);
   const [resolvingPath, setResolvingPath] = useState<string | null>(null);
@@ -240,6 +241,31 @@ export function App({ namespace }: { namespace: string }) {
     fetch("/api/mcp-info").then((r) => r.json()).then((d) => setMcpCommand(d.command ?? null)).catch(() => {});
   }, []);
 
+  // Load the linked cloud userId (set by /cloud-link/callback) and stay in
+  // sync if the user re-links in another tab.
+  useEffect(() => {
+    setCloudUserId(localStorage.getItem("emdee_cloud_user_id"));
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "emdee_cloud_user_id") setCloudUserId(e.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Opens the prod handshake in a new tab. After Clerk auth, it bounces back
+  // to /cloud-link/callback which writes localStorage.emdee_cloud_user_id.
+  const cloudOrigin = process.env.NEXT_PUBLIC_CLOUD_ORIGIN ?? "https://emdee.vercel.app";
+  const linkCloudAccount = useCallback(() => {
+    const returnUrl = `${window.location.origin}/cloud-link/callback`;
+    const url = `${cloudOrigin}/cloud-link?return=${encodeURIComponent(returnUrl)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [cloudOrigin]);
+
+  const unlinkCloudAccount = useCallback(() => {
+    localStorage.removeItem("emdee_cloud_user_id");
+    setCloudUserId(null);
+  }, []);
+
   const copyMcpCommand = useCallback(() => {
     if (!mcpCommand) return;
     navigator.clipboard.writeText(mcpCommand).then(() => {
@@ -260,10 +286,16 @@ export function App({ namespace }: { namespace: string }) {
   }, [mcpUrl]);
 
   const handleSync = useCallback(async (force = false) => {
+    if (!cloudUserId) {
+      setSyncState("error");
+      setTimeout(() => setSyncState("idle"), 3000);
+      return;
+    }
     setSyncState("syncing");
     try {
-      const url = force ? "/api/sync?force=true" : "/api/sync";
-      const res = await fetch(url, { method: "POST" });
+      const params = new URLSearchParams({ ns: cloudUserId });
+      if (force) params.set("force", "true");
+      const res = await fetch(`/api/sync?${params.toString()}`, { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (data.conflicts && data.conflicts.length > 0) {
@@ -279,7 +311,7 @@ export function App({ namespace }: { namespace: string }) {
       setSyncState("error");
       setTimeout(() => setSyncState("idle"), 3000);
     }
-  }, []);
+  }, [cloudUserId]);
 
   const handleResolve = useCallback(async (filePath: string, action: "keep-local" | "keep-cloud") => {
     setResolvingPath(filePath);
@@ -545,6 +577,30 @@ export function App({ namespace }: { namespace: string }) {
       <div className="sidebar-wrap" data-open={mobileSidebarOpen}>
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
           <h1>EMDEE</h1>
+          {canSync && (
+            <div className="connect-section">
+              <span className="pat-label">Cloud Account</span>
+              {cloudUserId ? (
+                <>
+                  <code className="pat-value connect-cmd" title={cloudUserId}>
+                    {cloudUserId.length > 28 ? cloudUserId.slice(0, 28) + "…" : cloudUserId}
+                  </code>
+                  <button className="signin-btn" onClick={unlinkCloudAccount} type="button" style={{ background: "transparent", color: "var(--muted)", border: "1px solid var(--border)" }}>
+                    Disconnect
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="signin-btn" onClick={linkCloudAccount} type="button">
+                    Connect Cloud Account
+                  </button>
+                  <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
+                    Required to push your local docs to the cloud
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           {isOwnNamespace && (
             <div className="connect-section">
               <span className="pat-label">Connect to Claude Code</span>
@@ -666,10 +722,21 @@ export function App({ namespace }: { namespace: string }) {
             <button
               className={`sync-inline-btn${conflicts.length > 0 ? " has-conflicts" : ""}`}
               onClick={() => conflicts.length > 0 ? setConflictModalOpen(true) : handleSync(false)}
-              disabled={syncState === "syncing"}
+              disabled={syncState === "syncing" || !cloudUserId}
+              title={!cloudUserId ? "Connect a cloud account first" : undefined}
               type="button"
             >
-              {syncState === "syncing" ? "Syncing…" : syncState === "done" ? "✓ Synced" : syncState === "error" ? "⚠ Sync failed" : conflicts.length > 0 ? `${conflicts.length} conflict${conflicts.length > 1 ? "s" : ""}` : "Push to Cloud"}
+              {syncState === "syncing"
+                ? "Syncing…"
+                : syncState === "done"
+                ? "✓ Synced"
+                : syncState === "error"
+                ? "⚠ Sync failed"
+                : !cloudUserId
+                ? "Connect cloud account →"
+                : conflicts.length > 0
+                ? `${conflicts.length} conflict${conflicts.length > 1 ? "s" : ""}`
+                : "Push to Cloud"}
             </button>
           </div>
         )}
