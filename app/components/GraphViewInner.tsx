@@ -11,6 +11,7 @@ export interface Props {
   onAddAssociation?: (focalPath: string, focalTitle: string) => void;
   onDeleteNode?: (focalPath: string, focalTitle: string) => void;
   onShareNode?: (focalPath: string, focalTitle: string) => void;
+  onRenameNode?: (focalPath: string, focalTitle: string) => void;
 }
 
 const PAGE_SIZE = 8;
@@ -358,7 +359,7 @@ function syncGraph(
   }
 }
 
-export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode }: Props) {
+export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode, onRenameNode }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const focalIdRef = useRef<string | null>(null);
@@ -598,6 +599,9 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
         )}
         {onAddAssociation && (
           <button className="btn-action" onClick={() => onAddAssociation(focalId!, focalDoc.title)}>Associate</button>
+        )}
+        {onRenameNode && (
+          <button className="btn-action" onClick={() => onRenameNode(focalId!, focalDoc.title)}>Rename</button>
         )}
         {onDeleteNode && (
           <button className="btn-danger" onClick={() => onDeleteNode(focalId!, focalDoc.title)}>Delete</button>

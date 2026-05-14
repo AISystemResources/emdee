@@ -6,7 +6,7 @@ import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import {
   listDocs, getSummary, getNeighbors, getDoc, search,
-  appendSection, patchSection, writeDocPreview, writeDoc, deleteDoc, splitDoc,
+  appendSection, patchSection, writeDocPreview, writeDoc, deleteDoc, splitDoc, renameDoc,
 } from "@/src/lib/mcp/tools/index";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +73,7 @@ Shared docs:
       { name: "write_doc", description: "Create or overwrite a markdown doc. DESTRUCTIVE — always run write_doc_preview first.", inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } },
       { name: "delete_doc", description: "Permanently delete a doc. DESTRUCTIVE — no undo. Returns inbound_edges (docs whose wiki-links will dangle) and title_conflicts (duplicate-title siblings). Call get_neighbors first if unsure.", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
       { name: "split_doc", description: "Atomically refactor a doc into concept nodes. Use when a doc has grown into multiple distinct reusable ideas — extract each into its own node with proper Child of / Parent of sections, then rewrite the source to wiki-link to them. Pre-flight checks block path and H1-title collisions before any writes. Build the extraction plan first (call get_doc to read, then design the new nodes), then call split_doc once to execute.", inputSchema: { type: "object", properties: { source_path: { type: "string" }, rewrite_source_content: { type: "string" }, extracts: { type: "array", items: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } }, required: ["source_path", "rewrite_source_content", "extracts"] } },
+      { name: "rename_doc", description: "Rename a doc: rewrite its H1, move it to a new path (default: same directory, filename derived from the new title), and update every `[[old_title]]` wiki-link across the vault to point at the new title. Pre-flight checks block title and path collisions. DESTRUCTIVE — rewrites many docs in one call.", inputSchema: { type: "object", properties: { old_path: { type: "string" }, new_title: { type: "string" }, new_path: { type: "string" } }, required: ["old_path", "new_title"] } },
     ],
   }));
 
@@ -91,6 +92,7 @@ Shared docs:
       case "write_doc":         return await writeDoc(ctx, a) as CallToolResult;
       case "delete_doc":        return await deleteDoc(ctx, a) as CallToolResult;
       case "split_doc":         return await splitDoc(ctx, a) as CallToolResult;
+      case "rename_doc":        return await renameDoc(ctx, a) as CallToolResult;
       default: throw new Error(`unknown tool: ${name}`);
     }
   });

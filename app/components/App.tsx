@@ -284,6 +284,12 @@ export function App({ namespace }: { namespace: string }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [shareCtx, setShareCtx] = useState<GraphModalContext | null>(null);
   const [sharedDocs, setSharedDocs] = useState<SharedDoc[]>([]);
+  const [renameCtx, setRenameCtx] = useState<GraphModalContext | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renamePath, setRenamePath] = useState("");
+  const [renamePathDirty, setRenamePathDirty] = useState(false);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const docLog = useDocLog(namespace);
   const prevContentRef = useRef<Map<string, string>>(new Map());
@@ -660,6 +666,58 @@ export function App({ namespace }: { namespace: string }) {
     setShareCtx({ focalPath, focalTitle });
   }, []);
 
+  const openRenameNode = useCallback((focalPath: string, focalTitle: string) => {
+    setRenameCtx({ focalPath, focalTitle });
+    setRenameTitle(focalTitle);
+    setRenamePath(focalPath);
+    setRenamePathDirty(false);
+    setRenameError(null);
+  }, []);
+
+  // Auto-derive the path from the title (same directory, sanitized filename)
+  // until the user manually edits the path field — then we leave their
+  // version alone.
+  useEffect(() => {
+    if (!renameCtx || renamePathDirty) return;
+    const dir = renameCtx.focalPath.includes("/")
+      ? renameCtx.focalPath.slice(0, renameCtx.focalPath.lastIndexOf("/"))
+      : "";
+    const safe = renameTitle.trim().replace(/[/\\]/g, "_");
+    if (!safe) return;
+    setRenamePath(dir ? `${dir}/${safe}.md` : `${safe}.md`);
+  }, [renameTitle, renameCtx, renamePathDirty]);
+
+  const submitRename = useCallback(async () => {
+    if (!renameCtx) return;
+    const newTitle = renameTitle.trim();
+    const newPath = renamePath.trim();
+    if (!newTitle || !newPath) return;
+    setRenameBusy(true);
+    setRenameError(null);
+    try {
+      const res = await fetch("/api/doc/rename", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ oldPath: renameCtx.focalPath, newTitle, newPath }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setRenameError(data.error ?? "rename failed");
+        return;
+      }
+      // Reload the index, then point activePath at the new file so the
+      // doc pane doesn't lose context.
+      setActivePath(newPath);
+      await loadIndex(false);
+      refreshShared();
+      setRenameCtx(null);
+    } catch (e) {
+      setRenameError((e as Error).message);
+    } finally {
+      setRenameBusy(false);
+    }
+  }, [renameCtx, renameTitle, renamePath, loadIndex, refreshShared]);
+
   const submitDeleteNode = useCallback(async () => {
     if (!deleteCtx) return;
     const { focalPath, focalTitle } = deleteCtx;
@@ -1008,6 +1066,7 @@ export function App({ namespace }: { namespace: string }) {
                   onAddAssociation={isOwnNamespace ? openAddAssoc : undefined}
                   onDeleteNode={isOwnNamespace ? openDeleteNode : undefined}
                   onShareNode={isOwnNamespace ? openShareNode : undefined}
+                  onRenameNode={isOwnNamespace ? openRenameNode : undefined}
                 />
               )}
             </div>
@@ -1237,6 +1296,53 @@ export function App({ namespace }: { namespace: string }) {
                 type="button"
               >
                 {deleteBusy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename modal */}
+      {renameCtx && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setRenameCtx(null)}>
+          <div className="modal" role="dialog" aria-modal="true">
+            <p className="modal-title">Rename doc</p>
+            <p className="modal-subtitle">
+              Renames <strong>{renameCtx.focalTitle}</strong>, moves it to the new path, and updates every <code>[[wiki-link]]</code> pointing at it across the vault.
+            </p>
+            <div className="modal-field">
+              <label className="modal-label" htmlFor="rename-title">New title</label>
+              <input
+                id="rename-title"
+                className="modal-input"
+                type="text"
+                value={renameTitle}
+                onChange={(e) => setRenameTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitRename()}
+                autoFocus
+              />
+            </div>
+            <div className="modal-field">
+              <label className="modal-label" htmlFor="rename-path">New path</label>
+              <input
+                id="rename-path"
+                className="modal-input"
+                type="text"
+                value={renamePath}
+                onChange={(e) => { setRenamePath(e.target.value); setRenamePathDirty(true); }}
+                onKeyDown={(e) => e.key === "Enter" && submitRename()}
+              />
+            </div>
+            {renameError && <p className="share-error" style={{ marginTop: 0 }}>{renameError}</p>}
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={() => setRenameCtx(null)} type="button" disabled={renameBusy}>Cancel</button>
+              <button
+                className="btn-primary"
+                onClick={submitRename}
+                disabled={renameBusy || !renameTitle.trim() || !renamePath.trim()}
+                type="button"
+              >
+                {renameBusy ? "Renaming…" : "Rename"}
               </button>
             </div>
           </div>
