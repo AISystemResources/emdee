@@ -172,10 +172,18 @@ function placeLayout(
   const start = page * PAGE_SIZE;
   const layer1 = allLayer1.slice(start, start + PAGE_SIZE);
 
+  // Strip the parent prefix from the focal label too — "POKEAI — LOGS"
+  // under parent POKEAI reads as just "LOGS". Picks the first declared
+  // parent's title; if there's no parent we fall back to the full title.
+  const focalParent = allLayer1.find((n) => n.role === "parent");
+  const focalLabel = focalParent
+    ? shortLabelForParent(titleFor(focalParent.id), focalId)
+    : titleFor(focalId);
+
   const placed = new Map<string, PlacedNode>();
   placed.set(focalId, {
     id: focalId,
-    label: titleFor(focalId),
+    label: focalLabel,
     kind: "focal",
     category: categoryFor(focalId),
     position: { x: 0, y: 0 },
@@ -559,6 +567,30 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
   const totalPages = Math.max(1, Math.ceil(totalLayer1 / PAGE_SIZE));
   const pageStart = page * PAGE_SIZE;
 
+  // Lineage path from a root ancestor down to the focal. Walks parent
+  // hierarchy edges (kind === "hierarchy", to === current) one step at
+  // a time. Stops at any cycle and caps length so the breadcrumb stays
+  // a single horizontal line. Last entry is always the focal itself.
+  const lineage = useMemo<{ path: string; title: string }[]>(() => {
+    if (!focalId) return [];
+    const MAX = 6;
+    const visited = new Set<string>([focalId]);
+    const chain: string[] = [focalId];
+    let cur = focalId;
+    while (chain.length < MAX) {
+      const parentEdge = index.edges.find(
+        (e) => e.kind === "hierarchy" && e.to === cur && !visited.has(e.from)
+      );
+      if (!parentEdge) break;
+      visited.add(parentEdge.from);
+      chain.unshift(parentEdge.from);
+      cur = parentEdge.from;
+    }
+    const titleByPath = new Map<string, string>();
+    for (const d of index.docs) titleByPath.set(d.path, d.title);
+    return chain.map((p) => ({ path: p, title: titleByPath.get(p) ?? p }));
+  }, [index, focalId]);
+
   const zoomTo = (level: number, animate = true) => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -647,6 +679,28 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
       </div>
       <div className="graph-stage">
         <div ref={ref} className="graph" />
+        {lineage.length > 1 && (
+          <nav className="graph-breadcrumb" aria-label="Lineage">
+            {lineage.map((crumb, i) => {
+              const isFocal = i === lineage.length - 1;
+              return (
+                <span key={crumb.path} className="graph-breadcrumb-cell">
+                  {i > 0 && <span className="graph-breadcrumb-sep" aria-hidden="true">›</span>}
+                  <button
+                    className="graph-breadcrumb-crumb"
+                    data-focal={isFocal}
+                    onClick={() => !isFocal && onSelect(crumb.path)}
+                    title={crumb.title}
+                    type="button"
+                    disabled={isFocal}
+                  >
+                    {crumb.title}
+                  </button>
+                </span>
+              );
+            })}
+          </nav>
+        )}
         <div className="graph-pager">
           <button
             className="graph-pager-btn"
