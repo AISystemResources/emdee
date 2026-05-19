@@ -20,18 +20,21 @@ export interface Props {
 }
 
 // 8 angular slots around the focal at 45° each, starting at 12 o'clock.
-// Slot 0 (12) is reserved for the parent when one exists; the other 7
-// slots hold focal's children/associates. Siblings are NOT in this ring —
-// they're satellites of the parent, positioned at "10 o'clock" / "2 o'clock"
-// off the parent itself. That keeps focal's ring fully available for real
-// neighbors, and the lineage trio (prev sibling, parent, next sibling)
-// reads as a cluster at the top of the view.
+//
+// Lineage slots — reserved, never backfilled with children/associates:
+//   slot 0 (12)   = parent
+//   slot 1 (1:30) = next sibling
+//   slot 7 (10:30)= prev sibling
+//
+// Rotatable slots — focal's children/associates, ordered anticlockwise
+// from 9 o'clock (1st) to 3 o'clock (5th), filling the bottom half of
+// the ring. Fixed page size of 5 — paginate when focal has more.
 const SLOT_COUNT = 8;
 const PARENT_SLOT = 0;
-// Sibling satellites: distance from parent's center, and angular offset
-// from "straight up" (parent's 12 o'clock). 60° = 2 / 10 o'clock positions.
-const SIBLING_PARENT_OFFSET = 130;
-const SIBLING_ANGLE_FROM_PARENT = Math.PI / 3; // 60°
+const NEXT_SIBLING_SLOT = 1;
+const PREV_SIBLING_SLOT = 7;
+const ROTATABLE_SLOTS = [6, 5, 4, 3, 2];
+const PAGE_SIZE = ROTATABLE_SLOTS.length;
 const LAYER2_PER_LAYER1 = 2;
 const RADIUS_LAYER1 = 240;
 const RADIUS_LAYER2 = 400;
@@ -232,21 +235,15 @@ function placeLayout(
   const prevSiblingId =
     prevPath && index.docs.some((d) => d.path === prevPath) ? prevPath : null;
 
-  // Only the parent slot (12 o'clock) is reserved in the focal's ring.
-  // Siblings live outside the ring as satellites of the parent, so they
-  // don't compete for slot space with focal's actual children/associates.
-  const availableSlots: number[] = [];
-  for (let i = 0; i < SLOT_COUNT; i++) {
-    if (parent && i === PARENT_SLOT) continue;
-    availableSlots.push(i);
-  }
-
-  const pageSize = Math.max(1, availableSlots.length);
+  // Rotatable nodes always fill the bottom-half slots in the fixed order
+  // ROTATABLE_SLOTS. The lineage slots (parent + siblings) stay reserved —
+  // they remain empty when no parent/sibling exists rather than getting
+  // backfilled by children/associates.
   const totalRotatable = rotatable.length;
-  const totalPages = Math.max(1, Math.ceil(totalRotatable / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalRotatable / PAGE_SIZE));
   const safePage = ((page % totalPages) + totalPages) % totalPages;
-  const pageStart = safePage * pageSize;
-  const onPage = rotatable.slice(pageStart, pageStart + pageSize);
+  const pageStart = safePage * PAGE_SIZE;
+  const onPage = rotatable.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Strip the parent prefix from the focal label too — "POKEAI — LOGS"
   // under parent POKEAI reads as just "LOGS". Picks the first declared
@@ -281,50 +278,37 @@ function placeLayout(
     layer1Real.push(parent);
   }
 
-  // Place prev/next siblings as satellites of the parent — at parent's
-  // ~10 o'clock and ~2 o'clock. Skipped when there's no parent (root focal
-  // has no siblings by definition). Position is parent_center + offset_vec.
-  if (parent) {
-    const parentPos = {
-      x: Math.cos(angleForSlot(PARENT_SLOT)) * RADIUS_LAYER1,
-      y: Math.sin(angleForSlot(PARENT_SLOT)) * RADIUS_LAYER1,
-    };
-    if (nextSiblingId) {
-      // 2 o'clock from parent = rotate "up" (0, -1) clockwise by +60°
-      const dx = Math.sin(SIBLING_ANGLE_FROM_PARENT);
-      const dy = -Math.cos(SIBLING_ANGLE_FROM_PARENT);
-      placed.set(nextSiblingId, {
-        id: nextSiblingId,
-        label: shortLabel(nextSiblingId),
-        kind: "sibling",
-        category: categoryFor(nextSiblingId),
-        position: {
-          x: parentPos.x + dx * SIBLING_PARENT_OFFSET,
-          y: parentPos.y + dy * SIBLING_PARENT_OFFSET,
-        },
-      });
-    }
-    if (prevSiblingId) {
-      // 10 o'clock from parent = rotate "up" (0, -1) counter-clockwise by 60°
-      const dx = -Math.sin(SIBLING_ANGLE_FROM_PARENT);
-      const dy = -Math.cos(SIBLING_ANGLE_FROM_PARENT);
-      placed.set(prevSiblingId, {
-        id: prevSiblingId,
-        label: shortLabel(prevSiblingId),
-        kind: "sibling",
-        category: categoryFor(prevSiblingId),
-        position: {
-          x: parentPos.x + dx * SIBLING_PARENT_OFFSET,
-          y: parentPos.y + dy * SIBLING_PARENT_OFFSET,
-        },
-      });
-    }
+  // Next sibling at slot 1 (1:30). Empty slot when none — no backfill.
+  if (nextSiblingId) {
+    const angle = angleForSlot(NEXT_SIBLING_SLOT);
+    layer1AnglesById.set(nextSiblingId, angle);
+    placed.set(nextSiblingId, {
+      id: nextSiblingId,
+      label: shortLabel(nextSiblingId),
+      kind: "sibling",
+      category: categoryFor(nextSiblingId),
+      position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
+    });
   }
 
-  // Place rotatable neighbors in the remaining slots, in their sorted order
+  // Prev sibling at slot 7 (10:30). Empty slot when none — no backfill.
+  if (prevSiblingId) {
+    const angle = angleForSlot(PREV_SIBLING_SLOT);
+    layer1AnglesById.set(prevSiblingId, angle);
+    placed.set(prevSiblingId, {
+      id: prevSiblingId,
+      label: shortLabel(prevSiblingId),
+      kind: "sibling",
+      category: categoryFor(prevSiblingId),
+      position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
+    });
+  }
+
+  // Rotatable neighbors fill ROTATABLE_SLOTS in declared order — 1st node
+  // at 9 o'clock, 5th at 3 o'clock, anticlockwise across the bottom.
   onPage.forEach((n, i) => {
-    const slot = availableSlots[i];
-    if (slot === undefined) return; // ran out of slots (shouldn't happen with the cap)
+    const slot = ROTATABLE_SLOTS[i];
+    if (slot === undefined) return;
     const angle = angleForSlot(slot);
     layer1AnglesById.set(n.id, angle);
     placed.set(n.id, {
@@ -343,6 +327,33 @@ function placeLayout(
   if (prevSiblingId) reservedIds.add(prevSiblingId);
   const edges: PlacedEdge[] = [];
   const layer2Pairs: { layer1Id: string; neighbor: Neighbor }[] = [];
+
+  // Sibling edges: parent → prev sibling, parent → next sibling. These
+  // are real hierarchy declarations in the parent's `Parent of` list, so
+  // we draw them with the standard hierarchy style. They visibly connect
+  // the lineage cluster (parent + siblings) at the top of the ring.
+  if (parent && nextSiblingId) {
+    edges.push({
+      id: `e:${parent.id}|${nextSiblingId}`,
+      source: parent.id,
+      target: nextSiblingId,
+      kind: "hierarchy",
+      role: "child",
+      targetCategory: categoryFor(nextSiblingId),
+      showLabel: false,
+    });
+  }
+  if (parent && prevSiblingId) {
+    edges.push({
+      id: `e:${parent.id}|${prevSiblingId}`,
+      source: parent.id,
+      target: prevSiblingId,
+      kind: "hierarchy",
+      role: "child",
+      targetCategory: categoryFor(prevSiblingId),
+      showLabel: false,
+    });
+  }
 
   for (const l1 of layer1Real) {
     edges.push({
@@ -422,7 +433,7 @@ function placeLayout(
     });
   }
 
-  return { nodes: [...placed.values()], edges, totalRotatable, pageSize };
+  return { nodes: [...placed.values()], edges, totalRotatable, pageSize: PAGE_SIZE };
 }
 
 function syncGraph(
