@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { DocIndex, DocNode, Edge } from "@/src/core/indexer";
+import { getPrevNextSiblings } from "@/src/core/siblings";
 
 export interface Props {
   index: DocIndex;
@@ -178,33 +179,6 @@ function angleForSlot(slot: number): number {
   // slot 2 at 9, …, slot 7 at 1:30. (Math y-axis flipped on screen, so the
   // formula negates the slot fraction to walk CCW visually.)
   return -Math.PI / 2 - (slot / SLOT_COUNT) * Math.PI * 2;
-}
-
-// Walk the focal's first declared parent to find prev/next siblings in
-// declared order. Same derivation as App's prevSibling/nextSibling memo
-// and the get_neighbors MCP tool — the parent's `## Parent of` bullet
-// order is the single source of truth for sibling sequencing.
-function getPrevNextSiblings(index: DocIndex, focalId: string): {
-  prevPath: string | null;
-  nextPath: string | null;
-} {
-  const focalDoc = index.docs.find((d) => d.path === focalId);
-  if (!focalDoc) return { prevPath: null, nextPath: null };
-  const primaryParent = focalDoc.parents[0];
-  if (!primaryParent) return { prevPath: null, nextPath: null };
-  const byTitle = new Map<string, typeof index.docs[number]>();
-  for (const d of index.docs) byTitle.set(d.title.toLowerCase(), d);
-  const parentDoc = byTitle.get(primaryParent.title.toLowerCase());
-  if (!parentDoc) return { prevPath: null, nextPath: null };
-  const siblingPaths = parentDoc.children
-    .map((l) => byTitle.get(l.title.toLowerCase())?.path)
-    .filter((p): p is string => !!p);
-  const idx = siblingPaths.findIndex((p) => p === focalId);
-  if (idx === -1) return { prevPath: null, nextPath: null };
-  return {
-    prevPath: siblingPaths[idx - 1] ?? null,
-    nextPath: siblingPaths[idx + 1] ?? null,
-  };
 }
 
 function placeLayout(

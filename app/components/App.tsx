@@ -5,6 +5,7 @@ import { GraphView } from "./GraphView";
 import { DocEditor } from "./DocEditor";
 import { ShareModal } from "./ShareModal";
 import type { DocIndex, DocNode } from "@/src/core/indexer";
+import { getPrevNextSiblings } from "@/src/core/siblings";
 import { useDocsChanged } from "./useDocsChanged";
 import { useDocLog } from "./useDocLog";
 
@@ -519,11 +520,11 @@ export function App({ namespace }: { namespace: string }) {
     return index?.docs.find((d) => d.path === activePath) ?? null;
   }, [index, activePath, activeSharedDoc]);
 
-  // Prev/Next sibling derived from the active doc's first declared parent's
-  // `Parent of` order. Mirrors the server-side computation in
-  // src/lib/mcp/tools/get_neighbors.ts so the renderer and any MCP client
-  // see the same sequence. Null when there's no parent, the parent isn't
-  // resolvable, or focal isn't in the parent's bullet list.
+  // Prev/Next sibling for the active doc — shared helper so the renderer,
+  // the graph view, and the get_neighbors MCP tool all derive the same
+  // sequence. Tolerant of asymmetric edges: a doc that declares
+  // `Child of [parent]` but isn't listed in the parent's `Parent of` still
+  // gets siblings (declared first, asymmetric appended alphabetically).
   const { prevSibling, nextSibling } = useMemo<{
     prevSibling: DocNode | null;
     nextSibling: DocNode | null;
@@ -531,19 +532,11 @@ export function App({ namespace }: { namespace: string }) {
     if (!activeDoc || !index || activePath?.startsWith(SHARED_PREFIX)) {
       return { prevSibling: null, nextSibling: null };
     }
-    const primaryParent = activeDoc.parents[0];
-    if (!primaryParent) return { prevSibling: null, nextSibling: null };
-    const byTitle = new Map(index.docs.map((d) => [d.title.toLowerCase(), d]));
-    const parentDoc = byTitle.get(primaryParent.title.toLowerCase());
-    if (!parentDoc) return { prevSibling: null, nextSibling: null };
-    const siblings = parentDoc.children
-      .map((l) => byTitle.get(l.title.toLowerCase()))
-      .filter((d): d is DocNode => !!d);
-    const idx = siblings.findIndex((d) => d.path === activeDoc.path);
-    if (idx === -1) return { prevSibling: null, nextSibling: null };
+    const { prevPath, nextPath } = getPrevNextSiblings(index, activeDoc.path);
+    const byPath = new Map(index.docs.map((d) => [d.path, d]));
     return {
-      prevSibling: siblings[idx - 1] ?? null,
-      nextSibling: siblings[idx + 1] ?? null,
+      prevSibling: prevPath ? byPath.get(prevPath) ?? null : null,
+      nextSibling: nextPath ? byPath.get(nextPath) ?? null : null,
     };
   }, [activeDoc, activePath, index]);
 

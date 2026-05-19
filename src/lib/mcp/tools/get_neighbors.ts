@@ -1,5 +1,6 @@
 import { loadVaultIndex } from "./vault";
 import type { DocIndex, DocNode, Link, ToolContext } from "./types";
+import { getPrevNextSiblings } from "@/src/core/siblings";
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -38,28 +39,20 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
     .filter((d) => d.path !== focal.path && !declared.has(d.path) && d.mentions.some((m) => m.toLowerCase() === focalTitleLower))
     .map((d) => ({ path: d.path, title: d.title, summary: d.summary }));
 
-  // Prev/next sibling in the first-declared parent's Parent of order.
-  // Derived from the canonical parent's bullet sequence — no separate
-  // sibling-order edge type required. Both null when focal has no parent,
-  // when the parent isn't found, or when focal isn't in the parent's
-  // Parent of list (the asymmetric-edge lint flags that case separately).
+  // Prev/next sibling — shared helper. Uses the parent's `## Parent of`
+  // bullet order, augmented with any other doc whose primary parent
+  // matches focal's primary parent (catches asymmetric edges where the
+  // child declared `Child of` but the parent didn't reciprocate).
   let prev_sibling: { path: string; title: string; summary: string } | null = null;
   let next_sibling: { path: string; title: string; summary: string } | null = null;
-  const primaryParent = focal.parents[0];
-  if (primaryParent) {
-    const parentDoc = resolve(primaryParent.title);
-    if (parentDoc) {
-      const siblings = parentDoc.children
-        .map((l) => resolve(l.title))
-        .filter((d): d is DocNode => !!d);
-      const idxInSibs = siblings.findIndex((d) => d.path === focal.path);
-      if (idxInSibs !== -1) {
-        const p = siblings[idxInSibs - 1];
-        const n = siblings[idxInSibs + 1];
-        if (p) prev_sibling = { path: p.path, title: p.title, summary: p.summary };
-        if (n) next_sibling = { path: n.path, title: n.title, summary: n.summary };
-      }
-    }
+  const { prevPath, nextPath } = getPrevNextSiblings(idx, focal.path);
+  if (prevPath) {
+    const p = idx.docs.find((d) => d.path === prevPath);
+    if (p) prev_sibling = { path: p.path, title: p.title, summary: p.summary };
+  }
+  if (nextPath) {
+    const n = idx.docs.find((d) => d.path === nextPath);
+    if (n) next_sibling = { path: n.path, title: n.title, summary: n.summary };
   }
 
   return {
