@@ -20,16 +20,18 @@ export interface Props {
 }
 
 // 8 angular slots around the focal at 45° each, starting at 12 o'clock.
-// Slot 0 (12) is reserved for the parent when one exists. Slots 2 (3 o'clock)
-// and 6 (9 o'clock) are reserved for the next and previous siblings — the
-// fixed positions are what makes the prev/next-sibling navigation feel like
-// a rotation: when you click Next, the node at slot 2 becomes the focal and
-// the old focal lands at slot 6 (which is the new focal's prev sibling
-// position), so cytoscape's tween between layouts visually spins the ring.
+// Slot 0 (12) is reserved for the parent when one exists. Slots 1 (~1:30)
+// and 7 (~10:30) hold the next and previous siblings — clustered close to
+// the parent at the top of the ring so the trio reads as "lineage + nav"
+// rather than "lineage + scattered neighbors". The fixed positions are
+// what makes prev/next-sibling navigation feel like a rotation: when you
+// click Next, the slot-1 node becomes the focal and the old focal lands
+// at slot 7 (which is the new focal's prev sibling slot), so cytoscape's
+// tween between layouts visually arcs the ring across the top.
 const SLOT_COUNT = 8;
 const PARENT_SLOT = 0;
-const NEXT_SIBLING_SLOT = 2;
-const PREV_SIBLING_SLOT = 6;
+const NEXT_SIBLING_SLOT = 1;
+const PREV_SIBLING_SLOT = 7;
 const LAYER2_PER_LAYER1 = 2;
 const RADIUS_LAYER1 = 240;
 const RADIUS_LAYER2 = 400;
@@ -56,7 +58,10 @@ interface Neighbor {
 interface PlacedNode {
   id: string;
   label: string;
-  kind: "focal" | "layer1" | "layer2";
+  // "sibling" is the navigational prev/next slot — rendered smaller and
+  // dimmer than "layer1" so the eye reads it as a nav hint, not a primary
+  // relationship. Same category palette, just toned down.
+  kind: "focal" | "layer1" | "sibling" | "layer2";
   category: Category;
   position: { x: number; y: number };
 }
@@ -286,20 +291,20 @@ function placeLayout(
     placed.set(nextSiblingId, {
       id: nextSiblingId,
       label: shortLabel(nextSiblingId),
-      kind: "layer1",
+      kind: "sibling",
       category: categoryFor(nextSiblingId),
       position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
     });
   }
 
-  // Place prev sibling at slot 6 (9 o'clock)
+  // Place prev sibling at slot 7 (~10:30)
   if (prevSiblingId) {
     const angle = angleForSlot(PREV_SIBLING_SLOT);
     layer1AnglesById.set(prevSiblingId, angle);
     placed.set(prevSiblingId, {
       id: prevSiblingId,
       label: shortLabel(prevSiblingId),
-      kind: "layer1",
+      kind: "sibling",
       category: categoryFor(prevSiblingId),
       position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
     });
@@ -591,6 +596,21 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
             width: 36,
             height: 36,
             "font-size": 12,
+          },
+        },
+        // "sibling" — prev/next nav hint. Same category family colors, but
+        // smaller and softer so it reads as auxiliary, not as a child or
+        // associate of the focal.
+        {
+          selector: "node[kind = 'sibling']",
+          style: {
+            width: 28,
+            height: 28,
+            "font-size": 11,
+            "border-width": 1.5,
+            "border-style": "dashed",
+            opacity: 0.7,
+            color: "#6b7280",
           },
         },
         {
