@@ -25,6 +25,17 @@ interface InvitationRow {
 
 type Recipient = ShareRow | InvitationRow;
 
+interface Publication {
+  id: string;
+  slug: string;
+  handle: string | null;
+  url: string | null;
+  include_descendants: boolean;
+  include_direct_associates: boolean;
+  included_count: number;
+  updated_at: string;
+}
+
 interface Props {
   path: string;
   title: string;
@@ -32,6 +43,15 @@ interface Props {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[—–]/g, "-")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+}
 
 export function ShareModal({ path, title, onClose }: Props) {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -45,22 +65,39 @@ export function ShareModal({ path, title, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lookupSeq = useRef(0);
 
-  // Load current shares + history-based autocomplete pool once on open.
-  useEffect(() => {
-    (async () => {
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/share?path=${encodeURIComponent(path)}`).then((r) => r.json()),
-        fetch(`/api/share/suggestions`).then((r) => r.json()),
-      ]);
-      const shares: Recipient[] = (r1.shares ?? []).concat(r1.invitations ?? []);
-      setRecipients(shares);
-      setSuggestions(r2.emails ?? []);
-    })().catch(() => {});
+  // Public-share state. `publication` mirrors the current row (null when not
+  // published). `slugDraft` lets the owner edit the slug before the first
+  // publish; once published, it locks (changing slug = unpublish + republish).
+  const [publication, setPublication] = useState<Publication | null>(null);
+  const [ownerHandle, setOwnerHandle] = useState<string | null>(null);
+  const [slugDraft, setSlugDraft] = useState(slugify(title));
+  const [includeDescendants, setIncludeDescendants] = useState(true);
+  const [includeAssociates, setIncludeAssociates] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publicError, setPublicError] = useState<string | null>(null);
+
+  const refreshShares = useCallback(async () => {
+    const data = await fetch(`/api/share?path=${encodeURIComponent(path)}`).then((r) => r.json());
+    setRecipients((data.shares ?? []).concat(data.invitations ?? []));
+    setPublication(data.publication ?? null);
+    setOwnerHandle(data.owner_handle ?? null);
+    if (data.publication) {
+      setSlugDraft(data.publication.slug);
+      setIncludeDescendants(data.publication.include_descendants);
+      setIncludeAssociates(data.publication.include_direct_associates);
+    }
   }, [path]);
 
-  // Lookup whether the typed string is a registered user (only when it
-  // looks like a complete email). Debounced; each fire bumps a sequence
-  // so stale responses can't overwrite a newer state.
+  useEffect(() => {
+    (async () => {
+      const [, sugg] = await Promise.all([
+        refreshShares(),
+        fetch(`/api/share/suggestions`).then((r) => r.json()),
+      ]);
+      setSuggestions(sugg.emails ?? []);
+    })().catch(() => {});
+  }, [refreshShares]);
+
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!EMAIL_RE.test(q)) {
@@ -86,9 +123,6 @@ export function ShareModal({ path, title, onClose }: Props) {
     return set;
   }, [recipients]);
 
-  // Per spec: autocomplete only surfaces previously-invited contacts whose
-  // email starts with the typed prefix. If trimmed is empty, no list (we
-  // only suggest while the user is actively typing).
   const visibleSuggestions = useMemo(() => {
     if (!trimmed) return [] as string[];
     return suggestions
@@ -96,15 +130,13 @@ export function ShareModal({ path, title, onClose }: Props) {
       .slice(0, 5);
   }, [trimmed, suggestions, alreadySharedEmails]);
 
-  // Reset suggestion highlight whenever the visible list changes.
   useEffect(() => { setHighlightIdx(0); }, [visibleSuggestions.length, query]);
+
+  const isPublic = !!publication;
 
   const isCompleteEmail = EMAIL_RE.test(trimmed);
   const isRegisteredUser = isCompleteEmail && exactMatchEmail !== null;
   const isSelfOrDuplicate = alreadySharedEmails.has(trimmed);
-  // Three submit modes: pick a suggestion (existing-user share), share with
-  // an exact-match registered user, or invite a non-user. The "invite"
-  // affordance only appears once the input is a well-formed email.
   const canSubmit = !busy && !isSelfOrDuplicate && (isRegisteredUser || (isCompleteEmail && !isRegisteredUser));
 
   const submitEmail = useCallback(async (emailArg?: string) => {
@@ -113,21 +145,18 @@ export function ShareModal({ path, title, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
+      const effectivePermission = isPublic ? "write" : permission;
       const res = await fetch("/api/share", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path, email, permission }),
+        body: JSON.stringify({ path, email, permission: effectivePermission }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "failed");
         return;
       }
-      // Optimistic refresh — fetch the canonical list so the new row appears
-      // with its server-assigned id/created_at.
-      const r1 = await fetch(`/api/share?path=${encodeURIComponent(path)}`).then((r) => r.json());
-      setRecipients((r1.shares ?? []).concat(r1.invitations ?? []));
-      // Add to local suggestions pool so the next typing session can autocomplete it.
+      await refreshShares();
       setSuggestions((s) => Array.from(new Set([...s, email])).sort());
       setQuery("");
       setExactMatchEmail(null);
@@ -137,7 +166,7 @@ export function ShareModal({ path, title, onClose }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [path, permission, trimmed]);
+  }, [path, permission, trimmed, isPublic, refreshShares]);
 
   const revoke = useCallback(async (r: Recipient) => {
     const kind = r.kind === "invitation" ? "invitation" : "share";
@@ -166,7 +195,6 @@ export function ShareModal({ path, title, onClose }: Props) {
     }
   }, [visibleSuggestions, highlightIdx, canSubmit, submitEmail]);
 
-  // What the action button says in each of the three modes.
   const submitLabel = (() => {
     if (busy) return "Sharing…";
     if (!trimmed) return "Share";
@@ -175,16 +203,163 @@ export function ShareModal({ path, title, onClose }: Props) {
     return "Share";
   })();
 
+  const enablePublic = useCallback(async () => {
+    setPublishBusy(true);
+    setPublicError(null);
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          slug: slugDraft,
+          root_doc_path: path,
+          include_descendants: includeDescendants,
+          include_direct_associates: includeAssociates,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setPublicError(data.error ?? "publish failed");
+        return;
+      }
+      await refreshShares();
+    } catch (e) {
+      setPublicError((e as Error).message);
+    } finally {
+      setPublishBusy(false);
+    }
+  }, [slugDraft, path, includeDescendants, includeAssociates, refreshShares]);
+
+  const disablePublic = useCallback(async () => {
+    if (!publication) return;
+    if (!confirm("Stop sharing publicly? The link will return 404 immediately.")) return;
+    setPublishBusy(true);
+    setPublicError(null);
+    try {
+      const res = await fetch(`/api/publish?id=${encodeURIComponent(publication.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setPublicError(data.error ?? "unpublish failed");
+        return;
+      }
+      await refreshShares();
+    } catch (e) {
+      setPublicError((e as Error).message);
+    } finally {
+      setPublishBusy(false);
+    }
+  }, [publication, refreshShares]);
+
+  const publicUrl = useMemo(() => {
+    if (!publication?.url) return null;
+    if (typeof window === "undefined") return publication.url;
+    return `${window.location.origin}${publication.url}`;
+  }, [publication]);
+
+  const handleMissing = !ownerHandle;
+
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal share-modal" role="dialog" aria-modal="true">
         <p className="modal-title">Share</p>
         <p className="modal-subtitle">
-          Share <strong>{title}</strong> with others by email.
+          Share <strong>{title}</strong> with others by email, or open it to the public web.
         </p>
 
+        {/* Public-share toggle block */}
+        <div className={`share-public ${isPublic ? "is-on" : ""}`}>
+          <div className="share-public-head">
+            <div className="share-public-text">
+              <div className="share-public-title">Share to public</div>
+              <div className="share-public-sub">
+                {isPublic
+                  ? "Anyone with the link can read. Search engines may index it."
+                  : "Off — only people you add by email can access."}
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`share-toggle ${isPublic ? "on" : ""}`}
+              role="switch"
+              aria-checked={isPublic}
+              disabled={publishBusy || handleMissing}
+              onClick={() => (isPublic ? disablePublic() : enablePublic())}
+            >
+              <span className="share-toggle-knob" />
+            </button>
+          </div>
+
+          {handleMissing && !isPublic && (
+            <div className="share-public-error">
+              Set a handle on your profile to enable public sharing.
+            </div>
+          )}
+
+          {!isPublic && !handleMissing && (
+            <div className="share-public-config">
+              <label className="share-public-field">
+                <span>URL slug</span>
+                <div className="share-public-slug-row">
+                  <span className="share-public-slug-prefix">/share/{ownerHandle}/</span>
+                  <input
+                    type="text"
+                    value={slugDraft}
+                    onChange={(e) => setSlugDraft(slugify(e.target.value))}
+                    placeholder="my-notes"
+                    disabled={publishBusy}
+                  />
+                </div>
+              </label>
+              <label className="share-public-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeDescendants}
+                  onChange={(e) => setIncludeDescendants(e.target.checked)}
+                  disabled={publishBusy}
+                />
+                <span>Include all descendants (children, grandchildren, &hellip;)</span>
+              </label>
+              <label className="share-public-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeAssociates}
+                  onChange={(e) => setIncludeAssociates(e.target.checked)}
+                  disabled={publishBusy}
+                />
+                <span>Include direct associates (one hop)</span>
+              </label>
+            </div>
+          )}
+
+          {isPublic && publication && publicUrl && (
+            <div className="share-public-live">
+              <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="share-public-url">
+                {publicUrl}
+              </a>
+              <button
+                type="button"
+                className="share-public-copy"
+                onClick={() => navigator.clipboard.writeText(publicUrl)}
+              >
+                Copy
+              </button>
+              <div className="share-public-meta">
+                {publication.included_count} doc{publication.included_count === 1 ? "" : "s"} ·
+                {publication.include_descendants ? " descendants" : " root only"}
+                {publication.include_direct_associates && " · associates"}
+              </div>
+            </div>
+          )}
+
+          {publicError && <div className="share-public-error">{publicError}</div>}
+        </div>
+
         <div className="modal-field share-input-wrap">
-          <label className="modal-label" htmlFor="share-email">Add people</label>
+          <label className="modal-label" htmlFor="share-email">
+            {isPublic ? "Add people who can edit" : "Add people"}
+          </label>
           <div className="share-input-row">
             <input
               id="share-email"
@@ -198,15 +373,21 @@ export function ShareModal({ path, title, onClose }: Props) {
               onKeyDown={onKeyDown}
               autoFocus
             />
-            <select
-              className="share-permission"
-              value={permission}
-              onChange={(e) => setPermission(e.target.value as "read" | "write")}
-              aria-label="Permission"
-            >
-              <option value="read">Read</option>
-              <option value="write">Write</option>
-            </select>
+            {isPublic ? (
+              <span className="share-permission-locked" title="Public read is already granted by the link">
+                Write
+              </span>
+            ) : (
+              <select
+                className="share-permission"
+                value={permission}
+                onChange={(e) => setPermission(e.target.value as "read" | "write")}
+                aria-label="Permission"
+              >
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+              </select>
+            )}
           </div>
 
           {visibleSuggestions.length > 0 && (
@@ -233,7 +414,7 @@ export function ShareModal({ path, title, onClose }: Props) {
               {isSelfOrDuplicate ? (
                 <span className="share-hint-error">Already shared with {trimmed}</span>
               ) : isRegisteredUser ? (
-                <span>↩ Press Enter to share with <strong>{trimmed}</strong> (registered user)</span>
+                <span>↩ Press Enter to {isPublic ? "give write access to" : "share with"} <strong>{trimmed}</strong></span>
               ) : isCompleteEmail ? (
                 <span>↩ Press Enter to invite <strong>{trimmed}</strong></span>
               ) : (

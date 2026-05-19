@@ -4,8 +4,6 @@ import { useClerk, useUser } from "@clerk/nextjs";
 import { GraphView } from "./GraphView";
 import { DocEditor } from "./DocEditor";
 import { ShareModal } from "./ShareModal";
-import { PublishModal } from "./PublishModal";
-import { PublicationsModal } from "./PublicationsModal";
 import type { DocIndex, DocNode } from "@/src/core/indexer";
 import { getPrevNextSiblings } from "@/src/core/siblings";
 import { useDocsChanged } from "./useDocsChanged";
@@ -286,8 +284,6 @@ export function App({ namespace }: { namespace: string }) {
   const [deleteCtx, setDeleteCtx] = useState<GraphModalContext | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [shareCtx, setShareCtx] = useState<GraphModalContext | null>(null);
-  const [publishCtx, setPublishCtx] = useState<GraphModalContext | null>(null);
-  const [showPublications, setShowPublications] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [sharedDocs, setSharedDocs] = useState<SharedDoc[]>([]);
   const [renameCtx, setRenameCtx] = useState<GraphModalContext | null>(null);
@@ -729,10 +725,6 @@ export function App({ namespace }: { namespace: string }) {
     setShareCtx({ focalPath, focalTitle });
   }, []);
 
-  const openPublishNode = useCallback((focalPath: string, focalTitle: string) => {
-    setPublishCtx({ focalPath, focalTitle });
-  }, []);
-
   const openRenameNode = useCallback((focalPath: string, focalTitle: string) => {
     setRenameCtx({ focalPath, focalTitle });
     setRenameTitle(focalTitle);
@@ -1078,19 +1070,6 @@ export function App({ namespace }: { namespace: string }) {
             onToggle={toggleCollapsed}
           />
           <div className="sidebar-footer">
-            {isOwnNamespace && (
-              <button
-                className="sidebar-footer-btn"
-                onClick={() => { setShowPublications(true); setMobileSidebarOpen(false); }}
-                type="button"
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-                  <path d="M2 3.5C2 2.67157 2.67157 2 3.5 2H7L11 6V9.5C11 10.3284 10.3284 11 9.5 11H3.5C2.67157 11 2 10.3284 2 9.5V3.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                  <path d="M7 2V6H11" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                </svg>
-                Publications
-              </button>
-            )}
             {isAdmin && (
               <a
                 className="sidebar-footer-btn"
@@ -1160,7 +1139,6 @@ export function App({ namespace }: { namespace: string }) {
                   onAddAssociation={isOwnNamespace ? openAddAssoc : undefined}
                   onDeleteNode={isOwnNamespace ? openDeleteNode : undefined}
                   onShareNode={isOwnNamespace ? openShareNode : undefined}
-                  onPublishNode={isOwnNamespace ? openPublishNode : undefined}
                   onRenameNode={isOwnNamespace ? openRenameNode : undefined}
                   prevSibling={prevSibling}
                   nextSibling={nextSibling}
@@ -1472,18 +1450,6 @@ export function App({ namespace }: { namespace: string }) {
           onClose={() => { setShareCtx(null); refreshShared(); }}
         />
       )}
-
-      {/* Publish modal — owner-only public share */}
-      {publishCtx && (
-        <PublishModal
-          focalPath={publishCtx.focalPath}
-          focalTitle={publishCtx.focalTitle}
-          onClose={() => setPublishCtx(null)}
-        />
-      )}
-
-      {/* Publications list — owner-side roster of public links */}
-      {showPublications && <PublicationsModal onClose={() => setShowPublications(false)} />}
 
       {/* Conflict resolution modal */}
       {conflictModalOpen && conflicts.length > 0 && (

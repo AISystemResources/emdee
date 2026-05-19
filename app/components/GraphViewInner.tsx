@@ -12,7 +12,6 @@ export interface Props {
   onAddAssociation?: (focalPath: string, focalTitle: string) => void;
   onDeleteNode?: (focalPath: string, focalTitle: string) => void;
   onShareNode?: (focalPath: string, focalTitle: string) => void;
-  onPublishNode?: (focalPath: string, focalTitle: string) => void;
   onRenameNode?: (focalPath: string, focalTitle: string) => void;
   // Prev/next sibling for the active doc — computed in App so the doc-pane
   // toolbar and the graph-pane controls stay in lockstep. When the user
@@ -597,7 +596,7 @@ function syncGraph(
   }
 }
 
-export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode, onPublishNode, onRenameNode, prevSibling, nextSibling }: Props) {
+export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode, onRenameNode, prevSibling, nextSibling }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const focalIdRef = useRef<string | null>(null);
@@ -930,9 +929,6 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
         )}
         {onRenameNode && (
           <button className="btn-action" onClick={() => onRenameNode(focalId!, focalDoc.title)}>Rename</button>
-        )}
-        {onPublishNode && (
-          <button className="btn-action" onClick={() => onPublishNode(focalId!, focalDoc.title)}>Publish</button>
         )}
         <span className="spacer" />
         {onShareNode && (

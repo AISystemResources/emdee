@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   if (!path) return Response.json({ error: "path required" }, { status: 400 });
 
   const admin = adminClient();
-  const [{ data: shares }, { data: invites }] = await Promise.all([
+  const [{ data: shares }, { data: invites }, { data: pub }, { data: profile }] = await Promise.all([
     admin
       .from("doc_shares")
       .select("id, grantee_id, path_prefix, share_root, permission, created_at, grantee:profiles!doc_shares_grantee_id_fkey(email)")
@@ -57,6 +57,17 @@ export async function GET(request: Request) {
       .or(`path_prefix.eq.${path},share_root.eq.${path}`)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
+    admin
+      .from("publications")
+      .select("id, slug, root_doc_path, include_descendants, include_direct_associates, included_paths, created_at, updated_at")
+      .eq("owner_id", userId)
+      .eq("root_doc_path", path)
+      .maybeSingle(),
+    admin
+      .from("profiles")
+      .select("handle")
+      .eq("clerk_id", userId)
+      .maybeSingle(),
   ]);
 
   // Group shares by (grantee_id, group_key) where group_key = share_root if
@@ -86,9 +97,24 @@ export async function GET(request: Request) {
     }
   }
 
+  const publication = pub
+    ? {
+        id: pub.id,
+        slug: pub.slug,
+        handle: profile?.handle ?? null,
+        url: profile?.handle ? `/share/${profile.handle}/${pub.slug}` : null,
+        include_descendants: pub.include_descendants,
+        include_direct_associates: pub.include_direct_associates,
+        included_count: (pub.included_paths ?? []).length,
+        updated_at: pub.updated_at,
+      }
+    : null;
+
   return Response.json({
     shares: Array.from(shareGroups.values()),
     invitations: Array.from(inviteGroups.values()),
+    publication,
+    owner_handle: profile?.handle ?? null,
   });
 }
 
