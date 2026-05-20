@@ -48,12 +48,10 @@ export default async function SharePage({ params }: Params) {
   const isSignedIn = !!userId;
 
   return (
-    <div style={{ height: "100dvh" }}>
-      <PublicShareView
-        publication={payload.publication}
-        index={payload.index}
-        isSignedIn={isSignedIn}
-      />
-    </div>
+    <PublicShareView
+      publication={payload.publication}
+      index={payload.index}
+      isSignedIn={isSignedIn}
+    />
   );
 }

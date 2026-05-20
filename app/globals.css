@@ -1722,319 +1722,6 @@ a.sidebar-footer-btn { text-decoration: none; }
 .btn-sibling-nav:hover:not(:disabled) { background: var(--bg); border-color: var(--accent); color: var(--accent); }
 .btn-sibling-nav:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* ------------------------------------------------------------------ */
-/* Public-share view — /share/<handle>/<slug>. Standalone layout that
-   reuses GraphView + DocEditor but skips the App shell's sidebar tree,
-   edit toolbar, and save pipeline. Sized to the viewport with a flex
-   column: header + body (sidebar / graph / doc). */
-.public-share-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--bg);
-}
-
-.public-share-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  flex-shrink: 0;
-}
-.public-share-brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-.public-share-logo {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  font-size: 13px;
-  color: var(--fg);
-  text-decoration: none;
-}
-.public-share-logo-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.public-share-brand-sep { color: var(--border); }
-.public-share-crumbs {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13.5px;
-  min-width: 0;
-}
-.public-share-owner {
-  color: var(--muted);
-  white-space: nowrap;
-}
-.public-share-crumb-sep { color: var(--border); }
-.public-share-pub {
-  color: var(--fg);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.public-share-cta {
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
-}
-.public-share-cta:hover { background: var(--accent-hover); }
-.public-share-cta:active { transform: translateY(1px); }
-
-.public-share-body {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  min-width: 0;
-}
-
-.public-share-graph-pane {
-  flex: 1.05;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  background:
-    radial-gradient(circle at 30% 20%, rgba(80, 64, 232, 0.04), transparent 55%),
-    radial-gradient(circle at 70% 80%, rgba(80, 64, 232, 0.03), transparent 55%),
-    var(--bg);
-}
-.public-share-graph {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  position: relative;
-}
-.public-share-graph-hint {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 18px;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 11.5px;
-  color: var(--muted);
-  background: var(--panel);
-  flex-shrink: 0;
-}
-.public-share-graph-hint-key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 11px;
-}
-
-.public-share-article {
-  flex: 1.1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  overflow-y: auto;
-}
-.public-share-article-head {
-  padding: 28px 36px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-.public-share-parent-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 500;
-  cursor: pointer;
-  letter-spacing: 0.02em;
-}
-.public-share-parent-link:hover { text-decoration: underline; }
-.public-share-parent-link-muted {
-  color: var(--muted);
-  cursor: default;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 11px;
-}
-.public-share-parent-link-muted:hover { text-decoration: none; }
-.public-share-article-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--fg);
-}
-.public-share-article-body {
-  flex: 1;
-  min-height: 0;
-  padding: 4px 0 0;
-}
-.public-share-article-body .toastui-editor-defaultUI { border: none; }
-.public-share-article-body .toastui-editor-md-preview {
-  padding: 8px 36px 24px !important;
-}
-.public-share-article-body .toastui-editor-contents h1 { font-size: 24px; margin: 28px 0 14px; }
-.public-share-article-body .toastui-editor-contents h2 {
-  font-size: 18px;
-  margin: 32px 0 10px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-subtle);
-  letter-spacing: 0.01em;
-}
-.public-share-article-body .toastui-editor-contents h3 { font-size: 15px; margin: 24px 0 8px; }
-.public-share-article-body .toastui-editor-contents p,
-.public-share-article-body .toastui-editor-contents li {
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--fg);
-}
-.public-share-article-body .toastui-editor-contents blockquote {
-  border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--fg);
-  margin: 14px 0;
-  padding: 10px 14px;
-  border-radius: 0 6px 6px 0;
-  font-style: normal;
-}
-.public-share-article-body .toastui-editor-contents blockquote p { margin: 0; }
-.public-share-article-body .wiki-link {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px dashed var(--accent);
-  font-weight: 500;
-}
-.public-share-article-body .wiki-link:hover { background: var(--accent-soft); }
-
-.public-share-article-nav {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 18px 36px;
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-.public-share-nav-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 12px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 120ms ease, background 120ms ease;
-  min-width: 0;
-}
-.public-share-nav-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
-.public-share-nav-btn-next { align-items: flex-end; text-align: right; }
-.public-share-nav-dir {
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-}
-.public-share-nav-title {
-  font-size: 14px;
-  color: var(--fg);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.public-share-footer-cta {
-  margin: 8px 36px 32px;
-  padding: 18px 20px;
-  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--accent-soft) 60%, white));
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-shrink: 0;
-}
-.public-share-footer-cta-text { flex: 1; min-width: 0; }
-.public-share-footer-cta-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--fg);
-  margin-bottom: 4px;
-}
-.public-share-footer-cta-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-.public-share-footer-cta-btn {
-  flex-shrink: 0;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.public-share-footer-cta-btn:hover { background: var(--accent-hover); }
-
-.public-share-empty {
-  padding: 48px 36px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-@media (max-width: 900px) {
-  .public-share-header { padding: 10px 14px; }
-  .public-share-crumbs { font-size: 12.5px; }
-  .public-share-body { flex-direction: column; }
-  .public-share-graph-pane {
-    flex: none;
-    height: 45vh;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-  .public-share-article-head { padding: 18px 18px 8px; }
-  .public-share-article-title { font-size: 22px; }
-  .public-share-article-body .toastui-editor-md-preview { padding: 8px 18px 20px !important; }
-  .public-share-article-nav { padding: 14px 18px; }
-  .public-share-footer-cta { margin: 6px 18px 24px; flex-direction: column; align-items: stretch; }
-  .public-share-footer-cta-btn { width: 100%; }
-}
 
 /* ------------------------------------------------------------------ */
 /* Publish modal — owner-side. Lives in the graph view's action bar.
@@ -2370,3 +2057,88 @@ a.sidebar-footer-btn { text-decoration: none; }
   .admin-table { font-size: 12px; }
   .admin-table thead th, .admin-table tbody td { padding: 10px 8px; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Public share — /share/<handle>/<slug>. Reuses the App shell (sidebar
+   tree, graph pane, doc pane, mobile drawer) so anonymous viewers see
+   the same UI owners do. Only adds branded sign-up affordances. */
+
+/* Brand block at top of the sidebar where the Claude-Code connect
+   section lives for owners. */
+.public-share-sidebar-brand {
+  padding: 4px 4px 14px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.public-share-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  color: var(--fg);
+  text-decoration: none;
+}
+.public-share-logo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.public-share-sidebar-attrib {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+}
+.public-share-attrib-owner { color: var(--muted); }
+.public-share-attrib-sep { color: var(--border); }
+.public-share-attrib-slug { color: var(--fg); font-weight: 600; }
+.public-share-sidebar-pitch {
+  margin: 10px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.public-share-sidebar-cta {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.public-share-sidebar-cta:hover { background: var(--accent-hover); }
+.public-share-sidebar-foot {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Mobile header CTA pill — replaces the cloud-link icon owners see. */
+.public-share-mobile-cta {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.public-share-mobile-cta:active { background: var(--accent-hover); }
+
+/* On the public share, the .app shell hides the user dropdown / cloud
+   icon since they don't apply to anonymous viewers. */
+.app[data-public-share="true"] .mobile-title { color: var(--fg); text-decoration: none; }

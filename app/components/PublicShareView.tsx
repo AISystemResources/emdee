@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GraphView } from "./GraphView";
 import { DocEditor } from "./DocEditor";
+import { DocTree, buildDocTree } from "./DocTree";
 import type { DocIndex, DocNode } from "@/src/core/indexer";
+import { getPrevNextSiblings } from "@/src/core/siblings";
 
 interface Publication {
   id: string;
@@ -19,23 +21,46 @@ interface Props {
   isSignedIn: boolean;
 }
 
+/**
+ * Anonymous read view of a published subtree, rendered with the same App
+ * shell the owner sees: sidebar tree, graph pane, doc pane, mobile drawer.
+ * No edit / share / delete callbacks are wired up, so the graph action
+ * bar shows nothing and the doc editor stays in read-only rendered mode.
+ *
+ * Sign-up CTAs surface in (a) the sidebar header where the Claude Code
+ * connect block sits for owners, and (b) the mobile header top-right.
+ */
 export function PublicShareView({ publication, index, isSignedIn }: Props) {
   const [activePath, setActivePath] = useState<string>(publication.root_doc_path);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileDrawerState, setMobileDrawerState] = useState<"closed" | "peek" | "full">("closed");
   const viewLoggedRef = useRef(false);
 
-  const byTitle = useMemo(() => {
-    const m = new Map<string, DocNode>();
-    for (const d of index.docs) m.set(d.title.toLowerCase(), d);
-    return m;
-  }, [index]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px), (orientation: portrait) and (max-width: 1024px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const docTree = useMemo(() => buildDocTree(index), [index]);
   const byPath = useMemo(() => {
     const m = new Map<string, DocNode>();
     for (const d of index.docs) m.set(d.path, d);
     return m;
   }, [index]);
+  const byTitle = useMemo(() => {
+    const m = new Map<string, DocNode>();
+    for (const d of index.docs) m.set(d.title.toLowerCase(), d);
+    return m;
+  }, [index]);
 
   const activeDoc = byPath.get(activePath) ?? null;
-  const rootDoc = byPath.get(publication.root_doc_path) ?? null;
 
   const logEvent = useCallback(
     (eventType: string, docPath?: string) => {
@@ -62,12 +87,33 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
 
   const selectDoc = useCallback(
     (path: string) => {
-      if (path === activePath) return;
-      setActivePath(path);
-      if (path !== publication.root_doc_path) logEvent("doc_open", path);
+      setActivePath((cur) => {
+        if (cur !== path && path !== publication.root_doc_path) {
+          logEvent("doc_open", path);
+        }
+        return path;
+      });
+      setMobileSidebarOpen(false);
     },
-    [activePath, logEvent, publication.root_doc_path]
+    [logEvent, publication.root_doc_path]
   );
+
+  const onGraphSelect = useCallback(
+    (path: string) => {
+      selectDoc(path);
+      setMobileDrawerState((cur) => (isMobile && cur === "closed" ? "peek" : cur));
+    },
+    [isMobile, selectDoc]
+  );
+
+  const toggleCollapsed = useCallback((path: string) => {
+    setCollapsed((s) => {
+      const next = new Set(s);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const handleWikiLinkClick = useCallback(
     (title: string) => {
@@ -77,27 +123,17 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
     [byTitle, selectDoc]
   );
 
-  const { prevSibling, nextSibling, parentDoc } = useMemo<{
+  const { prevSibling, nextSibling } = useMemo<{
     prevSibling: DocNode | null;
     nextSibling: DocNode | null;
-    parentDoc: DocNode | null;
   }>(() => {
-    if (!activeDoc) return { prevSibling: null, nextSibling: null, parentDoc: null };
-    const primaryParent = activeDoc.parents[0];
-    if (!primaryParent) return { prevSibling: null, nextSibling: null, parentDoc: null };
-    const parent = byTitle.get(primaryParent.title.toLowerCase()) ?? null;
-    if (!parent) return { prevSibling: null, nextSibling: null, parentDoc: null };
-    const siblings = parent.children
-      .map((l) => byTitle.get(l.title.toLowerCase()))
-      .filter((d): d is DocNode => !!d);
-    const idx = siblings.findIndex((d) => d.path === activeDoc.path);
-    if (idx === -1) return { prevSibling: null, nextSibling: null, parentDoc: parent };
+    if (!activeDoc) return { prevSibling: null, nextSibling: null };
+    const { prevPath, nextPath } = getPrevNextSiblings(index, activeDoc.path);
     return {
-      prevSibling: siblings[idx - 1] ?? null,
-      nextSibling: siblings[idx + 1] ?? null,
-      parentDoc: parent,
+      prevSibling: prevPath ? byPath.get(prevPath) ?? null : null,
+      nextSibling: nextPath ? byPath.get(nextPath) ?? null : null,
     };
-  }, [activeDoc, byTitle]);
+  }, [activeDoc, index, byPath]);
 
   const onSignupClick = useCallback(() => {
     logEvent("signup_click");
@@ -111,138 +147,165 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
     );
   }, [logEvent]);
 
-  const rootTitle = rootDoc?.title ?? publication.slug;
-
   return (
-    <div className="public-share-root">
-      <header className="public-share-header">
-        <div className="public-share-brand">
-          <Link href="/" className="public-share-logo" aria-label="EMDEE home">
-            <span className="public-share-logo-dot" />
-            EMDEE
-          </Link>
-          <span className="public-share-brand-sep">·</span>
-          <div className="public-share-crumbs">
-            <span className="public-share-owner">{publication.handle}&rsquo;s vault</span>
-            <span className="public-share-crumb-sep">/</span>
-            <span className="public-share-pub">{rootTitle}</span>
-          </div>
-        </div>
-        <div className="public-share-actions">
-          {isSignedIn ? (
-            <button className="public-share-cta" onClick={onSubscribeClick} type="button">
-              Save to my vault
-            </button>
-          ) : (
-            <button className="public-share-cta" onClick={onSignupClick} type="button">
-              Sign up free
-            </button>
-          )}
-        </div>
+    <div className="app" data-public-share="true">
+      {/* Mobile header — hamburger + brand + sign-up CTA */}
+      <header className="mobile-header">
+        <button
+          className="mobile-hamburger"
+          aria-label="Open sidebar"
+          onClick={() => setMobileSidebarOpen((v) => !v)}
+          type="button"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+        <Link href="/" className="mobile-title">EMDEE</Link>
+        <button
+          className="public-share-mobile-cta"
+          onClick={isSignedIn ? onSubscribeClick : onSignupClick}
+          type="button"
+        >
+          {isSignedIn ? "Save" : "Sign up"}
+        </button>
       </header>
 
-      <div className="public-share-body">
-        <section className="public-share-graph-pane">
-          <div className="public-share-graph">
+      <div
+        className="sidebar-backdrop"
+        data-open={mobileSidebarOpen}
+        onClick={() => setMobileSidebarOpen(false)}
+      />
+
+      <div className="sidebar-wrap" data-open={mobileSidebarOpen}>
+        <aside className="sidebar" data-collapsed={sidebarCollapsed}>
+          {/* Brand block where the Claude-Code connect section lives for owners */}
+          <div className="public-share-sidebar-brand">
+            <Link href="/" className="public-share-logo">
+              <span className="public-share-logo-dot" />
+              EMDEE
+            </Link>
+            <div className="public-share-sidebar-attrib">
+              <span className="public-share-attrib-owner">{publication.handle}</span>
+              <span className="public-share-attrib-sep">/</span>
+              <span className="public-share-attrib-slug">{publication.slug}</span>
+            </div>
+            <p className="public-share-sidebar-pitch">
+              A published knowledge graph. Click any node to read.
+            </p>
+            <button
+              type="button"
+              className="public-share-sidebar-cta"
+              onClick={isSignedIn ? onSubscribeClick : onSignupClick}
+            >
+              {isSignedIn ? "Save to my vault →" : "Get your own vault →"}
+            </button>
+            <p className="public-share-sidebar-foot">
+              {isSignedIn
+                ? "Subscribe to keep this vault visible to your AI."
+                : "Free to sign up. Your notes, your graph, your AI's context."}
+            </p>
+          </div>
+
+          <DocTree
+            nodes={docTree}
+            parentPath={null}
+            parentTitle={null}
+            activePath={activePath}
+            collapsed={collapsed}
+            onSelect={selectDoc}
+            onToggle={toggleCollapsed}
+          />
+        </aside>
+        <button
+          className="sidebar-rail"
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+          type="button"
+        >
+          {sidebarCollapsed ? "›" : "‹"}
+        </button>
+      </div>
+
+      <main className="content">
+        <div
+          className="main-split"
+          data-graph-collapsed={false}
+          data-mobile-drawer={mobileDrawerState}
+          style={{ "--graph-ratio": 0.5 } as React.CSSProperties}
+        >
+          <div className="graph-pane">
             <GraphView
               index={index}
               activePath={activePath}
-              onSelect={selectDoc}
+              onSelect={onGraphSelect}
               prevSibling={prevSibling}
               nextSibling={nextSibling}
             />
           </div>
-          <div className="public-share-graph-hint">
-            <span className="public-share-graph-hint-key">{index.docs.length}</span>
-            <span className="public-share-graph-hint-label">
-              {index.docs.length === 1 ? "note" : "notes"} in this graph · click any to read
-            </span>
-          </div>
-        </section>
+          <div className="split-divider" role="separator" aria-orientation="vertical" />
+          <div className="doc-pane">
+            {/* Mobile drawer header */}
+            <div className="mobile-drawer-header" aria-hidden={!isMobile}>
+              <button
+                type="button"
+                className="mobile-drawer-handle"
+                onClick={() =>
+                  setMobileDrawerState((s) =>
+                    s === "full" ? "peek" : s === "peek" ? "closed" : "closed"
+                  )
+                }
+                aria-label="Lower drawer"
+              >
+                <span className="mobile-drawer-handle-bar" />
+              </button>
+              <div className="mobile-drawer-title">{activeDoc?.title ?? "Doc"}</div>
+              <button
+                type="button"
+                className="mobile-drawer-close"
+                onClick={() => setMobileDrawerState("closed")}
+                aria-label="Close drawer"
+              >
+                ×
+              </button>
+            </div>
 
-        <article className="public-share-article">
-          {activeDoc ? (
-            <>
-              <div className="public-share-article-head">
-                {parentDoc && parentDoc.path !== activeDoc.path ? (
-                  <button
-                    type="button"
-                    className="public-share-parent-link"
-                    onClick={() => selectDoc(parentDoc.path)}
-                  >
-                    ← {parentDoc.title}
-                  </button>
-                ) : (
-                  <span className="public-share-parent-link public-share-parent-link-muted">
-                    Published vault
-                  </span>
-                )}
-                <h1 className="public-share-article-title">{activeDoc.title}</h1>
-              </div>
-              <div className="public-share-article-body editor-host">
-                <DocEditor
-                  path={`__public__:${activeDoc.path}`}
-                  initialContent={activeDoc.content}
-                  mode="rendered"
-                  onChange={() => {}}
-                  onWikiLinkClick={handleWikiLinkClick}
-                  readOnly
-                />
-              </div>
-              {(prevSibling || nextSibling) && (
-                <nav className="public-share-article-nav">
-                  {prevSibling ? (
-                    <button
-                      type="button"
-                      className="public-share-nav-btn"
-                      onClick={() => selectDoc(prevSibling.path)}
-                    >
-                      <span className="public-share-nav-dir">← Previous</span>
-                      <span className="public-share-nav-title">{prevSibling.title}</span>
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  {nextSibling ? (
-                    <button
-                      type="button"
-                      className="public-share-nav-btn public-share-nav-btn-next"
-                      onClick={() => selectDoc(nextSibling.path)}
-                    >
-                      <span className="public-share-nav-dir">Next →</span>
-                      <span className="public-share-nav-title">{nextSibling.title}</span>
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                </nav>
-              )}
-              {!isSignedIn && (
-                <aside className="public-share-footer-cta">
-                  <div className="public-share-footer-cta-text">
-                    <div className="public-share-footer-cta-title">
-                      Your notes deserve a graph like this.
-                    </div>
-                    <div className="public-share-footer-cta-sub">
-                      EMDEE turns your plain markdown into an AI-readable knowledge graph.
-                      Free to start — your notes, your graph, your AI&rsquo;s context.
-                    </div>
+            {activeDoc ? (
+              <>
+                <div className="doc-header">
+                  <div className="doc-header-row">
+                    <div className="doc-header-path">{activeDoc.path}</div>
                   </div>
-                  <button
-                    type="button"
-                    className="public-share-footer-cta-btn"
-                    onClick={onSignupClick}
-                  >
-                    Get your own vault →
-                  </button>
-                </aside>
-              )}
-            </>
-          ) : (
-            <div className="public-share-empty">Pick a node from the graph to start reading.</div>
-          )}
-        </article>
-      </div>
+                </div>
+                <div className="editor-host" data-mode="rendered">
+                  <DocEditor
+                    path={`__public__:${activeDoc.path}`}
+                    initialContent={activeDoc.content}
+                    mode="rendered"
+                    onChange={() => {}}
+                    onWikiLinkClick={handleWikiLinkClick}
+                    readOnly
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="empty">Pick a node from the graph to start reading.</div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Mobile FAB — pulls drawer to full state when closed */}
+      {isMobile && mobileDrawerState === "closed" && activeDoc && (
+        <button
+          type="button"
+          className="mobile-drawer-fab"
+          onClick={() => setMobileDrawerState("full")}
+        >
+          <span className="mobile-drawer-fab-arrow" aria-hidden="true">↑</span>
+          <span className="mobile-drawer-fab-label">{activeDoc.title}</span>
+        </button>
+      )}
     </div>
   );
 }
