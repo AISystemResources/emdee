@@ -365,6 +365,48 @@ body[data-resizing-split="true"] {
   color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* LLM-prompt copy bar — sits directly under the doc toolbar. Lets the
+   owner copy a ready-made "feed this doc to Claude/ChatGPT" prompt that
+   instructs the model to use the EMDEE MCP to load the focal + its
+   neighbors before responding. */
+.llm-prompt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+.llm-prompt-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.llm-prompt-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.llm-prompt-copy:hover { border-color: var(--accent); color: var(--accent); }
+.llm-prompt-copy[data-copied="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .toolbar .doc-path {
   font-size: 11px;
   color: var(--muted);
