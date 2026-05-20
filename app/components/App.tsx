@@ -546,6 +546,18 @@ export function App({ namespace }: { namespace: string }) {
       });
       if (!res.ok) throw new Error(await res.text());
       setSaveState("saved");
+      // Splice the new content into the local index so navigating away
+      // and back doesn't show stale (pre-edit) content. Derived fields
+      // (parents/children/edges) update on the next loadIndex sync via
+      // useDocsChanged; that's acceptable lag — the editor stays correct.
+      setIndex((cur) =>
+        cur
+          ? {
+              ...cur,
+              docs: cur.docs.map((d) => (d.path === path ? { ...d, content } : d)),
+            }
+          : cur
+      );
       if (shouldLog && previousContent !== undefined && previousContent !== content) {
         const title = indexRef.current?.docs.find(d => d.path === path)?.title ?? path;
         docLog.push({ path, title, action: "edit", previousContent });
@@ -718,22 +730,35 @@ export function App({ namespace }: { namespace: string }) {
     if (match) selectDoc(match.path);
   }, [index, selectDoc]);
 
-  // PDF export — flip to rendered mode, tag <body> so print CSS scopes
-  // the print view to just the doc preview, then trigger the browser's
-  // Save as PDF dialog. No new deps; the user picks the destination.
-  const exportPdf = useCallback(() => {
+  // PDF export — flips to rendered mode, captures the markdown preview
+  // DOM via html2pdf.js, and triggers a direct download of "<title>.pdf".
+  // No browser print dialog. Dynamic import keeps the ~200KB lib out of
+  // the initial bundle; only loaded when the user hits Export.
+  const exportPdf = useCallback(async () => {
     if (!activeDoc) return;
     setDocMode("rendered");
-    setTimeout(() => {
-      document.body.classList.add("printing-doc");
-      window.print();
-      // afterprint fires once the dialog closes (cancel or save).
-      const cleanup = () => {
-        document.body.classList.remove("printing-doc");
-        window.removeEventListener("afterprint", cleanup);
-      };
-      window.addEventListener("afterprint", cleanup);
-    }, 120);
+    // Wait a frame for the editor to re-layout in rendered mode.
+    await new Promise((r) => setTimeout(r, 150));
+    const previewEl = document.querySelector<HTMLElement>(".toastui-editor-md-preview");
+    if (!previewEl) return;
+    const safeFilename =
+      (activeDoc.title || "doc").replace(/[/\\:*?"<>|]/g, "_").trim() || "doc";
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      await html2pdf()
+        .set({
+          margin: [12, 14, 14, 14],
+          filename: `${safeFilename}.pdf`,
+          image: { type: "jpeg", quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(previewEl)
+        .save();
+    } catch (e) {
+      console.error("PDF export failed:", e);
+    }
   }, [activeDoc]);
 
   const handleEdit = useCallback((next: string) => {
