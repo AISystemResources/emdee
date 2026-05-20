@@ -669,14 +669,18 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
   // Mount cytoscape once
   useEffect(() => {
     if (!ref.current) return;
+    // Touch devices: let cytoscape's built-in pinch-zoom run natively
+    // (two-finger pinch zooms, one-finger drag pans). Desktop pointers:
+    // keep it disabled so our custom wheel listener (below) can split
+    // trackpad pinch from two-finger scroll by inspecting ctrlKey.
+    const isTouch = typeof window !== "undefined"
+      && window.matchMedia("(pointer: coarse)").matches;
     const cy = cytoscape({
       container: ref.current,
       elements: [],
       maxZoom: 4,
       minZoom: 0.15,
-      // Disable Cytoscape's built-in wheel-zoom so our wheel listener (below)
-      // can split trackpad scrolls (pan) from pinches (zoom) by ctrlKey.
-      userZoomingEnabled: false,
+      userZoomingEnabled: isTouch,
       wheelSensitivity: 0.2,
       style: [
         // --- Nodes: fill + border by category, size by depth (kind) ---
