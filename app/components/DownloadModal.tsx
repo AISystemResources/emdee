@@ -174,13 +174,6 @@ export function DownloadModal({ path, title, index, onClose }: Props) {
     return m;
   }, [index]);
 
-  const titleByPath = useMemo(() => {
-    const m = new Map<string, string>();
-    if (!index) return m;
-    for (const d of index.docs) m.set(d.path, d.title);
-    return m;
-  }, [index]);
-
   const onDownload = async () => {
     if (!index || selectedPaths.size === 0) return;
     setBusy(true);
@@ -207,7 +200,6 @@ export function DownloadModal({ path, title, index, onClose }: Props) {
         }
         if (added === 0) throw new Error("No content available to download.");
       } else {
-        const { marked } = await import("marked");
         const html2pdf = (await import("html2pdf.js")).default;
         const stage = createPdfStage();
         try {
@@ -215,9 +207,10 @@ export function DownloadModal({ path, title, index, onClose }: Props) {
           for (const p of sorted) {
             const content = contentByPath.get(p);
             if (typeof content !== "string") continue;
-            const docTitle = titleByPath.get(p) ?? p;
-            const bodyHtml = await marked.parse(content, { async: true });
-            stage.innerHTML = `<h1 style="margin-top:0">${escapeHtml(docTitle)}</h1>${bodyHtml}`;
+            // Raw markdown rendered verbatim — what's in the .md file
+            // is what lands in the PDF. CJK glyphs fall back to the
+            // browser's system monospace stack.
+            stage.innerHTML = `<pre style="margin:0;white-space:pre-wrap;word-wrap:break-word;font-family:ui-monospace,SFMono-Regular,'SF Mono',Consolas,'Liberation Mono',monospace;font-size:11px;line-height:1.55;">${escapeHtml(content)}</pre>`;
             // Force layout, then wait a frame so html2canvas can read
             // the freshly-rendered dimensions. Without this the canvas
             // captures a zero-height tree → blank PDF page.
