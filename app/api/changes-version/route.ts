@@ -4,13 +4,28 @@ import { getVaultStorage } from "@/src/lib/storage";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+interface DocStamp {
+  path: string;
+  updated_at: string;
+}
+
 /**
- * Lightweight version endpoint for change polling. Returns the max
- * `updated_at` in the namespace as a string. Clients call this every few
- * seconds; when the value changes they reload the full index.
+ * Per-path version endpoint for change polling. Returns
+ * `{ version, docs: [{path, updated_at}, ...] }`.
  *
- * Cheaper than re-listing/reading docs on every poll — `storage.list()`
- * returns timestamps without downloading bodies.
+ * SPRINT-024 Phase 4: previously returned only the namespace-wide max
+ * `updated_at`. Clients then refetched the full index on every change.
+ * The per-path list lets `useDocsChanged` diff the previous Map against
+ * the current one — true zero-op when nothing changed, narrow scope
+ * (changed-paths only) when something did.
+ *
+ * Spec-vs-codebase note: the sprint asked for a push broadcast carrying
+ * `doc_content_hash` per change. The codebase has no per-write push
+ * channel (only a poll); adding `doc_content_hash` here would mean
+ * either fetching every body each poll (defeats listMeta) or a new
+ * vault_files.content_hash column (out of scope). Using `updated_at`
+ * as the change signal + Phase 3's ETag on `/api/doc` as the content
+ * confirmation gives the same end behaviour without those costs.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -20,17 +35,28 @@ export async function GET(request: Request) {
   if (!isLocal && ns !== "public") {
     const { userId } = await auth();
     if (!userId || userId !== ns) {
-      return Response.json({ version: null }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json(
+        { version: null, docs: [] },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
   }
 
   try {
-    // SPRINT-024 Phase 2: listMeta pulls {file_path, updated_at} from the
-    // vault_files cache — no recursive Storage walk, no body bytes.
     const listed = await storage.listMeta(prefix || undefined);
-    const version = listed.reduce((max, f) => (f.updatedAt > max ? f.updatedAt : max), "");
-    return Response.json({ version: version || null }, { headers: { "Cache-Control": "no-store" } });
+    const docs: DocStamp[] = listed.map((f) => ({
+      path: prefix ? f.path.slice(prefix.length) : f.path,
+      updated_at: f.updatedAt,
+    }));
+    const version = docs.reduce((max, d) => (d.updated_at > max ? d.updated_at : max), "");
+    return Response.json(
+      { version: version || null, docs },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch {
-    return Response.json({ version: null }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { version: null, docs: [] },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
