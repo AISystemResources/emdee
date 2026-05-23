@@ -21,7 +21,14 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
   const declaredAssoc = new Map<string, NeighborRef>();
   for (const l of focal.parents) { const n = resolve(l.title); if (n) declaredParents.set(n.path, refFor(n, l.note)); }
   for (const l of focal.children) { const n = resolve(l.title); if (n) declaredChildren.set(n.path, refFor(n, l.note)); }
-  for (const l of focal.associates) { const n = resolve(l.title); if (n) declaredAssoc.set(n.path, refFor(n, l.note)); }
+  for (const l of focal.associates) {
+    const n = resolve(l.title);
+    if (!n) continue;
+    // Hierarchy beats associate — if the target is already a parent or
+    // child of this focal, drop the assoc entry rather than double-listing.
+    if (declaredParents.has(n.path) || declaredChildren.has(n.path)) continue;
+    declaredAssoc.set(n.path, refFor(n, l.note));
+  }
 
   const focalTitleLower = focal.title.toLowerCase();
   const matchesFocal = (l: Link) => l.title.toLowerCase() === focalTitleLower;

@@ -240,6 +240,11 @@ export function buildIndexFromContents(files: { path: string; content: string }[
     edges.push({ from: x, to: y, kind: "assoc" });
   };
 
+  // Pass 1: hierarchy. Pass 2: associates, skipping any pair that's
+  // already linked hierarchically — the hierarchy edge is the canonical
+  // expression of the relationship and duplicating it as an assoc just
+  // double-draws in the graph. lint_doc surfaces the same condition as
+  // `associate_duplicates_hierarchy` so the markdown can be cleaned.
   for (const d of docs) {
     for (const link of d.children) {
       const childPath = resolve(link.title, d.path);
@@ -249,9 +254,13 @@ export function buildIndexFromContents(files: { path: string; content: string }[
       const parentPath = resolve(link.title, d.path);
       if (parentPath) pushHier(parentPath, d.path);
     }
+  }
+  for (const d of docs) {
     for (const link of d.associates) {
       const assocPath = resolve(link.title, d.path);
-      if (assocPath) pushAssoc(d.path, assocPath);
+      if (!assocPath) continue;
+      if (seen.has(`H:${d.path}->${assocPath}`) || seen.has(`H:${assocPath}->${d.path}`)) continue;
+      pushAssoc(d.path, assocPath);
     }
   }
 

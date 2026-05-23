@@ -229,7 +229,14 @@ for (const [ns, docs] of byNs) {
   }
 
   // Associates: two rows per declaration. Dedupe so an A->B declaration
-  // on either side produces exactly one pair (two rows total).
+  // on either side produces exactly one pair (two rows total). Suppress
+  // any pair already linked hierarchically — the hierarchy edge is the
+  // canonical relationship and a duplicated assoc just clutters the graph.
+  const hierPairs = new Set();
+  for (const r of hierMap.values()) {
+    const [lo, hi] = r.from_path < r.to_path ? [r.from_path, r.to_path] : [r.to_path, r.from_path];
+    hierPairs.add(`${lo}::${hi}`);
+  }
   const assocMap = new Map(); // "min::max" -> { a, b, label, position }
   for (const d of docs) {
     const bullets = parseEdges(d.content);
@@ -240,6 +247,7 @@ for (const [ns, docs] of byNs) {
       if (!target || target === d.path) continue;
       const [lo, hi] = d.path < target ? [d.path, target] : [target, d.path];
       const key = `${lo}::${hi}`;
+      if (hierPairs.has(key)) continue;
       if (!assocMap.has(key)) {
         assocMap.set(key, { a: d.path, b: target, label: b.label, position: pos });
         pos++;

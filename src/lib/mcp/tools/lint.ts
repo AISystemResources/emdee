@@ -24,7 +24,8 @@ export interface LintWarning {
     | "inline_mention_without_declared_edge"
     | "multiple_child_of"
     | "asymmetric_parent_edge"
-    | "asymmetric_child_edge";
+    | "asymmetric_child_edge"
+    | "associate_duplicates_hierarchy";
   message: string;
   suggestion: string;
   title?: string;
@@ -206,6 +207,26 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
       suggestion:
         "Add a `> one-line summary` line immediately after the H1, then a blank line, then the body. Keep it to 1–3 sentences.",
     });
+  }
+
+  // Hierarchy beats associate: a target that appears in `## Child of` or
+  // `## Parent of` shouldn't also appear in `## Associated with` for the
+  // same doc — the hierarchy edge already conveys the connection, and
+  // duplicating it as an associate just clutters the graph and the
+  // neighbours list. Suppressed at the edge-building layer; surfaced
+  // here so the user can clean the markdown when convenient.
+  const childOfTitles = titlesByHeading.get("child of") ?? new Set<string>();
+  const parentOfTitles = titlesByHeading.get("parent of") ?? new Set<string>();
+  const assocTitles = titlesByHeading.get("associated with") ?? new Set<string>();
+  for (const t of assocTitles) {
+    if (childOfTitles.has(t) || parentOfTitles.has(t)) {
+      warnings.push({
+        code: "associate_duplicates_hierarchy",
+        message: `\`[[${t}]]\` appears in both \`## Associated with\` and the hierarchy (Child of / Parent of). The hierarchy edge already covers it.`,
+        suggestion: `Remove \`[[${t}]]\` from \`## Associated with\` — the parent/child relationship is the canonical link and the assoc bullet is being suppressed in the graph anyway.`,
+        title: t,
+      });
+    }
   }
 
   if (child_of_count > 1) {
