@@ -1,4 +1,5 @@
 import type { DocIndex, DocNode } from "./indexer";
+import { resolveWikiLink } from "./resolveLink";
 
 /**
  * Resolve the prev / next sibling of a focal doc by walking its first
@@ -18,6 +19,10 @@ import type { DocIndex, DocNode } from "./indexer";
  *
  * Associated-with relationships never participate — siblings are purely a
  * taxonomic concept (same parent in the hierarchy).
+ *
+ * Wiki-link resolution defers to resolveWikiLink, so a bullet like
+ * `[[DAY1]]` is disambiguated by path locality when multiple docs share
+ * a title or slug.
  */
 export function getPrevNextSiblings(
   index: DocIndex,
@@ -28,15 +33,13 @@ export function getPrevNextSiblings(
   const primaryParent = focalDoc.parents[0];
   if (!primaryParent) return { prevPath: null, nextPath: null };
 
-  const byTitle = new Map<string, DocNode>();
-  for (const d of index.docs) byTitle.set(d.title.toLowerCase(), d);
-  const parentDoc = byTitle.get(primaryParent.title.toLowerCase());
+  const parentDoc = resolveWikiLink(index, primaryParent.title, focalPath);
   if (!parentDoc) return { prevPath: null, nextPath: null };
 
   const declared: string[] = [];
   const declaredSet = new Set<string>();
   for (const link of parentDoc.children) {
-    const child = byTitle.get(link.title.toLowerCase());
+    const child = resolveWikiLink(index, link.title, parentDoc.path);
     if (!child || declaredSet.has(child.path)) continue;
     declared.push(child.path);
     declaredSet.add(child.path);
@@ -47,7 +50,7 @@ export function getPrevNextSiblings(
     if (declaredSet.has(d.path)) continue;
     const childPrimary = d.parents[0];
     if (!childPrimary) continue;
-    const cp = byTitle.get(childPrimary.title.toLowerCase());
+    const cp = resolveWikiLink(index, childPrimary.title, d.path);
     if (cp?.path === parentDoc.path) inverse.push(d);
   }
   inverse.sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));

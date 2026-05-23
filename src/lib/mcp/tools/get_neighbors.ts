@@ -1,6 +1,7 @@
 import { loadVaultIndex } from "./vault";
 import type { DocIndex, DocNode, Link, ToolContext } from "./types";
 import { getPrevNextSiblings } from "@/src/core/siblings";
+import { resolveWikiLink } from "@/src/core/resolveLink";
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -10,9 +11,9 @@ interface NeighborRef { path: string; title: string; summary: string; note: stri
 
 function buildNeighbors(idx: DocIndex, focal: DocNode) {
   const byPath = new Map(idx.docs.map((d) => [d.path, d]));
-  const byTitle = new Map<string, DocNode>();
-  for (const d of idx.docs) byTitle.set(d.title.toLowerCase(), d);
-  const resolve = (t: string) => byPath.get(t) ?? byTitle.get(t.toLowerCase());
+  // Locality-aware resolver: bullets like `[[DAY1]]` are disambiguated
+  // by the focal's path when two docs share the title or slug.
+  const resolve = (t: string) => byPath.get(t) ?? resolveWikiLink(idx, t, focal.path);
   const refFor = (n: DocNode, note: string): NeighborRef => ({ path: n.path, title: n.title, summary: n.summary, note });
 
   const declaredParents = new Map<string, NeighborRef>();
