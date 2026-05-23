@@ -13,6 +13,24 @@ import { useDrawerDrag } from "./useDrawerDrag";
 import { useDocsChanged } from "./useDocsChanged";
 import { useDocLog } from "./useDocLog";
 
+interface SharedDocItem {
+  shareId: string;
+  path: string;
+  title: string;
+  content: string;
+}
+
+interface SharedShare {
+  ownerId: string;
+  ownerEmail: string | null;
+  shareRoot: string;
+  permission: "read" | "write";
+  docs: SharedDocItem[];
+  edges: { from: string; to: string }[];
+}
+
+// Flattened view used by the editor — one row per shared doc with the
+// share-level metadata copied in for convenience.
 interface SharedDoc {
   shareId: string;
   ownerId: string;
@@ -24,7 +42,7 @@ interface SharedDoc {
 }
 
 const SHARED_PREFIX = "__shared:";
-const sharedActiveKey = (s: SharedDoc) => `${SHARED_PREFIX}${s.ownerId}:${s.path}`;
+const sharedActiveKey = (ownerId: string, path: string) => `${SHARED_PREFIX}${ownerId}:${path}`;
 
 
 type View = "main" | "log";
@@ -127,7 +145,7 @@ export function App({ namespace }: { namespace: string }) {
   const [shareCtx, setShareCtx] = useState<GraphModalContext | null>(null);
   const [downloadCtx, setDownloadCtx] = useState<GraphModalContext | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [sharedDocs, setSharedDocs] = useState<SharedDoc[]>([]);
+  const [sharedShares, setSharedShares] = useState<SharedShare[]>([]);
   const [renameCtx, setRenameCtx] = useState<GraphModalContext | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [renamePath, setRenamePath] = useState("");
@@ -149,13 +167,13 @@ export function App({ namespace }: { namespace: string }) {
   // disappear without a manual reload.
   const refreshShared = useCallback(() => {
     if (!isOwnNamespace) {
-      setSharedDocs([]);
+      setSharedShares([]);
       return;
     }
     fetch("/api/shared")
       .then((r) => r.json())
-      .then((d) => setSharedDocs(d.docs ?? []))
-      .catch(() => setSharedDocs([]));
+      .then((d) => setSharedShares(d.shares ?? []))
+      .catch(() => setSharedShares([]));
   }, [isOwnNamespace]);
   useEffect(() => { refreshShared(); }, [refreshShared]);
 
@@ -357,10 +375,31 @@ export function App({ namespace }: { namespace: string }) {
     else localEdit.current = false;
   }, [loadIndex]));
 
+  // Flatten shared shares into a per-doc lookup keyed by activation path
+  // (`__shared:<ownerId>:<path>`). Used by activeSharedDoc + the synthetic
+  // doc tree below.
+  const sharedDocsByKey = useMemo<Map<string, SharedDoc>>(() => {
+    const m = new Map<string, SharedDoc>();
+    for (const s of sharedShares) {
+      for (const d of s.docs) {
+        m.set(sharedActiveKey(s.ownerId, d.path), {
+          shareId: d.shareId,
+          ownerId: s.ownerId,
+          ownerEmail: s.ownerEmail,
+          path: d.path,
+          title: d.title,
+          content: d.content,
+          permission: s.permission,
+        });
+      }
+    }
+    return m;
+  }, [sharedShares]);
+
   const activeSharedDoc = useMemo<SharedDoc | null>(() => {
     if (!activePath || !activePath.startsWith(SHARED_PREFIX)) return null;
-    return sharedDocs.find((s) => sharedActiveKey(s) === activePath) ?? null;
-  }, [activePath, sharedDocs]);
+    return sharedDocsByKey.get(activePath) ?? null;
+  }, [activePath, sharedDocsByKey]);
 
   const activeDoc = useMemo<DocNode | null>(() => {
     if (activeSharedDoc) {
@@ -405,26 +444,97 @@ export function App({ namespace }: { namespace: string }) {
 
   // SHARED.md is a real doc seeded into every vault (see
   // scripts/seed-shared-doc.mjs) — the indexer puts it under VAULT
-  // naturally. Here we attach synthetic, read-only children to it
-  // pointing at docs other users have shared in. The children carry the
-  // "__shared:<owner>:<path>" sentinel so the doc pane treats them as
-  // read-only and routes reads to the owner's namespace.
+  // naturally. Here we attach synthetic children to it: one branch per
+  // share group, rooted at the owner's share_root and rebuilding the
+  // owner-side hierarchy from the edges we fetched. Each node carries the
+  // "__shared:<owner>:<path>" sentinel so the doc pane resolves content
+  // from the right owner namespace.
   const docTree = useMemo<TreeNode[]>(() => {
-    if (sharedDocs.length === 0) return rawDocTree;
-    const sharedChildren: TreeNode[] = sharedDocs.map((s) => ({
-      doc: {
-        path: sharedActiveKey(s),
-        title: s.title,
-        content: s.content,
-        summary: "",
-        parents: [],
-        children: [],
-        associates: [],
-        mentions: [],
-      },
-      depth: 0,
-      children: [],
-    }));
+    if (sharedShares.length === 0) return rawDocTree;
+
+    const buildShareTree = (s: SharedShare): TreeNode | null => {
+      const docByPath = new Map(s.docs.map((d) => [d.path, d]));
+      const childrenOf = new Map<string, string[]>();
+      const hasParent = new Set<string>();
+      for (const e of s.edges) {
+        if (!docByPath.has(e.from) || !docByPath.has(e.to)) continue;
+        const arr = childrenOf.get(e.from) ?? [];
+        arr.push(e.to);
+        childrenOf.set(e.from, arr);
+        hasParent.add(e.to);
+      }
+
+      const visited = new Set<string>();
+      const walk = (p: string): TreeNode | null => {
+        if (visited.has(p)) return null;
+        visited.add(p);
+        const d = docByPath.get(p);
+        if (!d) return null;
+        const childPaths = (childrenOf.get(p) ?? []).slice().sort((a, b) => {
+          const ta = docByPath.get(a)?.title ?? a;
+          const tb = docByPath.get(b)?.title ?? b;
+          return ta.localeCompare(tb);
+        });
+        const children = childPaths
+          .map(walk)
+          .filter((n): n is TreeNode => n !== null);
+        return {
+          doc: {
+            path: sharedActiveKey(s.ownerId, d.path),
+            title: d.title,
+            content: d.content,
+            summary: "",
+            parents: [],
+            children: [],
+            associates: [],
+            mentions: [],
+          },
+          depth: 0,
+          children,
+        };
+      };
+
+      // Prefer the declared share root; if it's missing (descendants-only
+      // share), fall back to any doc without a parent within the group.
+      const rootPath = docByPath.has(s.shareRoot)
+        ? s.shareRoot
+        : s.docs.map((d) => d.path).find((p) => !hasParent.has(p)) ?? null;
+      const root = rootPath ? walk(rootPath) : null;
+
+      // Catch any docs the edges didn't cover (asymmetric data) so nothing
+      // silently disappears — they get appended as siblings of the root.
+      const orphans: TreeNode[] = [];
+      for (const d of s.docs) {
+        if (visited.has(d.path)) continue;
+        orphans.push({
+          doc: {
+            path: sharedActiveKey(s.ownerId, d.path),
+            title: d.title,
+            content: d.content,
+            summary: "",
+            parents: [],
+            children: [],
+            associates: [],
+            mentions: [],
+          },
+          depth: 0,
+          children: [],
+        });
+        visited.add(d.path);
+      }
+      if (root) {
+        if (orphans.length > 0) root.children = [...root.children, ...orphans];
+        return root;
+      }
+      // No root at all (degenerate) — fall back to a flat list.
+      return orphans.length > 0
+        ? { ...orphans[0], children: orphans.slice(1) }
+        : null;
+    };
+
+    const sharedChildren = sharedShares
+      .map(buildShareTree)
+      .filter((n): n is TreeNode => n !== null);
 
     const attachToShared = (nodes: TreeNode[]): TreeNode[] | null => {
       for (let i = 0; i < nodes.length; i++) {
@@ -445,7 +555,7 @@ export function App({ namespace }: { namespace: string }) {
     };
 
     return attachToShared(rawDocTree) ?? rawDocTree;
-  }, [rawDocTree, sharedDocs]);
+  }, [rawDocTree, sharedShares]);
 
   // Collapse all parent nodes on first load; leave user-driven toggles alone after that.
   useEffect(() => {
@@ -470,7 +580,7 @@ export function App({ namespace }: { namespace: string }) {
   const sharedExpandedRef = useRef(false);
   useEffect(() => {
     if (sharedExpandedRef.current) return;
-    if (sharedDocs.length === 0) return;
+    if (sharedShares.length === 0) return;
     sharedExpandedRef.current = true;
     const ancestors: string[] = [];
     const findPathTo = (nodes: TreeNode[], targetTitle: string, trail: string[]): string[] | null => {
@@ -490,7 +600,7 @@ export function App({ namespace }: { namespace: string }) {
       for (const p of ancestors) next.delete(p);
       return next;
     });
-  }, [sharedDocs, rawDocTree]);
+  }, [sharedShares, rawDocTree]);
 
   // Sidebar click sets the active path but preserves the current view —
   // in graph view it navigates the graph focus, in doc view it loads the doc.
@@ -542,7 +652,8 @@ export function App({ namespace }: { namespace: string }) {
   const indexRef = useRef<DocIndex | null>(null);
   useEffect(() => { indexRef.current = index; }, [index]);
 
-  const save = useCallback(async (path: string, content: string) => {
+  const save = useCallback(async (path: string, content: string, opts?: { ns?: string; skipIndexUpdate?: boolean }) => {
+    const targetNs = opts?.ns ?? namespace;
     const shouldLog = !loggedInSession.current.has(path);
     const previousContent = shouldLog
       ? (prevContentRef.current.get(path) ?? indexRef.current?.docs.find(d => d.path === path)?.content)
@@ -550,25 +661,35 @@ export function App({ namespace }: { namespace: string }) {
     setSaveState("saving");
     try {
       localEdit.current = true;
-      const res = await fetch(`/api/doc?path=${encodeURIComponent(path)}&ns=${encodeURIComponent(namespace)}`, {
+      const res = await fetch(`/api/doc?path=${encodeURIComponent(path)}&ns=${encodeURIComponent(targetNs)}`, {
         method: "PUT",
         headers: { "content-type": "text/markdown" },
         body: content,
       });
       if (!res.ok) throw new Error(await res.text());
       setSaveState("saved");
-      // Splice the new content into the local index so navigating away
-      // and back doesn't show stale (pre-edit) content. Derived fields
-      // (parents/children/edges) update on the next loadIndex sync via
-      // useDocsChanged; that's acceptable lag — the editor stays correct.
-      setIndex((cur) =>
-        cur
-          ? {
-              ...cur,
-              docs: cur.docs.map((d) => (d.path === path ? { ...d, content } : d)),
-            }
-          : cur
-      );
+      // Splice the new content into local state so navigating away and
+      // back doesn't show stale (pre-edit) content. Shared docs live in
+      // sharedShares (owner namespace, off-vault), everything else in the
+      // user's own index.
+      if (opts?.ns && opts.ns !== namespace) {
+        setSharedShares((cur) =>
+          cur.map((s) =>
+            s.ownerId === opts.ns
+              ? { ...s, docs: s.docs.map((d) => (d.path === path ? { ...d, content } : d)) }
+              : s
+          )
+        );
+      } else {
+        setIndex((cur) =>
+          cur
+            ? {
+                ...cur,
+                docs: cur.docs.map((d) => (d.path === path ? { ...d, content } : d)),
+              }
+            : cur
+        );
+      }
       if (shouldLog && previousContent !== undefined && previousContent !== content) {
         const title = indexRef.current?.docs.find(d => d.path === path)?.title ?? path;
         docLog.push({ path, title, action: "edit", previousContent });
@@ -742,9 +863,13 @@ export function App({ namespace }: { namespace: string }) {
 
   const handleWikiLinkClick = useCallback((title: string) => {
     if (!index) return;
-    const match = resolveWikiLink(index, title);
+    // Pass the currently-viewed doc as the link origin so ambiguous
+    // targets (e.g. two DAY1s in different folders) resolve to the
+    // candidate closest to where the user is reading from.
+    const fromPath = activeSharedDoc?.path ?? activePath ?? undefined;
+    const match = resolveWikiLink(index, title, fromPath);
     if (match) selectDoc(match.path);
-  }, [index, selectDoc]);
+  }, [index, selectDoc, activePath, activeSharedDoc]);
 
   // PDF export — flips to rendered mode, captures the markdown preview
   // DOM via html2pdf.js, and triggers a direct download of "<title>.pdf".
@@ -801,14 +926,23 @@ export function App({ namespace }: { namespace: string }) {
 
   const handleEdit = useCallback((next: string) => {
     if (!activePath) return;
-    // Anything under the SHARED branch (the synthetic root or a per-doc
-    // sentinel) is read-only in MVP — drop save events. (DocEditor also
-    // drops onChange when readOnly is set; this is belt-and-suspenders.)
-    if (activePath.startsWith(SHARED_PREFIX)) return;
+    // Shared-branch writes are routed to the owner's namespace when the
+    // grantee has write permission; read-only shares (and the synthetic
+    // SHARED root itself) drop the save event. (DocEditor also drops
+    // onChange when readOnly is set; this is belt-and-suspenders.)
+    if (activePath.startsWith(SHARED_PREFIX)) {
+      if (!activeSharedDoc || activeSharedDoc.permission !== "write") return;
+      setSaveState("dirty");
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      const ownerNs = activeSharedDoc.ownerId;
+      const ownerPath = activeSharedDoc.path;
+      saveTimer.current = window.setTimeout(() => save(ownerPath, next, { ns: ownerNs }), 600);
+      return;
+    }
     setSaveState("dirty");
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => save(activePath, next), 600);
-  }, [activePath, save]);
+  }, [activePath, save, activeSharedDoc]);
 
   const assocFilteredDocs = useMemo(() => {
     if (!index || !addAssocCtx) return [];
@@ -1096,6 +1230,10 @@ export function App({ namespace }: { namespace: string }) {
               {activeDoc ? (() => {
                 const isSharedView = activePath?.startsWith(SHARED_PREFIX) ?? false;
                 const isSharedDoc = !!activeSharedDoc;
+                // Synthetic SHARED branch nodes (the root and any non-doc
+                // sentinels) have no underlying SharedDoc, so they stay
+                // read-only. Real shared docs honour the granted permission.
+                const isReadOnly = isSharedView && (!activeSharedDoc || activeSharedDoc.permission !== "write");
                 const displayPath = isSharedDoc
                   ? `${activeSharedDoc.ownerEmail ?? activeSharedDoc.ownerId.slice(0, 12)} / ${activeSharedDoc.path}`
                   : activeDoc.path;
@@ -1105,18 +1243,19 @@ export function App({ namespace }: { namespace: string }) {
                       <div className="shared-banner">
                         <span>📎</span>
                         <span>
-                          Shared by <strong>{activeSharedDoc.ownerEmail ?? activeSharedDoc.ownerId.slice(0, 12)}</strong> — read-only
+                          Shared by <strong>{activeSharedDoc.ownerEmail ?? activeSharedDoc.ownerId.slice(0, 12)}</strong>
+                          {activeSharedDoc.permission === "write" ? " — you can edit" : " — read-only"}
                         </span>
                       </div>
                     )}
                     <div className="toolbar">
                       <button onClick={() => setDocMode("rendered")} data-active={docMode === "rendered"}>Rendered</button>
-                      {!isSharedView && (
+                      {!isReadOnly && (
                         <button onClick={() => setDocMode("raw")} data-active={docMode === "raw"}>Raw</button>
                       )}
                       <span className="doc-path">{displayPath}</span>
                       <span className="spacer" />
-                      {!isSharedView && <span className="save-state">{labelFor(saveState)}</span>}
+                      {!isReadOnly && <span className="save-state">{labelFor(saveState)}</span>}
                       <button
                         className="btn-sibling-nav"
                         onClick={() => prevSibling && selectDoc(prevSibling.path)}
@@ -1163,10 +1302,10 @@ export function App({ namespace }: { namespace: string }) {
                       <DocEditor
                         path={isSharedDoc ? `${activeSharedDoc.ownerId}:${activeDoc.path}` : activeDoc.path}
                         initialContent={activeDoc.content}
-                        mode={isSharedView ? "rendered" : docMode}
+                        mode={isReadOnly ? "rendered" : docMode}
                         onChange={handleEdit}
                         onWikiLinkClick={handleWikiLinkClick}
-                        readOnly={isSharedView}
+                        readOnly={isReadOnly}
                       />
                     </div>
                   </>
