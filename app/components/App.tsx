@@ -12,6 +12,7 @@ import { resolveWikiLink } from "@/src/core/resolveLink";
 import { useDrawerDrag } from "./useDrawerDrag";
 import { useDocsChanged } from "./useDocsChanged";
 import { useDocLog } from "./useDocLog";
+import { useMcpActivity, type McpActivityEvent } from "./useMcpActivity";
 
 interface SharedDocItem {
   shareId: string;
@@ -374,6 +375,16 @@ export function App({ namespace }: { namespace: string }) {
     if (!localEdit.current) loadIndex(true);
     else localEdit.current = false;
   }, [loadIndex]));
+
+  // SPRINT-021: live MCP-activity pulse on the graph. Only owners
+  // subscribe — the SSE route returns an empty stream for non-owners
+  // anyway, but skipping the EventSource avoids a needless reconnect
+  // loop on the public-vault view.
+  const [latestActivity, setLatestActivity] = useState<McpActivityEvent | null>(null);
+  const handleActivity = useCallback((e: McpActivityEvent) => {
+    setLatestActivity(e);
+  }, []);
+  useMcpActivity(isOwnNamespace ? namespace : "", handleActivity);
 
   // Flatten shared shares into a per-doc lookup keyed by activation path
   // (`__shared:<ownerId>:<path>`). Used by activeSharedDoc + the synthetic
@@ -1181,6 +1192,7 @@ export function App({ namespace }: { namespace: string }) {
                   onRenameNode={isOwnNamespace ? openRenameNode : undefined}
                   prevSibling={prevSibling}
                   nextSibling={nextSibling}
+                  activityEvent={latestActivity}
                 />
               )}
             </div>

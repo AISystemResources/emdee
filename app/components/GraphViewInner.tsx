@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { DocIndex, DocNode, Edge } from "@/src/core/indexer";
 import { getPrevNextSiblings } from "@/src/core/siblings";
+import type { McpActivityEvent, ActionKind } from "./useMcpActivity";
 
 export interface Props {
   index: DocIndex;
@@ -25,7 +26,24 @@ export interface Props {
   // publication root has no parent in the scoped index but we still want
   // the familiar parent-anchored layout.
   forceBranchLayout?: boolean;
+  // SPRINT-021: most-recent MCP tool-call event. Each new event (by id)
+  // triggers a 2s pulse on the matching node (read=emerald, write=amber,
+  // delete=red, rename=violet, lint/other=slate; search has no focal so
+  // it's a no-op here).
+  activityEvent?: McpActivityEvent | null;
 }
+
+// SPRINT-021: pulse colour ramp by action kind. Matches the spec.
+const PULSE_COLOR: Record<ActionKind, string> = {
+  read:   "#10b981", // emerald
+  write:  "#f59e0b", // amber
+  delete: "#ef4444", // red
+  rename: "#8b5cf6", // violet
+  lint:   "#64748b", // slate
+  other:  "#64748b", // slate
+  search: "#64748b", // unused — search has no focal
+};
+const PULSE_MS = 2000;
 
 // 8 angular slots around the focal at 45° each, numbered ANTICLOCKWISE
 // from 12 o'clock. The numbering mirrors the navigation: slot 1 is "back"
@@ -636,7 +654,7 @@ function syncGraph(
   }
 }
 
-export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode, onDownloadNode, onRenameNode, prevSibling, nextSibling, forceBranchLayout }: Props) {
+export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddAssociation, onDeleteNode, onShareNode, onDownloadNode, onRenameNode, prevSibling, nextSibling, forceBranchLayout, activityEvent }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const focalIdRef = useRef<string | null>(null);
@@ -812,6 +830,20 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
         // DOUBLELEAD under PROJECTS). Rendered behind the rest with z-index,
         // thinner stroke, lower opacity, and no label so they read as
         // hints rather than primary edges.
+        // SPRINT-021 pulse ring: nodes carrying pulseColor data get a
+        // thicker, recoloured border + a soft shadow ring for the 2s
+        // pulse window. The data is removed by the pulse effect's
+        // timeout, restoring the default border style.
+        {
+          selector: "node[pulseColor]",
+          style: {
+            "border-width": 5,
+            "border-color": "data(pulseColor)",
+            "overlay-color": "data(pulseColor)",
+            "overlay-opacity": 0.22,
+            "overlay-padding": 8,
+          },
+        },
         {
           selector: "edge[background]",
           style: {
@@ -894,6 +926,75 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
     if (!cy || !layout) return;
     syncGraph(cy, layout);
   }, [layout]);
+
+  // SPRINT-021: pulse the matching node when a fresh activity event lands.
+  // - Map<docPath, timeoutId> tracks active pulses; a second event on the
+  //   same path within 2s restarts the timer instead of stacking.
+  // - We mutate the node's `pulseColor` data + size via animate(); a
+  //   companion style selector applies the same colour as a border ring.
+  // - Cleanup on unmount cancels every pending timeout.
+  const pulseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const seenEventIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activityEvent) return;
+    if (activityEvent.id === seenEventIdRef.current) return;
+    seenEventIdRef.current = activityEvent.id;
+    const cy = cyRef.current;
+    if (!cy) return;
+    const path = activityEvent.doc_path;
+    if (!path) return; // search/list — no focal node to pulse
+    const node = cy.getElementById(path);
+    if (node.empty()) return; // node isn't in the currently-rendered scope
+    const colour = PULSE_COLOR[activityEvent.action_kind] ?? PULSE_COLOR.other;
+
+    // Cancel any in-flight pulse on this path so we don't stack.
+    const prev = pulseTimersRef.current.get(path);
+    if (prev) clearTimeout(prev);
+
+    node.data("pulseColor", colour);
+    node.data("pulseKind", activityEvent.action_kind);
+    // Stash the original width/height so we can restore on clear. (Each
+    // node kind has its own size — read off live to handle layer1/layer2
+    // differences without hardcoding.)
+    const baseW = Number(node.style("width") ?? 0) || 36;
+    const baseH = Number(node.style("height") ?? 0) || 36;
+    node.stop(true);
+    node.animate(
+      { style: { width: baseW * 1.25, height: baseH * 1.25 } },
+      {
+        duration: PULSE_MS / 2,
+        easing: "ease-out",
+        complete: () => {
+          node.animate(
+            { style: { width: baseW, height: baseH } },
+            { duration: PULSE_MS / 2, easing: "ease-in" },
+          );
+        },
+      },
+    );
+
+    const t = setTimeout(() => {
+      const cyNow = cyRef.current;
+      if (cyNow) {
+        const n = cyNow.getElementById(path);
+        if (!n.empty()) {
+          n.removeData("pulseColor");
+          n.removeData("pulseKind");
+        }
+      }
+      pulseTimersRef.current.delete(path);
+    }, PULSE_MS);
+    pulseTimersRef.current.set(path, t);
+  }, [activityEvent]);
+
+  useEffect(() => {
+    // Drain pending pulse timers on unmount.
+    const timers = pulseTimersRef.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
 
   const focalDoc = focalId ? index.docs.find((d) => d.path === focalId) ?? null : null;
   const totalRotatable = layout?.totalRotatable ?? 0;
