@@ -7,7 +7,7 @@ import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import {
   listDocs, getSummary, getNeighbors, getDoc, search,
   appendSection, patchSection, writeDocPreview, writeDoc, deleteDoc, splitDoc, renameDoc, patchPreamble, appendDoc,
-  lintDoc, distillDoc,
+  lintDoc, distillDoc, materializeSubgroup,
 } from "@/src/lib/mcp/tools/index";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +85,7 @@ Shared docs:
       { name: "split_doc", description: "Atomically refactor a doc into concept nodes. Use when a doc has grown into multiple distinct reusable ideas — extract each into its own node with proper Child of / Parent of sections, then rewrite the source to wiki-link to them. Pre-flight checks block path and H1-title collisions before any writes. Build the extraction plan first (call get_doc to read, then design the new nodes), then call split_doc once to execute.", inputSchema: { type: "object", properties: { source_path: { type: "string" }, rewrite_source_content: { type: "string" }, extracts: { type: "array", items: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } }, required: ["source_path", "rewrite_source_content", "extracts"] } },
       { name: "rename_doc", description: "Rename a doc: rewrite its H1, move it to a new path (default: same directory, filename derived from the new title), and update every `[[old_title]]` wiki-link across the vault to point at the new title. Pre-flight checks block title and path collisions. DESTRUCTIVE — rewrites many docs in one call.", inputSchema: { type: "object", properties: { old_path: { type: "string" }, new_title: { type: "string" }, new_path: { type: "string" } }, required: ["old_path", "new_title"] } },
       { name: "patch_preamble", description: "Replace the body region between the H1 and the first H2 (the blockquote summary + any intro paragraphs). The H1 itself is untouched — use rename_doc to change the title. Version-guarded with expected_content_hash from a recent get_doc.preamble. Use this when load-bearing wiki-links sit in the summary or intro and patch_section can't reach them.", inputSchema: { type: "object", properties: { path: { type: "string" }, body: { type: "string" }, expected_content_hash: { type: "string" } }, required: ["path", "body", "expected_content_hash"] } },
+      { name: "materialize_subgroup", description: "Promote an H3 subgroup inside a doc's `## Parent of` to a real intermediate parent doc. Use when a parent has accumulated too many children and they're already grouped semantically with H3 headings (lint surfaces these as `subgroup_materialization_candidate`). Atomically: creates the new intermediate doc with the subgroup's bullets as its `## Parent of`, replaces the H3 region in the source with a single bullet pointing at the intermediate, and rewires each affected child's `## Child of` from the old parent to the new intermediate. `new_doc_title` defaults to `<source title> — <subgroup heading>`; `new_doc_path` defaults to `<source dir>/<sanitized title>.md`.", inputSchema: { type: "object", properties: { source_path: { type: "string" }, subgroup_heading: { type: "string" }, new_doc_title: { type: "string" }, new_doc_path: { type: "string" }, summary: { type: "string" } }, required: ["source_path", "subgroup_heading"] } },
     ],
   }));
 
@@ -108,6 +109,7 @@ Shared docs:
       case "append_doc":        return await appendDoc(ctx, a) as CallToolResult;
       case "lint_doc":          return await lintDoc(ctx, a) as CallToolResult;
       case "distill_doc":       return await distillDoc(ctx, a) as CallToolResult;
+      case "materialize_subgroup": return await materializeSubgroup(ctx, a) as CallToolResult;
       default: throw new Error(`unknown tool: ${name}`);
     }
   });

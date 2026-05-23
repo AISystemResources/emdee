@@ -236,9 +236,6 @@ function placeLayout(
 
   const all = neighborsOf(index, focalId);
   const parent = all.find((n) => n.role === "parent") ?? null;
-  // Rotatable = children + associates. Siblings are 2-hop and aren't in `all`
-  // (no direct edge focal↔sibling), so no exclusion needed here.
-  const rotatable = all.filter((n) => n.role !== "parent");
 
   const { prevPath, nextPath } = getPrevNextSiblings(index, focalId);
   // Sibling slots only get filled if the sibling actually exists as a doc.
@@ -246,6 +243,18 @@ function placeLayout(
     nextPath && index.docs.some((d) => d.path === nextPath) ? nextPath : null;
   const prevSiblingId =
     prevPath && index.docs.some((d) => d.path === prevPath) ? prevPath : null;
+
+  // Rotatable = children + associates, EXCLUDING anything already claimed
+  // by a sibling slot. Without this, a doc that's both an associate of
+  // the focal AND its prev/next sibling would be placed twice — and the
+  // rotatable pass runs second, overwriting the sibling slot. The
+  // indexer already suppresses sibling↔focal assoc edges so this case
+  // shouldn't fire in practice, but the exclusion is defensive against
+  // any future code path that surfaces an edge into `all`.
+  const siblingIds = new Set<string>();
+  if (nextSiblingId) siblingIds.add(nextSiblingId);
+  if (prevSiblingId) siblingIds.add(prevSiblingId);
+  const rotatable = all.filter((n) => n.role !== "parent" && !siblingIds.has(n.id));
 
   // Rotatable nodes fill a fixed list of slot positions in declared order.
   // With a parent: only the bottom-half slots (lineage slots 0/1/7 stay

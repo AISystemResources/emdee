@@ -9,6 +9,7 @@ export { writeDocPreview } from "./write_doc_preview";
 export { writeDoc } from "./write_doc";
 export { deleteDoc } from "./delete_doc";
 export { splitDoc } from "./split_doc";
+export { materializeSubgroup } from "./materialize_subgroup";
 export { renameDoc } from "./rename_doc";
 export { patchPreamble } from "./patch_preamble";
 export { appendDoc } from "./append_doc";

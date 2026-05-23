@@ -13,10 +13,22 @@
 const FENCE_RE = /^\s*(?:```|~~~)/;
 const H1_RE = /^#\s+(.+?)\s*$/;
 const H2_RE = /^##\s+(.+?)\s*$/;
+const H3_RE = /^###\s+(.+?)\s*$/;
 const BULLET_RE = /^\s*[-*]\s+/;
 const WIKI_LINK_RE = /\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/;
 const DECLARED_EDGE_HEADINGS = new Set(["child of", "parent of", "associated with"]);
 const INLINE_MENTION_THRESHOLD = 3;
+
+// Distillation thresholds. A doc with 4+ H3 sub-sections each carrying
+// substantive content (~150 words = roughly one solid paragraph) is a
+// candidate for split_doc — each H3 is competing to be its own atomic
+// concept node. A `## Parent of` H3 subgroup with 3+ items is a
+// candidate for materialize_subgroup — the user has already done the
+// semantic grouping, we just need to promote it to a real intermediate
+// parent doc.
+const SPLIT_SUBSECTION_MIN_WORDS = 150;
+const SPLIT_SUBSECTION_COUNT_THRESHOLD = 4;
+const SUBGROUP_BULLET_THRESHOLD = 3;
 
 export interface LintWarning {
   code:
@@ -26,12 +38,17 @@ export interface LintWarning {
     | "asymmetric_parent_edge"
     | "asymmetric_child_edge"
     | "associate_duplicates_hierarchy"
-    | "sibling_assoc_redundant";
+    | "sibling_assoc_redundant"
+    | "split_candidate"
+    | "subgroup_materialization_candidate";
   message: string;
   suggestion: string;
   title?: string;
   count?: number;
   asymmetric_target?: string;
+  /** For split_candidate / subgroup_materialization_candidate — the
+   *  subsection/subgroup headings that triggered the warning. */
+  candidates?: string[];
 }
 
 export interface LintInfo {
@@ -181,6 +198,93 @@ function countSections(content: string): number {
   return count;
 }
 
+/**
+ * Collect H3 sub-sections living under non-edge H2s (Notes, free-form
+ * body sections), with a word count of each sub-section's body. Used by
+ * the `split_candidate` rule — H3s carrying substantive content are
+ * effectively atomic concepts waiting to be extracted.
+ */
+function collectSubstantiveSubsections(content: string): Array<{ heading: string; wordCount: number }> {
+  const lines = content.split("\n");
+  const out: Array<{ heading: string; wordCount: number }> = [];
+  let inFence = false;
+  let inEdgeSection = false;
+  let currentH3: { heading: string; words: string[] } | null = null;
+  const flush = () => {
+    if (currentH3) {
+      out.push({ heading: currentH3.heading, wordCount: currentH3.words.filter(Boolean).length });
+      currentH3 = null;
+    }
+  };
+  for (const line of lines) {
+    if (FENCE_RE.test(line)) { inFence = !inFence; continue; }
+    if (inFence) {
+      // Code-fenced content counts toward the word total of the open H3.
+      if (currentH3) currentH3.words.push(...line.split(/\s+/));
+      continue;
+    }
+    const h2 = line.match(H2_RE);
+    if (h2) {
+      flush();
+      inEdgeSection = DECLARED_EDGE_HEADINGS.has(h2[1].trim().toLowerCase());
+      continue;
+    }
+    if (inEdgeSection) continue;
+    const h3 = line.match(H3_RE);
+    if (h3) {
+      flush();
+      currentH3 = { heading: h3[1].trim(), words: [] };
+      continue;
+    }
+    if (currentH3) currentH3.words.push(...line.split(/\s+/));
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Collect H3 subgroups inside the `## Parent of` section, with the
+ * bullet count per subgroup. Used by `subgroup_materialization_candidate`
+ * and (eventually) the `materialize_subgroup` MCP tool.
+ */
+function collectParentOfSubgroups(content: string): Array<{ heading: string; bulletCount: number }> {
+  const lines = content.split("\n");
+  const out: Array<{ heading: string; bulletCount: number }> = [];
+  let inFence = false;
+  let inParentOf = false;
+  let currentSubgroup: { heading: string; bulletCount: number } | null = null;
+  const flush = () => {
+    if (currentSubgroup) {
+      out.push(currentSubgroup);
+      currentSubgroup = null;
+    }
+  };
+  for (const line of lines) {
+    if (FENCE_RE.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const h2 = line.match(H2_RE);
+    if (h2) {
+      flush();
+      inParentOf = h2[1].trim().toLowerCase() === "parent of";
+      continue;
+    }
+    if (!inParentOf) continue;
+    const h3 = line.match(H3_RE);
+    if (h3) {
+      flush();
+      currentSubgroup = { heading: h3[1].trim(), bulletCount: 0 };
+      continue;
+    }
+    if (!currentSubgroup) continue;
+    if (BULLET_RE.test(line)) {
+      const leading = line.replace(BULLET_RE, "").match(WIKI_LINK_RE);
+      if (leading) currentSubgroup.bulletCount++;
+    }
+  }
+  flush();
+  return out;
+}
+
 export function lintDocContent(content: string, ctx?: LintVaultContext): LintResult {
   const noFenceContent = stripFences(content);
 
@@ -266,6 +370,32 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
       suggestion:
         "Keep one parent in `## Child of` (the canonical hierarchy placement) and move the others to `## Associated with` with a short prose note explaining the connection.",
       count: child_of_count,
+    });
+  }
+
+  // Distillation candidates. Detection-only — execution lives in the
+  // split_doc and materialize_subgroup MCP tools, run by a human.
+  const substantiveSubsections = collectSubstantiveSubsections(content)
+    .filter((s) => s.wordCount >= SPLIT_SUBSECTION_MIN_WORDS);
+  if (substantiveSubsections.length >= SPLIT_SUBSECTION_COUNT_THRESHOLD) {
+    warnings.push({
+      code: "split_candidate",
+      message: `This doc has ${substantiveSubsections.length} H3 sub-sections with substantive content (≥${SPLIT_SUBSECTION_MIN_WORDS} words each). Each one is large enough to live as its own atomic concept node.`,
+      suggestion: `Plan an extraction with the \`distill_doc\` MCP, then execute with \`split_doc\`. Each H3 → its own doc, with the source rewritten as a thin index of wiki-links.`,
+      count: substantiveSubsections.length,
+      candidates: substantiveSubsections.map((s) => s.heading),
+    });
+  }
+
+  const subgroups = collectParentOfSubgroups(content);
+  const materializable = subgroups.filter((g) => g.bulletCount >= SUBGROUP_BULLET_THRESHOLD);
+  if (materializable.length > 0) {
+    warnings.push({
+      code: "subgroup_materialization_candidate",
+      message: `\`## Parent of\` contains ${materializable.length} H3 subgroup(s) with ≥${SUBGROUP_BULLET_THRESHOLD} items: ${materializable.map((g) => `"${g.heading}" (${g.bulletCount})`).join(", ")}. Each is large enough to become its own intermediate parent doc.`,
+      suggestion: `Run \`materialize_subgroup\` per subgroup. Each promoted H3 becomes a real intermediate node; its bullets move under it and their \`## Child of\` rewires from this doc to the new intermediate.`,
+      count: materializable.length,
+      candidates: materializable.map((g) => g.heading),
     });
   }
 
