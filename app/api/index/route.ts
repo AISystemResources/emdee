@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { buildIndexFromContents } from "@/src/core/indexer";
+import { buildIndexFromContents, type Edge } from "@/src/core/indexer";
 import { getVaultStorage } from "@/src/lib/storage";
 import type { VaultStorage } from "@/src/lib/storage";
+import { adminClient } from "@/src/lib/supabase/admin";
 import { ensureProfile } from "@/src/lib/supabase/oauth";
 
 export const dynamic = "force-dynamic";
@@ -82,5 +83,44 @@ export async function GET(request: Request) {
   }));
 
   const index = buildIndexFromContents(files);
+
+  // SPRINT-018 Phase 3: in cloud mode, override the indexer's parsed
+  // edges with the materialized doc_edges rows. Same suppression rules
+  // (the backfill + write hooks apply them at insert time), but no
+  // markdown re-parse cost here. Local dev keeps the indexer's edges so
+  // EMDEE_DOCS workflows don't need a database round-trip.
+  if (!isLocal) {
+    const { data: rows, error } = await adminClient()
+      .from("doc_edges")
+      .select("from_path, to_path, kind")
+      .eq("namespace", ns);
+    if (!error && rows) {
+      // Assoc rows are stored once per direction in doc_edges (two rows
+      // per pair); the indexer's Edge[] expects one row per pair with
+      // from < to. Dedupe accordingly so the graph renderer doesn't
+      // double-draw associates.
+      const seen = new Set<string>();
+      const edges: Edge[] = [];
+      for (const r of rows) {
+        const from = r.from_path as string;
+        const to = r.to_path as string;
+        const kind = r.kind as "hierarchy" | "assoc";
+        if (kind === "assoc") {
+          const [lo, hi] = from < to ? [from, to] : [to, from];
+          const key = `A:${lo}::${hi}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ from: lo, to: hi, kind });
+        } else {
+          const key = `H:${from}::${to}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ from, to, kind });
+        }
+      }
+      index.edges = edges;
+    }
+  }
+
   return Response.json(index, NO_STORE);
 }
