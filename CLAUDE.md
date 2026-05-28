@@ -66,22 +66,24 @@ Grounded rules an autonomous agent must never break. Each cites where it comes f
 9. **Stay in the assigned module.** Sprint specs name a single primary module (e.g. `app/components/GraphViewInner.tsx`, `src/core/syncDocEdges.ts`). Don't drift into unrelated areas mid-sprint; if you find a real bug, log it to EMDEE (LEARNINGS or a new sprint stub) and continue the primary task.
 10. **Write to the vault, not the chat.** Anything durable — a decision, a pattern, a hard-won fact — goes into a named doc in EMDEE immediately. Chat is ephemeral. (Source: LEARNINGS H2 *"Write to the vault, not to the chat."*)
 
-### Deploy ceiling
+### Deploy ceiling — feat/* model
 
-**Autonomous agents push to the `agents` branch only.** Vercel ignores it by config (`vercel.json` → `git.deploymentEnabled.agents = false`), so an agent commit cannot reach production until a human reviews + merges `agents → main` (or `agents → dev → main`).
+**Agents work on `feat/<sprint-id>-<slug>` branches, one per sprint, branched from `main` and merged back via PR.** A human is the only path to production.
 
-- **`main`** — production. Auto-deploys to emdee.vercel.app. Human-gated.
-- **`dev`** — optional staging branch. Human-gated.
-- **`agents`** — agent workspace. Vercel-ignored. Agents may push here freely; the deploy ceiling holds because no production traffic ever sees it.
+- **`main`** — production. Auto-deploys to **emdee.vercel.app**, which serves live vaults (Edmund's, Junior's, public). **PR-protected, human-merge only.** No direct pushes — not even by attended agents — except by the repo owner when the user explicitly approves.
+- **`feat/<sprint-id>-<slug>`** — one branch per sprint, branched from `main`. Multiple may exist concurrently. Vercel auto-builds these as **Preview deploys** (unique URL per push, useful for visual QA of graph/UI changes — EMDEE_OS is Cytoscape-heavy). Production is unreachable from feat/* without a PR merge.
+- **No long-lived `agents` branch.** Retired 2026-05-28 in favour of the feat/* model.
+- `vercel.json` carries no `deploymentEnabled` rules — the protection comes from Vercel's "main is the Production branch" project setting + GitHub branch protection on `main`. feat/* automatically gets Preview.
 
-Attended sessions (a human is in the loop, like this one) may still push to `main` directly when the user explicitly asks.
+**Build-minutes tradeoff:** every `feat/*` push triggers a Vercel Preview build. On Vercel's free/Hobby tier this counts against the monthly build-minutes quota. If quota becomes an issue, switch to per-sprint Previews only on PR-open instead of per-push (configure via Vercel project settings → Git → Ignored Build Step).
 
 ## Branch & commit conventions
 
-- **Branches:** `main` (production, Vercel-deployed, human-gated), `dev` (optional staging, human-gated), `agents` (agent workspace, Vercel-ignored via `vercel.json`). `uat` is retired (memory `feedback_git_workflow.md`, 2026-05-14) — do not push to it.
-- **Default agent target: `agents`.** Unattended runs commit + push there. A human reviews and promotes `agents → main` (or `agents → dev → main`) when ready.
-- **Attended sessions** may push to `main` when the user explicitly asks (this session is one such case).
-- **Deploy:** `main` auto-deploys to `emdee.vercel.app` via Vercel (no `.github/workflows/` — Vercel handles CI). `vercel.json` skips `agents`.
+- **Branches:** `main` (production, PR-protected, human-merge only), `feat/<sprint-id>-<slug>` (one per sprint, branched from main, merged back via PR). `uat` and `dev` are retired in the standardised model — do not push to them. (`uat` was retired 2026-05-14; `agents` was retired 2026-05-28.)
+- **Default agent target: `feat/<sprint-id>-<slug>`.** Branch name pattern: `feat/SPRINT-NNN-short-slug` (e.g. `feat/SPRINT-029-density-layout`). One branch per sprint; do not pile multiple sprints into a single feat branch.
+- **Open a PR back to `main` when the sprint is shippable.** The PR is the ceiling — no merge without human review.
+- **No direct pushes to `main`**, attended or not. If branch protection blocks something the user explicitly wants merged, surface it; don't try to circumvent.
+- **Deploy:** `main` auto-deploys to `emdee.vercel.app` via Vercel. `feat/*` auto-deploys as Preview. No `.github/workflows/` — Vercel handles CI.
 - **Commit messages:** present-tense, what + why. Each commit ends with a `Co-Authored-By: <model>` line when authored by an agent (see recent `git log` for the established style).
 - **Commit cadence:** prefer new commits over `--amend`. Per-task atomic commits; multi-file refactors get one bundled commit if cohesive (see SPRINT-027 / SPRINT-028 for the established granularity).
 
@@ -108,7 +110,7 @@ Before any unattended run:
 
 1. **A written spec** at `projects/EMDEE_OS/sprints/SPRINT-NNN.md` with **explicit, testable acceptance criteria** (the SPRINT-028 spec is the current reference for shape: Why / Scope / Locked decisions / Technical breakdown / Acceptance / Risks / Dependencies).
 2. **A single named module** the agent owns for the sprint duration (one file or one cohesive folder).
-3. **Agent commits land on the `agents` branch only** (deploy ceiling — see Branch & commit conventions). Vercel ignores it; humans promote to `main`.
+3. **Agent commits land on `feat/<sprint-id>-<slug>` only** (deploy ceiling — see Branch & commit conventions). PR-to-main is the human gate.
 4. **`projects/EMDEE_OS/INSTRUCTIONS.md` is non-stub** — see TODO in Sprint Workflow.
 
 ### Definition of done (every autonomous iteration)
@@ -181,4 +183,4 @@ docs/                        Local-dev vault (gitignored)
 - [ ] Vault updated in the same commit: BUILD/LOGS/LEARNINGS as appropriate
 - [ ] `git diff --name-only` matches the intent (no accidental drift)
 - [ ] Commit message states what + why; co-author trailer if agent-authored
-- [ ] Pushed to the right branch — `agents` for unattended runs, `main` for attended human-approved commits (see Branch & commit conventions)
+- [ ] Pushed to a `feat/<sprint-id>-<slug>` branch (never directly to `main`); PR opened for human review when shippable (see Branch & commit conventions)
