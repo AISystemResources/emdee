@@ -95,6 +95,100 @@ async function isWritableSharedPath(
 }
 
 /**
+ * SPRINT-032: after a write-permission grantee creates a doc under a
+ * shared subtree, the share API never inserted a doc_shares row for the
+ * new path — so neither the writer nor any other grantee of the share
+ * root sees it. Mirror the cascade by inserting one row per
+ * (grantee, share_root) for the new path, copying each grantee's existing
+ * permission. Read grantees still see (read-only); write grantees can
+ * keep editing. Idempotent — repeat writes upsert to the same rows.
+ *
+ * Best-effort: a failure here is logged by the caller but doesn't fail
+ * the underlying write.
+ */
+async function propagateShareToNewPath(
+  ownerId: string,
+  newPath: string,
+  writerGranteeId: string,
+): Promise<void> {
+  const admin = adminClient();
+
+  // 1. Which ancestor share_roots authorised this write?
+  const parts = newPath.split("/");
+  const candidates: string[] = [];
+  for (let i = parts.length - 1; i > 0; i--) {
+    candidates.push(parts.slice(0, i).join("/") + ".md");
+  }
+  if (candidates.length === 0) return;
+
+  const { data: authRows } = await admin
+    .from("doc_shares")
+    .select("share_root")
+    .eq("owner_id", ownerId)
+    .eq("grantee_id", writerGranteeId)
+    .eq("permission", "write")
+    .in("path_prefix", candidates);
+  if (!authRows || authRows.length === 0) return;
+
+  const shareRoots = [
+    ...new Set(
+      authRows
+        .map((r) => r.share_root as string | null)
+        .filter((s): s is string => !!s),
+    ),
+  ];
+  if (shareRoots.length === 0) return;
+
+  // 2. Every grantee of those share_roots, incl. read-only. Same group,
+  //    same view.
+  const { data: groupRows } = await admin
+    .from("doc_shares")
+    .select("grantee_id, permission, share_root")
+    .eq("owner_id", ownerId)
+    .in("share_root", shareRoots);
+  if (!groupRows || groupRows.length === 0) return;
+
+  // 3. Dedupe by (grantee, share_root). Write beats read for the same
+  //    pair (degenerate case — defensive only).
+  type Insert = {
+    owner_id: string;
+    grantee_id: string;
+    path_prefix: string;
+    permission: "read" | "write";
+    share_root: string;
+  };
+  const byKey = new Map<string, Insert>();
+  for (const r of groupRows) {
+    const grantee = r.grantee_id as string;
+    const share_root = r.share_root as string;
+    const permission = r.permission as "read" | "write";
+    const key = `${grantee}::${share_root}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (permission === "write" && existing.permission === "read") {
+        existing.permission = "write";
+      }
+      continue;
+    }
+    byKey.set(key, {
+      owner_id: ownerId,
+      grantee_id: grantee,
+      path_prefix: newPath,
+      permission,
+      share_root,
+    });
+  }
+
+  const inserts = Array.from(byKey.values());
+  if (inserts.length === 0) return;
+
+  const { error } = await admin
+    .from("doc_shares")
+    .upsert(inserts, { onConflict: "owner_id,path_prefix,grantee_id" });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Per-request memo. SPRINT-024 Phase 2: a single MCP session often issues
  * multiple read tool calls (get_doc → get_neighbors → read_doc_section …)
  * each of which historically re-built the index. The memo collapses those
@@ -195,6 +289,18 @@ export async function writeVaultFile(ctx: ToolContext, rel: string, content: str
       await ctx.storage.write(`${shared.ownerId}/${shared.relPath}`, content);
     } finally {
       invalidateIndexMemo(ctx);
+    }
+    // SPRINT-032: extend share rows to the new path so the writer (and
+    // other grantees of the same share root) actually see it.
+    // Best-effort — a propagation failure is logged but doesn't fail
+    // the underlying write (the doc was created successfully).
+    try {
+      await propagateShareToNewPath(shared.ownerId, shared.relPath, ctx.userId);
+    } catch (e) {
+      console.error(
+        `share propagation failed for ${shared.ownerId}/${shared.relPath}:`,
+        e,
+      );
     }
     return;
   }
