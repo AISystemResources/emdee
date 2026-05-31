@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { buildIndex, buildIndexFromContents, type DocIndex } from "../../../core/indexer";
 import { adminClient } from "../../supabase/admin";
+import { subscribeNamespaceInvalidate } from "../../cache/invalidation";
 import type { ToolContext } from "./types";
 
 /**
@@ -189,20 +190,66 @@ async function propagateShareToNewPath(
 }
 
 /**
- * Per-request memo. SPRINT-024 Phase 2: a single MCP session often issues
- * multiple read tool calls (get_doc → get_neighbors → read_doc_section …)
- * each of which historically re-built the index. The memo collapses those
- * to one bulk read per `ctx`. WeakMap so the entry is GC'd when the
- * session-scoped ToolContext drops out of scope. Invalidated on
- * writeVaultFile / deleteVaultFile so chained read-modify-read flows
- * within one session see fresh content.
+ * SPRINT-035: module-scope `loadVaultIndex` memo. Replaces the per-ctx
+ * WeakMap (which was empty per-request because the MCP HTTP route
+ * allocates a fresh ToolContext per call — see
+ * `app/api/mcp/route.ts:164`), so a single Vercel function instance
+ * shares the computed index across all tool calls within the TTL window.
+ *
+ * Keyed by `(mode, userId | docsDir)` so cross-user requests on the same
+ * function instance don't collide. Invalidated whenever a write to that
+ * namespace publishes through the invalidation hub (which fires from
+ * SupabaseStorage.write / .delete regardless of whether the write
+ * originated from MCP, web, or any other surface).
+ *
+ * TTL bounded so stale reads from silent external mutations (anything
+ * bypassing the storage layer) are visible within one minute.
  */
-const indexMemo = new WeakMap<object, Promise<DocIndex>>();
+interface IndexMemoEntry {
+  promise: Promise<DocIndex>;
+  expiresAt: number;
+}
+const indexMemoByKey = new Map<string, IndexMemoEntry>();
+const INDEX_MEMO_TTL_MS = 60_000;
+
+const indexStats = {
+  hits: 0,
+  misses: 0,
+  invalidations: 0,
+};
+
+function indexMemoKey(ctx: ToolContext): string {
+  return ctx.mode === "local" ? `local:${ctx.docsDir}` : `cloud:${ctx.userId}`;
+}
 
 function invalidateIndexMemo(ctx: ToolContext): void {
-  // ToolContext for "local" is a plain object — WeakMap accepts it; for
-  // "cloud" it's the live object passed from the MCP route handler.
-  indexMemo.delete(ctx as unknown as object);
+  if (indexMemoByKey.delete(indexMemoKey(ctx))) indexStats.invalidations++;
+}
+
+// Subscribe to namespace-level invalidation events published by
+// SupabaseStorage.write / .delete. A write to namespace `X` clears the
+// `cloud:X` memo so the next read sees the fresh state. Cross-namespace
+// shared writes (Sim Yee → Edmund's vault) fire with Edmund's namespace,
+// so Edmund's memo clears even though Sim Yee was the writer.
+subscribeNamespaceInvalidate((namespace) => {
+  if (indexMemoByKey.delete(`cloud:${namespace}`)) indexStats.invalidations++;
+});
+
+export function getIndexMemoStats(): {
+  hits: number;
+  misses: number;
+  invalidations: number;
+  size: number;
+  hitRate: number;
+} {
+  const total = indexStats.hits + indexStats.misses;
+  return {
+    hits: indexStats.hits,
+    misses: indexStats.misses,
+    invalidations: indexStats.invalidations,
+    size: indexMemoByKey.size,
+    hitRate: total === 0 ? 0 : indexStats.hits / total,
+  };
 }
 
 async function buildVaultIndex(ctx: ToolContext): Promise<DocIndex> {
@@ -242,19 +289,23 @@ async function buildVaultIndex(ctx: ToolContext): Promise<DocIndex> {
  * owner's namespace, so the grantee can navigate shared docs by title
  * without leaking back to their own vault.
  *
- * Memoised on `ctx`: see `indexMemo` above.
+ * Memoised at module scope keyed by `(mode, userId)`: see `indexMemoByKey` above.
  */
 export async function loadVaultIndex(ctx: ToolContext): Promise<DocIndex> {
-  const key = ctx as unknown as object;
-  const existing = indexMemo.get(key);
-  if (existing) return existing;
+  const key = indexMemoKey(ctx);
+  const hit = indexMemoByKey.get(key);
+  if (hit && hit.expiresAt > Date.now()) {
+    indexStats.hits++;
+    return hit.promise;
+  }
   const promise = buildVaultIndex(ctx).catch((err) => {
     // Don't cache failures — a transient Supabase blip shouldn't poison
-    // the rest of the session.
-    indexMemo.delete(key);
+    // future calls.
+    indexMemoByKey.delete(key);
     throw err;
   });
-  indexMemo.set(key, promise);
+  indexMemoByKey.set(key, { promise, expiresAt: Date.now() + INDEX_MEMO_TTL_MS });
+  indexStats.misses++;
   return promise;
 }
 

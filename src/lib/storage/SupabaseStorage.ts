@@ -1,10 +1,97 @@
 import { adminClient } from "@/src/lib/supabase/admin";
 import { syncDocEdges, deleteDocEdges } from "@/src/core/syncDocEdges";
 import { bustVaultCache } from "@/src/lib/cache/bust";
+import {
+  publishNamespaceInvalidate,
+  subscribeNamespaceInvalidate,
+} from "@/src/lib/cache/invalidation";
 import type { VaultFile, VaultStorage } from "./VaultStorage";
 
 const BUCKET = "vaults";
 const CACHE_TABLE = "vault_files";
+
+// SPRINT-035: module-scope TTL cache for list / listMeta / listWithContent.
+// Eliminates the storage.search amplification documented in the
+// 2026-05-31 IDEAS investigation. Promise-cached so concurrent misses on
+// the same key dedupe to one underlying call. Writes invalidate via the
+// shared pub/sub hub.
+//
+// Key format: `${method}:${prefix ?? ""}`. Methods: "list", "listMeta",
+// "listWithContent". TTL bounded so silent external mutations are
+// visible within one minute.
+interface ListCacheEntry {
+  promise: Promise<VaultFile[]>;
+  expiresAt: number;
+}
+const listCache = new Map<string, ListCacheEntry>();
+const LIST_CACHE_TTL_MS = 60_000;
+
+const cacheStats = {
+  listHits: 0,
+  listMisses: 0,
+  invalidations: 0,
+};
+
+function namespaceFromKey(key: string): string {
+  // key = `${method}:${prefix}`; prefix = `${ns}/...` or `${ns}` or "".
+  const colon = key.indexOf(":");
+  const prefix = key.slice(colon + 1).replace(/\/$/, "");
+  const slash = prefix.indexOf("/");
+  return slash === -1 ? prefix : prefix.slice(0, slash);
+}
+
+function evictListCacheForNamespace(namespace: string): void {
+  let n = 0;
+  for (const key of listCache.keys()) {
+    if (namespaceFromKey(key) === namespace) {
+      listCache.delete(key);
+      n++;
+    }
+  }
+  cacheStats.invalidations += n;
+}
+
+// Subscribe at module init so any write through any SupabaseStorage
+// instance — or any other namespace-publishing path — clears the cache.
+subscribeNamespaceInvalidate(evictListCacheForNamespace);
+
+async function withListCache(
+  method: string,
+  prefix: string | undefined,
+  slowPath: () => Promise<VaultFile[]>,
+): Promise<VaultFile[]> {
+  const key = `${method}:${prefix ?? ""}`;
+  const hit = listCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) {
+    cacheStats.listHits++;
+    return hit.promise;
+  }
+  const promise = slowPath().catch((e) => {
+    // Don't cache failures — a transient blip shouldn't poison the cache.
+    listCache.delete(key);
+    throw e;
+  });
+  listCache.set(key, { promise, expiresAt: Date.now() + LIST_CACHE_TTL_MS });
+  cacheStats.listMisses++;
+  return promise;
+}
+
+export function getStorageCacheStats(): {
+  hits: number;
+  misses: number;
+  invalidations: number;
+  size: number;
+  hitRate: number;
+} {
+  const total = cacheStats.listHits + cacheStats.listMisses;
+  return {
+    hits: cacheStats.listHits,
+    misses: cacheStats.listMisses,
+    invalidations: cacheStats.invalidations,
+    size: listCache.size,
+    hitRate: total === 0 ? 0 : cacheStats.listHits / total,
+  };
+}
 
 /**
  * Split a full storage path ("user_X/foo/bar.md") into the cache table's
@@ -23,8 +110,10 @@ export class SupabaseStorage implements VaultStorage {
   }
 
   async list(prefix?: string): Promise<VaultFile[]> {
-    const folder = prefix ? prefix.replace(/\/$/, "") : "";
-    return this.walkFolder(folder);
+    return withListCache("list", prefix, async () => {
+      const folder = prefix ? prefix.replace(/\/$/, "") : "";
+      return this.walkFolder(folder);
+    });
   }
 
   /**
@@ -38,22 +127,24 @@ export class SupabaseStorage implements VaultStorage {
    * stamping empty bodies.
    */
   async listMeta(prefix?: string): Promise<VaultFile[]> {
-    const folder = prefix ? prefix.replace(/\/$/, "") : "";
-    if (!folder || folder.includes("/")) {
+    return withListCache("listMeta", prefix, async () => {
+      const folder = prefix ? prefix.replace(/\/$/, "") : "";
+      if (!folder || folder.includes("/")) {
+        return this.walkFolder(folder);
+      }
+      const { data, error } = await adminClient()
+        .from(CACHE_TABLE)
+        .select("file_path, updated_at")
+        .eq("namespace", folder);
+      if (!error && data) {
+        return data.map((r) => ({
+          path: `${folder}/${r.file_path}`,
+          content: "",
+          updatedAt: r.updated_at as string,
+        }));
+      }
       return this.walkFolder(folder);
-    }
-    const { data, error } = await adminClient()
-      .from(CACHE_TABLE)
-      .select("file_path, updated_at")
-      .eq("namespace", folder);
-    if (!error && data) {
-      return data.map((r) => ({
-        path: `${folder}/${r.file_path}`,
-        content: "",
-        updatedAt: r.updated_at as string,
-      }));
-    }
-    return this.walkFolder(folder);
+    });
   }
 
   private async walkFolder(folder: string): Promise<VaultFile[]> {
@@ -85,41 +176,43 @@ export class SupabaseStorage implements VaultStorage {
    * repopulate the cache so subsequent reads are fast.
    */
   async listWithContent(prefix?: string): Promise<VaultFile[]> {
-    const folder = prefix ? prefix.replace(/\/$/, "") : "";
-    // Cache is keyed by namespace; only fast-path when we have one.
-    if (!folder || folder.includes("/")) {
-      return this.bulkReadFromStorage(folder);
-    }
-
-    const admin = adminClient();
-    const { data, error } = await admin
-      .from(CACHE_TABLE)
-      .select("file_path, content, updated_at")
-      .eq("namespace", folder);
-
-    if (!error && data && data.length > 0) {
-      return data.map((r) => ({
-        path: `${folder}/${r.file_path}`,
-        content: r.content,
-        updatedAt: r.updated_at,
-      }));
-    }
-
-    // Cache miss (or error) — pay the slow path once and repopulate.
-    const files = await this.bulkReadFromStorage(folder);
-    if (files.length > 0) {
-      const rows = files
-        .map((f) => {
-          const split = splitNs(f.path);
-          if (!split) return null;
-          return { namespace: split.namespace, file_path: split.file_path, content: f.content };
-        })
-        .filter((r): r is { namespace: string; file_path: string; content: string } => r !== null);
-      if (rows.length > 0) {
-        await admin.from(CACHE_TABLE).upsert(rows, { onConflict: "namespace,file_path" });
+    return withListCache("listWithContent", prefix, async () => {
+      const folder = prefix ? prefix.replace(/\/$/, "") : "";
+      // Postgres-cache is keyed by namespace; only fast-path when we have one.
+      if (!folder || folder.includes("/")) {
+        return this.bulkReadFromStorage(folder);
       }
-    }
-    return files;
+
+      const admin = adminClient();
+      const { data, error } = await admin
+        .from(CACHE_TABLE)
+        .select("file_path, content, updated_at")
+        .eq("namespace", folder);
+
+      if (!error && data && data.length > 0) {
+        return data.map((r) => ({
+          path: `${folder}/${r.file_path}`,
+          content: r.content,
+          updatedAt: r.updated_at,
+        }));
+      }
+
+      // Cache miss (or error) — pay the slow path once and repopulate.
+      const files = await this.bulkReadFromStorage(folder);
+      if (files.length > 0) {
+        const rows = files
+          .map((f) => {
+            const split = splitNs(f.path);
+            if (!split) return null;
+            return { namespace: split.namespace, file_path: split.file_path, content: f.content };
+          })
+          .filter((r): r is { namespace: string; file_path: string; content: string } => r !== null);
+        if (rows.length > 0) {
+          await admin.from(CACHE_TABLE).upsert(rows, { onConflict: "namespace,file_path" });
+        }
+      }
+      return files;
+    });
   }
 
   private async bulkReadFromStorage(folder: string): Promise<VaultFile[]> {
@@ -197,6 +290,11 @@ export class SupabaseStorage implements VaultStorage {
     // Personal namespaces aren't cached (no-store) so this is effectively
     // a no-op for them; for `public` it invalidates the s-maxage tier.
     bustVaultCache(split.namespace, split.file_path);
+
+    // SPRINT-035: clear the in-memory list cache + any subscriber's
+    // namespace memo (e.g. vault.ts loadVaultIndex memo) so subsequent
+    // reads see the write without waiting for TTL.
+    publishNamespaceInvalidate(split.namespace);
   }
 
   async delete(filePath: string): Promise<void> {
@@ -219,6 +317,9 @@ export class SupabaseStorage implements VaultStorage {
 
     // SPRINT-024 Phase 3: see write() for cache busting rationale.
     bustVaultCache(split.namespace, split.file_path);
+
+    // SPRINT-035: see write() — invalidate in-memory caches for this ns.
+    publishNamespaceInvalidate(split.namespace);
   }
 
   async exists(filePath: string): Promise<boolean> {
