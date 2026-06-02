@@ -22,7 +22,15 @@ export interface Props {
 // pseudo-element background-image. There is no `<input type="checkbox">` in
 // the rendered DOM — earlier shaping of this code that looked for input
 // elements was a no-op. We target the `<li>` directly.
-const TASK_RE = /^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/gm;
+//
+// The `(?=[ \t]+\S)` lookahead requires at least one same-line trailing
+// space/tab + a non-whitespace char after `]`. ToastMark only renders a
+// bullet as a task-list-item when it has content after the bracket — a
+// bare `- [ ]` placeholder is rendered as plain "[ ]" text instead. The
+// lookahead aligns the regex with ToastMark's parser so the Nth match in
+// the source matches the Nth `li.task-list-item` in the DOM. Without it,
+// placeholder rows shift the index and clicks toggle the wrong line.
+const TASK_RE = /^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\](?=[ \t]+\S)/gm;
 // Width of the ::before pseudo-element checkbox area (18px image + a small
 // padding buffer) — clicks within this leading slot toggle the task; clicks
 // beyond it on the text are ignored so users can still select / read.
