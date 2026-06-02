@@ -1,6 +1,7 @@
-import { loadVaultIndex } from "./vault";
+import { validatePath, readVaultFile } from "./vault";
 import { extractPreamble } from "./patch_preamble";
 import { parseSections, extractBody, hashBody, sectionId } from "./sections";
+import { deriveTitle, deriveSummary } from "@/src/core/indexer";
 import type { ToolContext } from "./types";
 
 // Re-export sectionId so historic call sites (`import { sectionId } from "./get_doc"`)
@@ -22,34 +23,41 @@ function json(value: unknown) {
  * changed we return `{ unchanged: true, path, doc_content_hash }` and
  * skip the section-parse / preamble work entirely. Cheaper than fetching
  * the doc just to discover nothing moved.
+ *
+ * SPRINT-038 v1: read the file directly via `readVaultFile` instead of
+ * pulling the full vault index. Title + summary are derived locally with
+ * the same primitives the indexer uses, so the response shape is
+ * byte-identical to the prior `loadVaultIndex` path. The cold-start win
+ * is avoiding the `listWithContent` cascade for a known-path lookup.
  */
 export async function getDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
-  const idx = await loadVaultIndex(ctx);
-  const doc = idx.docs.find((d) => d.path === String(args.path));
-  if (!doc) throw new Error(`no such doc: ${args.path}`);
+  const rel = String(args.path);
+  validatePath(rel);
+  const content = await readVaultFile(ctx, rel);
+  if (content === null) throw new Error(`no such doc: ${rel}`);
 
-  const docHash = hashBody(doc.content);
+  const docHash = hashBody(content);
 
   const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : "";
   if (expected && expected === docHash) {
-    return json({ unchanged: true, path: doc.path, doc_content_hash: docHash });
+    return json({ unchanged: true, path: rel, doc_content_hash: docHash });
   }
 
   const full = Boolean(args.full);
-  const sections = parseSections(doc.content).map((s, idx) => ({
+  const sections = parseSections(content).map((s, idx) => ({
     id: sectionId(s.heading, idx),
     heading: s.heading,
-    content_hash: hashBody(extractBody(doc.content, s)),
+    content_hash: hashBody(extractBody(content, s)),
   }));
-  const preamble = extractPreamble(doc.content);
+  const preamble = extractPreamble(content);
   const payload: Record<string, unknown> = {
-    path: doc.path,
-    title: doc.title,
-    summary: doc.summary,
+    path: rel,
+    title: deriveTitle(rel, content),
+    summary: deriveSummary(content),
     doc_content_hash: docHash,
     preamble: preamble ?? undefined,
     sections,
   };
-  if (full) payload.content = doc.content;
+  if (full) payload.content = content;
   return json(payload);
 }

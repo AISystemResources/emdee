@@ -52,7 +52,7 @@ const HEADING = /^(#{1,6})\s+(.+?)\s*$/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
 const BLOCKQUOTE = /^\s*>\s?(.*)$/;
 
-function deriveTitle(rel: string, content: string): string {
+export function deriveTitle(rel: string, content: string): string {
   const heading = content.match(/^#\s+(.+)$/m);
   if (heading) return heading[1].trim();
   return path.basename(rel, ".md");
@@ -73,7 +73,7 @@ function* outsideFences(content: string): IterableIterator<string> {
   }
 }
 
-function deriveSummary(content: string): string {
+export function deriveSummary(content: string): string {
   // First blockquote line that appears after the H1, before the next heading.
   let seenH1 = false;
   for (const line of outsideFences(content)) {
