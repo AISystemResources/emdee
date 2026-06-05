@@ -83,16 +83,32 @@ async function isWritableSharedPath(
   for (let i = parts.length - 1; i > 0; i--) {
     candidates.push(parts.slice(0, i).join("/") + ".md");
   }
-  if (candidates.length === 0) return false;
+  if (candidates.length > 0) {
+    const { data: anc } = await admin
+      .from("doc_shares")
+      .select("path_prefix")
+      .eq("grantee_id", granteeId)
+      .eq("owner_id", ownerId)
+      .eq("permission", "write")
+      .in("path_prefix", candidates);
+    if ((anc?.length ?? 0) > 0) return true;
+  }
 
-  const { data: anc } = await admin
+  // Sibling-directory fallback: the share root (e.g. signals/SIGNALS.md) lives
+  // at the same level as the new file (signals/SIG-009.md), so neither a direct
+  // nor a directory-ancestor match fires. If ANY write-permission row exists for
+  // a file in the same directory, the grantee's cascade write grant covers it.
+  const dir = parts.slice(0, -1).join("/");
+  if (!dir) return false;
+  const { data: sib } = await admin
     .from("doc_shares")
-    .select("path_prefix")
+    .select("id")
     .eq("grantee_id", granteeId)
     .eq("owner_id", ownerId)
     .eq("permission", "write")
-    .in("path_prefix", candidates);
-  return (anc?.length ?? 0) > 0;
+    .like("path_prefix", `${dir}/%`)
+    .limit(1);
+  return (sib?.length ?? 0) > 0;
 }
 
 /**

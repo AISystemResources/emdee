@@ -1,7 +1,26 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ShareTreePicker } from "./ShareTreePicker";
 import type { DocIndex } from "@/src/core/indexer";
+
+function collectDescendantPaths(index: DocIndex | null, rootPath: string): string[] {
+  if (!index) return [rootPath];
+  const childrenByParent = new Map<string, string[]>();
+  for (const e of index.edges) {
+    if (e.kind !== "hierarchy") continue;
+    const arr = childrenByParent.get(e.from) ?? [];
+    arr.push(e.to);
+    childrenByParent.set(e.from, arr);
+  }
+  const out = new Set<string>([rootPath]);
+  const stack = [rootPath];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    for (const c of childrenByParent.get(cur) ?? []) {
+      if (!out.has(c)) { out.add(c); stack.push(c); }
+    }
+  }
+  return [...out];
+}
 
 interface ShareRow {
   id: string;
@@ -68,42 +87,19 @@ export function ShareModal({ path, title, index, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lookupSeq = useRef(0);
 
-  // Public-share state. `publication` mirrors the current row (null when
-  // not published). `selectedPaths` is the explicit set the picker maintains;
-  // initialized to {focal + all descendants} (associates default OFF).
+  // Public-share state. `publication` mirrors the current row (null when not
+  // published). Included paths are always the full descendant set — computed
+  // from the index at publish time, no manual picker needed.
   const [publication, setPublication] = useState<Publication | null>(null);
   const [ownerHandle, setOwnerHandle] = useState<string | null>(null);
   const [slugDraft, setSlugDraft] = useState(slugify(title));
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set([path]));
   const [publishBusy, setPublishBusy] = useState(false);
   const [publicError, setPublicError] = useState<string | null>(null);
 
-  // Seed the picker with focal + all descendants the first time the index
-  // becomes available (or path changes). After that, the user's edits
-  // own the set until they unpublish + restart.
-  const seededForPathRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!index || seededForPathRef.current === path) return;
-    seededForPathRef.current = path;
-    const initial = new Set<string>([path]);
-    const childrenByParent = new Map<string, string[]>();
-    for (const e of index.edges) {
-      if (e.kind !== "hierarchy") continue;
-      const arr = childrenByParent.get(e.from) ?? [];
-      arr.push(e.to);
-      childrenByParent.set(e.from, arr);
-    }
-    const stack = [path];
-    while (stack.length > 0) {
-      const cur = stack.pop()!;
-      for (const c of childrenByParent.get(cur) ?? []) {
-        if (initial.has(c)) continue;
-        initial.add(c);
-        stack.push(c);
-      }
-    }
-    setSelectedPaths(initial);
-  }, [index, path]);
+  const descCount = useMemo(
+    () => collectDescendantPaths(index, path).length - 1,
+    [index, path],
+  );
 
   const refreshShares = useCallback(async () => {
     const data = await fetch(`/api/share?path=${encodeURIComponent(path)}`).then((r) => r.json());
@@ -240,7 +236,7 @@ export function ShareModal({ path, title, index, onClose }: Props) {
         body: JSON.stringify({
           slug: slugDraft,
           root_doc_path: path,
-          included_paths: [...selectedPaths],
+          included_paths: collectDescendantPaths(index, path),
         }),
       });
       const data = await res.json();
@@ -254,7 +250,7 @@ export function ShareModal({ path, title, index, onClose }: Props) {
     } finally {
       setPublishBusy(false);
     }
-  }, [slugDraft, path, selectedPaths, refreshShares]);
+  }, [slugDraft, path, index, refreshShares]);
 
   const disablePublic = useCallback(async () => {
     if (!publication) return;
@@ -350,14 +346,11 @@ export function ShareModal({ path, title, index, onClose }: Props) {
                   />
                 </div>
               </label>
-              {index && (
-                <ShareTreePicker
-                  index={index}
-                  focalPath={path}
-                  selectedPaths={selectedPaths}
-                  onChange={setSelectedPaths}
-                />
-              )}
+              <div className="share-public-scope">
+                {descCount > 0
+                  ? `${title} + ${descCount} descendant${descCount !== 1 ? "s" : ""} will be publicly visible.`
+                  : `${title} will be publicly visible.`}
+              </div>
               <div className="share-public-hint">
                 Toggle <strong>Share to public</strong> on to publish with these settings.
               </div>

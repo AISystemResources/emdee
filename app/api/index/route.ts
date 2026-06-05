@@ -239,7 +239,7 @@ export async function GET(request: Request) {
           index.edges.push({
             from: sharedKey(group.ownerId, e.from),
             to: sharedKey(group.ownerId, e.to),
-            kind: "hierarchy",
+            kind: e.kind,
           });
         }
         // One synthetic edge per share group anchoring the share root to the

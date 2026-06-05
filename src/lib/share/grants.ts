@@ -13,7 +13,7 @@ export interface SharedGroup {
   shareRoot: string;
   permission: "read" | "write";
   docs: SharedDocItem[];
-  edges: { from: string; to: string }[];
+  edges: { from: string; to: string; kind: "hierarchy" | "assoc" }[];
 }
 
 interface ShareRow {
@@ -90,7 +90,7 @@ export async function fetchSharesForGrantee(granteeId: string): Promise<SharedGr
     Array.from(groups.values()).map(async (g) => {
       const paths = g.rows.map((r) => r.path_prefix);
 
-      const [filesRes, edgesRes] = await Promise.all([
+      const [filesRes, edgesRes, assocEdgesRes] = await Promise.all([
         admin
           .from("vault_files")
           .select("file_path, content")
@@ -102,6 +102,15 @@ export async function fetchSharesForGrantee(granteeId: string): Promise<SharedGr
           .eq("namespace", g.ownerId)
           .eq("kind", "hierarchy")
           .in("from_path", paths),
+        // Assoc edges between co-shared docs only. Querying from_path IN paths
+        // is sufficient because doc_edges stores assoc rows in both directions
+        // (A→B and B→A). We filter to edges whose other end is also shared.
+        admin
+          .from("doc_edges")
+          .select("from_path, to_path")
+          .eq("namespace", g.ownerId)
+          .eq("kind", "assoc")
+          .in("from_path", paths),
       ]);
 
       const contentByPath = new Map<string, string>();
@@ -110,9 +119,24 @@ export async function fetchSharesForGrantee(granteeId: string): Promise<SharedGr
       }
 
       const pathSet = new Set(paths);
-      const edges = ((edgesRes.data ?? []) as EdgeRow[])
+      const hierarchyEdges = ((edgesRes.data ?? []) as EdgeRow[])
         .filter((e) => pathSet.has(e.to_path))
-        .map((e) => ({ from: e.from_path, to: e.to_path }));
+        .map((e) => ({ from: e.from_path, to: e.to_path, kind: "hierarchy" as const }));
+
+      // Deduplicate assoc edges: doc_edges stores A→B and B→A; normalise to
+      // lo/hi so the graph renderer sees one undirected pair per association.
+      const seenAssoc = new Set<string>();
+      const assocEdges: { from: string; to: string; kind: "assoc" }[] = [];
+      for (const e of (assocEdgesRes.data ?? []) as EdgeRow[]) {
+        if (!pathSet.has(e.to_path)) continue;
+        const [lo, hi] = e.from_path < e.to_path
+          ? [e.from_path, e.to_path]
+          : [e.to_path, e.from_path];
+        const key = `${lo}::${hi}`;
+        if (seenAssoc.has(key)) continue;
+        seenAssoc.add(key);
+        assocEdges.push({ from: lo, to: hi, kind: "assoc" });
+      }
 
       const docs = paths.map((p) => {
         const content = contentByPath.get(p) ?? "";
@@ -131,7 +155,7 @@ export async function fetchSharesForGrantee(granteeId: string): Promise<SharedGr
         shareRoot: g.shareRoot,
         permission: g.permission,
         docs,
-        edges,
+        edges: [...hierarchyEdges, ...assocEdges],
       };
     })
   );
