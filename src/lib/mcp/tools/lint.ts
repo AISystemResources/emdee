@@ -40,7 +40,8 @@ export interface LintWarning {
     | "associate_duplicates_hierarchy"
     | "sibling_assoc_redundant"
     | "split_candidate"
-    | "subgroup_materialization_candidate";
+    | "subgroup_materialization_candidate"
+    | "media_asset_missing_url";
   message: string;
   suggestion: string;
   title?: string;
@@ -474,6 +475,25 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
           suggestion: `Either remove \`[[${parentTitle}]]\` from this doc's Child of, or add this doc to ${parent.title}'s Parent of so the edge is reciprocal.`,
           asymmetric_target: parent.title,
           line: childOfTitleLines.get(parentTitle) ?? null,
+        });
+      }
+    }
+  }
+
+  // Media asset rule: an ## Asset section must contain a `url:` line.
+  // Fires on any doc that has the section (not just images/ paths) so the
+  // rule works whether the doc is linted individually or batch-linted.
+  {
+    const assetMatch = content.match(/^## Asset\s*\n([\s\S]*?)(?=^## |\z)/m);
+    if (assetMatch) {
+      const assetBody = assetMatch[1];
+      const assetHeadingLine = content.split("\n").findIndex((l) => /^## Asset\s*$/.test(l)) + 1;
+      if (!/^\s*url\s*:/m.test(assetBody)) {
+        warnings.push({
+          code: "media_asset_missing_url",
+          message: "`## Asset` block is missing a required `url:` line. Consumers cannot find the binary without a stable public URL.",
+          suggestion: "Add `url: https://...` as the first line of the `## Asset` block — use the Supabase Storage public URL returned by `/api/media` or `/api/image`.",
+          line: assetHeadingLine || null,
         });
       }
     }
