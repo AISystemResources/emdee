@@ -147,6 +147,8 @@ export function App({ namespace }: { namespace: string }) {
   const [downloadCtx, setDownloadCtx] = useState<GraphModalContext | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [sharedShares, setSharedShares] = useState<SharedShare[]>([]);
+  const [storagePct, setStoragePct] = useState<number | null>(null);
+  const [storageLabel, setStorageLabel] = useState<string>("");
   const [renameCtx, setRenameCtx] = useState<GraphModalContext | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [renamePath, setRenamePath] = useState("");
@@ -191,6 +193,21 @@ export function App({ namespace }: { namespace: string }) {
       .then((r) => r.json())
       .then((d) => setIsAdmin(!!d?.is_admin))
       .catch(() => setIsAdmin(false));
+  }, [isOwnNamespace]);
+
+  // Storage usage — shown in sidebar footer for own namespace only.
+  useEffect(() => {
+    if (!isOwnNamespace) { setStoragePct(null); setStorageLabel(""); return; }
+    fetch("/api/usage")
+      .then((r) => r.json())
+      .then((d) => {
+        const bytes: number = d.text_bytes_used ?? 0;
+        const limit: number = d.text_limit_bytes ?? 1;
+        setStoragePct(bytes / limit);
+        const mb = bytes / (1024 * 1024);
+        setStorageLabel(mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : mb < 1024 ? `${mb.toFixed(1)} MB` : `${(mb / 1024).toFixed(2)} GB`);
+      })
+      .catch(() => { setStoragePct(null); setStorageLabel(""); });
   }, [isOwnNamespace]);
 
   // Load the linked cloud userId (set by /cloud-link/callback) and stay in
@@ -1069,18 +1086,41 @@ export function App({ namespace }: { namespace: string }) {
           />
           <div className="sidebar-footer">
             {isAdmin && (
-              <a
-                className="sidebar-footer-btn"
-                href="/admin/publications"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-                  <path d="M6.5 1.5L10.5 3V6.5C10.5 8.5 8.7 10.4 6.5 11C4.3 10.4 2.5 8.5 2.5 6.5V3L6.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                  <path d="M5 6.5L6 7.5L8.5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Admin
-              </a>
+              <>
+                <a
+                  className="sidebar-footer-btn"
+                  href="/admin/publications"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                    <path d="M6.5 1.5L10.5 3V6.5C10.5 8.5 8.7 10.4 6.5 11C4.3 10.4 2.5 8.5 2.5 6.5V3L6.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+                    <path d="M5 6.5L6 7.5L8.5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Admin
+                </a>
+                <a
+                  className="sidebar-footer-btn"
+                  href="/admin/storage"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                    <rect x="2" y="2" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+                    <path d="M2 5.5H11" stroke="currentColor" strokeWidth="1.2"/>
+                    <path d="M5.5 5.5V11" stroke="currentColor" strokeWidth="1.2"/>
+                  </svg>
+                  Storage
+                </a>
+              </>
+            )}
+            {storagePct !== null && (
+              <div className="sidebar-storage">
+                <div className="sidebar-storage-bar-wrap">
+                  <div className="sidebar-storage-bar" style={{ width: `${Math.min(100, storagePct * 100).toFixed(2)}%` }} data-warn={storagePct > 0.9 ? "critical" : storagePct > 0.7 ? "high" : undefined} />
+                </div>
+                <span className="sidebar-storage-label">{storageLabel} / 5 GB</span>
+              </div>
             )}
             <button
               className="sidebar-footer-btn"
