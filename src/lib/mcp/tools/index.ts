@@ -19,3 +19,4 @@ export { lintDoc } from "./lint_doc";
 export { distillDoc } from "./distill_doc";
 export { createChild } from "./create_child";
 export { addAssociation } from "./add_association";
+export { uploadImage } from "./upload_image";

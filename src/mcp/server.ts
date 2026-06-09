@@ -20,6 +20,7 @@ import {
   writeDoc,
   createChild,
   addAssociation,
+  uploadImage,
 } from "../lib/mcp/tools/index.js";
 import type { ToolContext } from "../lib/mcp/tools/types.js";
 // SPRINT-021: this stdio entrypoint is hardcoded to local mode (no
@@ -252,6 +253,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["a_path", "b_path"],
       },
     },
+    {
+      name: "upload_image",
+      description:
+        "Store an image from the conversation into the vault. You (Claude) already see the image — describe it yourself and pass the description here. Cloud mode only.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          image_data: { type: "string", description: "Base64-encoded image bytes." },
+          media_type: { type: "string", enum: ["image/jpeg", "image/png", "image/gif", "image/webp"] },
+          description: { type: "string", description: "Your description of the image — what is shown, any visible text, context." },
+          title: { type: "string", description: "Title for the vault doc." },
+          path: { type: "string", description: "Vault path for the created doc." },
+        },
+        required: ["image_data", "media_type"],
+      },
+    },
   ],
 }));
 
@@ -273,6 +290,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
     case "write_doc":         return await writeDoc(ctx, a) as CallToolResult;
     case "create_child":      return await createChild(ctx, a) as CallToolResult;
     case "add_association":   return await addAssociation(ctx, a) as CallToolResult;
+    case "upload_image":      return await uploadImage(ctx, a) as CallToolResult;
     default:
       throw new Error(`unknown tool: ${name}`);
   }
