@@ -78,10 +78,12 @@ export async function POST(request: Request) {
   const slug = slugify(titleStr) || "image";
   const timeSuffix = ts.slice(11, 19); // HH-MM-SS
   const docPath = `images/${slug}-${timeSuffix}.md`;
+  // Include time suffix in title so repeated pastes of "image.png" don't collide.
+  const childTitle = `${titleStr} ${timeSuffix}`;
 
   const childResult = await createChild(ctx, {
     parent_path: IMAGES_HUB,
-    title: titleStr,
+    title: childTitle,
     child_path: docPath,
     summary: "_description pending_",
     body: `\n![${titleStr}](${imageUrl})\n`,
