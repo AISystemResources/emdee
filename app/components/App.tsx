@@ -393,6 +393,27 @@ export function App({ namespace }: { namespace: string }) {
     loadIndex(false);
   }, [loadIndex]);
 
+  useEffect(() => {
+    if (!isOwnNamespace) return;
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          setImageUploadFile(file);
+          setImageUploadMode("hub");
+          setImageUploadError(null);
+          return;
+        }
+      }
+    }
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [isOwnNamespace]);
+
   useDocsChanged(namespace, useCallback(() => {
     if (!localEdit.current) loadIndex(true);
     else localEdit.current = false;
