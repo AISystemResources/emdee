@@ -1599,6 +1599,35 @@ body[data-resizing-split="true"] {
 .sidebar-footer-btn[data-active="true"] { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 a.sidebar-footer-btn { text-decoration: none; }
 
+.sidebar-storage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.sidebar-storage-bar-wrap {
+  flex: 1;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sidebar-storage-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  min-width: 0;
+  transition: width 0.3s ease;
+}
+.sidebar-storage-bar[data-warn="high"] { background: #f59e0b; }
+.sidebar-storage-bar[data-warn="critical"] { background: #ef4444; }
+.sidebar-storage-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Log / History view ─────────────────────────────────── */
 .log-view {
   display: flex;
