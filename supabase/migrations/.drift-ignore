@@ -1,0 +1,9 @@
+# Migrations that scripts/check-migration-drift.mjs should treat as
+# expected-not-applied. One filename basename per line (no .sql extension).
+# Lines starting with # are comments.
+#
+# Use sparingly — anything here is a TODO pointing at a feature that was
+# spec'd in a migration but never made it to the cloud DB. The right end
+# state is to either apply the migration or delete the file.
+#
+# Empty at sprint-046 ship — all 5 + 1 RPC migrations are applied.

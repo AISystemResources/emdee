@@ -38,13 +38,15 @@ npm run start      # next start
 npm run lint       # eslint                — code-style + Next rules
 npm run typecheck  # tsc --noEmit          — must be clean before any commit
 npm run mcp        # tsx src/mcp/server.ts — stdio MCP server (for local Claude Code)
+npm run e2e        # playwright test       — Playwright smoke suite (e2e/*.spec.ts); needs EMDEE-test env
+npm run e2e:ui     # playwright test --ui
+npm run e2e:report # playwright show-report
+npm run check:migrations  # node scripts/check-migration-drift.mjs — fails if a repo migration isn't applied to the cloud DB
 ```
 
 One-off scripts live in `scripts/` (run with `npx tsx scripts/<name>.ts` or `node scripts/<name>.mjs`). Repair examples:
 - `npx tsx scripts/backfill-doc-edges.ts --namespace=<ns>` — rebuild `doc_edges` for one user
 - `node scripts/backfill-vault-files.mjs` — repopulate the `vault_files` cache from Storage
-
-<!-- TODO: no test runner found in package.json or repo configs. Definition of done currently relies on typecheck + lint + manual UI verification. Decide whether to adopt Vitest / Playwright before autonomous runs. -->
 
 ## 🚨 HARD RULES
 
@@ -73,9 +75,22 @@ Grounded rules an autonomous agent must never break. Each cites where it comes f
 - **`main`** — production. Auto-deploys to **emdee.vercel.app**, which serves live vaults (Edmund's, Junior's, public). **PR-protected, human-merge only.** No direct pushes — not even by attended agents — except by the repo owner when the user explicitly approves.
 - **`feat/<sprint-id>-<slug>`** — one branch per sprint, branched from `main`. Multiple may exist concurrently. Vercel auto-builds these as **Preview deploys** (unique URL per push, useful for visual QA of graph/UI changes — EMDEE_OS is Cytoscape-heavy). Production is unreachable from feat/* without a PR merge.
 - **No long-lived `agents` branch.** Retired 2026-05-28 in favour of the feat/* model.
-- `vercel.json` carries no `deploymentEnabled` rules — the protection comes from Vercel's "main is the Production branch" project setting + GitHub branch protection on `main`. feat/* automatically gets Preview.
+- **`vercel.json` carries deployment-branch gating** (SPRINT-046): `main` and `feat/*` are allowed; `agent/*`, `agents`, and `dev` are explicitly blocked so naming drift can't sneak prod. The gate is version-controlled, not a dashboard setting.
 
 **Build-minutes tradeoff:** every `feat/*` push triggers a Vercel Preview build. On Vercel's free/Hobby tier this counts against the monthly build-minutes quota. If quota becomes an issue, switch to per-sprint Previews only on PR-open instead of per-push (configure via Vercel project settings → Git → Ignored Build Step).
+
+### Required status checks on `main`
+
+Branch protection requires these four checks to be green before any merge (job names must match the workflow `name:` exactly):
+
+| Check | Workflow | What it gates |
+|---|---|---|
+| `Typecheck` | `.github/workflows/ci.yml` | `tsc --noEmit` |
+| `Lint` | `.github/workflows/ci.yml` | `eslint` |
+| `Build` | `.github/workflows/ci.yml` | `next build --webpack` against the **EMDEE-test** Supabase project |
+| `playwright (chromium)` | `.github/workflows/e2e.yml` | `npm run e2e` against the **EMDEE-test** Supabase project |
+
+`migration-drift.yml` is path-filtered to `supabase/migrations/**` — it isn't a required check on every PR, but it *will* fail any PR that adds a migration file without applying it to the cloud DB. The drift script reads from a SECURITY DEFINER RPC (`list_applied_migrations()`); a missing RPC reports skip (exit 2), not pass.
 
 ## Branch & commit conventions
 
@@ -83,7 +98,7 @@ Grounded rules an autonomous agent must never break. Each cites where it comes f
 - **Default agent target: `feat/<sprint-id>-<slug>`.** Branch name pattern: `feat/SPRINT-NNN-short-slug` (e.g. `feat/SPRINT-029-density-layout`). One branch per sprint; do not pile multiple sprints into a single feat branch.
 - **Open a PR back to `main` when the sprint is shippable.** The PR is the ceiling — no merge without human review.
 - **No direct pushes to `main`**, attended or not. If branch protection blocks something the user explicitly wants merged, surface it; don't try to circumvent.
-- **Deploy:** `main` auto-deploys to `emdee.vercel.app` via Vercel. `feat/*` auto-deploys as Preview. No `.github/workflows/` — Vercel handles CI.
+- **Deploy:** `main` auto-deploys to `emdee.vercel.app` via Vercel. `feat/*` auto-deploys as Preview. `.github/workflows/` runs the gating CI (Typecheck/Lint/Build/Playwright/migration-drift) alongside the Vercel build.
 - **Commit messages:** present-tense, what + why. Each commit ends with a `Co-Authored-By: <model>` line when authored by an agent (see recent `git log` for the established style).
 - **Commit cadence:** prefer new commits over `--amend`. Per-task atomic commits; multi-file refactors get one bundled commit if cohesive (see SPRINT-027 / SPRINT-028 for the established granularity).
 
