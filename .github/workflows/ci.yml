@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Lint only the JS/TS files touched by this PR. EMDEE main has ~28
+      # pre-existing lint errors (see pr-reviewer.yml "27 pre-existing" note).
+      # Running `eslint` on the whole tree would fail every PR on legacy
+      # debt unrelated to the change. Changed-file lint is the right floor:
+      # new errors fail, old errors don't block.
+      - name: Lint changed files
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD | grep -E '\.(ts|tsx|js|jsx|mjs|cjs)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "No JS/TS files changed — Lint passes vacuously."
+            exit 0
+          fi
+          echo "Linting changed files:"
+          echo "$FILES"
+          npx eslint $FILES
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    env:
+      # Build needs Clerk + Supabase keys to compile the app; tests Supabase project
+      # is used so a build-time misconfig can never leak prod data.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build

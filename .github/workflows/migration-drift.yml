@@ -1,0 +1,42 @@
+# ── Migration drift guard (SPRINT-046, ported from DOUBLELEAD sprint-011) ──
+# Fails the PR if `supabase/migrations/*.sql` has files that aren't yet in
+# `supabase_migrations.schema_migrations`. The list of "expected drift"
+# (already-applied-under-different-name or shelved-feature migrations) is
+# maintained in `supabase/migrations/.drift-ignore`.
+
+name: migration-drift
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "scripts/check-migration-drift.mjs"
+      - ".github/workflows/migration-drift.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/migrations/**"
+      - "scripts/check-migration-drift.mjs"
+      - ".github/workflows/migration-drift.yml"
+  workflow_dispatch:
+
+jobs:
+  check-drift:
+    name: check-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run migration-drift check
+        run: node scripts/check-migration-drift.mjs
