@@ -34,13 +34,4 @@ export async function signIn(page: Page): Promise<void> {
   await page.goto("/");
 
   await clerk.signIn({ page, emailAddress });
-
-  // One-shot diagnostic — if this fails again we want to know whether the
-  // session cookie made it to the app domain. Remove on green.
-  const cookies = await page.context().cookies();
-  // eslint-disable-next-line no-console
-  console.log(
-    "[e2e] cookies after signIn:",
-    cookies.map((c) => `${c.name}@${c.domain}`).join(", "),
-  );
 }
