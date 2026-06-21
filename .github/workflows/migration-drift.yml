@@ -3,6 +3,10 @@
 # `supabase_migrations.schema_migrations`. The list of "expected drift"
 # (already-applied-under-different-name or shelved-feature migrations) is
 # maintained in `supabase/migrations/.drift-ignore`.
+#
+# Checks BOTH EMDEE-prod and EMDEE-test (extended SPRINT-047 follow-up):
+# SPRINT-047 discovered that test had silently drifted 17 migrations behind
+# prod. Watching only prod hid the asymmetry until e2e exploded.
 
 name: migration-drift
 
@@ -27,8 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      # Prod check — original SPRINT-046 behaviour.
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Test check — script automatically includes EMDEE-test when these
+      # are present. Either project drifting fails the check.
+      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+      SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

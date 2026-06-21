@@ -1,25 +1,24 @@
 #!/usr/bin/env node
-// SPRINT-046: detect migrations checked into the repo but not yet applied to
-// the cloud Supabase database. Exits non-zero on drift so CI fails. Ported
-// from DOUBLELEAD's sprint-011 follow-up (see RALPHLOOP-READINESS §F).
+// SPRINT-046 (extended SPRINT-047-followup): detect migrations checked into
+// the repo but not yet applied to a Supabase project. Exits non-zero on drift.
 //
-// Source of truth for "applied":
-//   select version, name from supabase_migrations.schema_migrations
-//   (exposed via SECURITY DEFINER RPC list_applied_migrations())
+// Checks **both** EMDEE-prod and EMDEE-test by default. EMDEE-test is checked
+// when SUPABASE_TEST_URL + SUPABASE_TEST_SERVICE_ROLE_KEY are present in env;
+// missing test creds → prod-only check (preserves the original SPRINT-046
+// behaviour for local runs without test creds).
 //
-// Source of truth for "in repo":
-//   supabase/migrations/*.sql (basename without .sql extension)
+// Rationale: SPRINT-047 discovered EMDEE-test was effectively empty — 17
+// migrations had been applied to prod but never to test. The original drift
+// check only watched prod, so silent test drift went undetected until e2e
+// blew up. Checking both projects in the same workflow run catches this.
 //
-// Match rule: a repo file `<name>.sql` is considered applied if any applied
-// row's `version || '_' || name` OR `name` (case-insensitive) lines up with
-// the repo basename's semantic-name component. Loose by design — Supabase's
-// migration runner sometimes records a different name than the file (e.g.
-// file `20260420_smm_drive_columns.sql` becomes version `20260420215255`
-// name `smm_drive_columns`). What we care about is catching brand-new files
-// that have zero match.
+// Source of truth for "applied": the SECURITY DEFINER RPC
+// `list_applied_migrations()` reads supabase_migrations.schema_migrations.
 //
-// Required env: NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY pointing
-// at the prod project. The drift workflow in CI passes these from secrets.
+// Source of truth for "in repo": supabase/migrations/*.sql.
+//
+// Match rule is loose by design — Supabase's runner sometimes records a
+// different name than the file. See `isApplied()` for details.
 
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -52,16 +51,7 @@ async function loadIgnoreList() {
   }
 }
 
-async function listAppliedMigrations() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-
-  if (!url || !key) {
-    throw new Error(
-      "Need NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in env to query applied migrations.",
-    );
-  }
-
+async function listAppliedMigrations(url, key) {
   const res = await fetch(`${url}/rest/v1/rpc/list_applied_migrations`, {
     method: "POST",
     headers: {
@@ -106,39 +96,93 @@ function isApplied(repoBase, applied) {
   return false;
 }
 
+function resolveTargets() {
+  const targets = [];
+
+  const prodUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const prodKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  if (prodUrl && prodKey) {
+    targets.push({ label: "EMDEE-prod", url: prodUrl, key: prodKey, required: true });
+  } else {
+    targets.push({
+      label: "EMDEE-prod",
+      url: null,
+      key: null,
+      required: true,
+      missing: "NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY",
+    });
+  }
+
+  const testUrl = process.env.SUPABASE_TEST_URL;
+  const testKey = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY;
+  if (testUrl && testKey) {
+    targets.push({ label: "EMDEE-test", url: testUrl, key: testKey, required: true });
+  }
+  // EMDEE-test absent silently — local runs without test creds keep the
+  // original SPRINT-046 single-target behaviour.
+
+  return targets;
+}
+
+async function checkTarget(target, repo, ignored) {
+  if (!target.url) {
+    return { target, status: "skipped", reason: `env missing (${target.missing})` };
+  }
+  let applied;
+  try {
+    applied = await listAppliedMigrations(target.url, target.key);
+  } catch (err) {
+    return { target, status: "error", reason: err.message };
+  }
+  const drift = repo.filter((base) => !ignored.has(base) && !isApplied(base, applied));
+  return { target, status: drift.length === 0 ? "clean" : "drifted", applied, drift };
+}
+
 async function main() {
   const repo = await listRepoMigrations();
   const ignored = await loadIgnoreList();
-  let applied;
-  try {
-    applied = await listAppliedMigrations();
-  } catch (err) {
-    console.error(`✗ migration-drift check skipped: ${err.message}`);
-    process.exit(2);
+  const targets = resolveTargets();
+  const results = [];
+  for (const t of targets) {
+    results.push(await checkTarget(t, repo, ignored));
   }
 
-  const drift = repo.filter((base) => !ignored.has(base) && !isApplied(base, applied));
+  let exitCode = 0;
+  for (const r of results) {
+    if (r.status === "clean") {
+      console.log(
+        `✓ ${r.target.label}: ${repo.length} repo migrations all accounted for (${r.applied.length} applied, ${ignored.size} ignored via .drift-ignore).`,
+      );
+    } else if (r.status === "skipped") {
+      console.log(`◌ ${r.target.label}: skipped — ${r.reason}`);
+      // A required target that can't be checked is a hard failure (matches
+      // SPRINT-046 behaviour for prod).
+      if (r.target.required) exitCode = Math.max(exitCode, 2);
+    } else if (r.status === "error") {
+      console.error(`✗ ${r.target.label}: check failed — ${r.reason}`);
+      exitCode = Math.max(exitCode, 2);
+    } else if (r.status === "drifted") {
+      console.error(
+        `✗ ${r.target.label}: ${r.drift.length} repo migration(s) not found in supabase_migrations.schema_migrations:`,
+      );
+      for (const base of r.drift) {
+        console.error(`    - supabase/migrations/${base}.sql`);
+      }
+      exitCode = Math.max(exitCode, 1);
+    }
+  }
 
-  if (drift.length === 0) {
-    console.log(
-      `✓ migration-drift: ${repo.length} repo migrations all accounted for (${applied.length} applied, ${ignored.size} ignored via .drift-ignore).`,
+  if (exitCode === 1) {
+    console.error(
+      "\nFix options:",
+      "\n  1. Apply via mcp__supabase__apply_migration to the drifted project(s), OR run `supabase db push` linked to each project.",
+      "\n  2. If the file is a duplicate of an already-applied migration with a different name, add the basename to supabase/migrations/.drift-ignore.",
+      "\n  3. Delete the file if the feature is dropped.",
+      "\n\nReminder: apply new migrations to BOTH EMDEE-prod AND EMDEE-test, in the same change.",
     );
-    process.exit(0);
   }
 
-  console.error(
-    `✗ migration-drift: ${drift.length} repo migration(s) not found in supabase_migrations.schema_migrations:`,
-  );
-  for (const base of drift) {
-    console.error(`    - supabase/migrations/${base}.sql`);
-  }
-  console.error(
-    "\nFix options:",
-    "\n  1. Apply via mcp__supabase__apply_migration or supabase CLI.",
-    "\n  2. If the file is a duplicate of an already-applied migration with a different name, add the basename to supabase/migrations/.drift-ignore.",
-    "\n  3. Delete the file if the feature is dropped.",
-  );
-  process.exit(1);
+  process.exit(exitCode);
 }
 
 main().catch((err) => {
