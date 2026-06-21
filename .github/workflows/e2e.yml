@@ -25,10 +25,23 @@ jobs:
       # Clerk — dev instance keys + routing
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      # E2E test user — claude-tester@emdee.tech (fake domain, login-only)
+      # See project memory `EMDEE e2e Clerk test user` for the rationale.
+      E2E_CLERK_USER_USERNAME: ${{ secrets.E2E_CLERK_USER_USERNAME }}
+      E2E_CLERK_USER_PASSWORD: ${{ secrets.E2E_CLERK_USER_PASSWORD }}
       # Supabase — test project (NEVER prod)
+      # Two parallel exposures: the standard NEXT_PUBLIC_*/SERVICE_ROLE names
+      # for the Next.js runtime (Build + dev server), AND the explicit
+      # SUPABASE_TEST_* names that the seed script (e2e/seed-vault.ts)
+      # reads directly. The seed uses test-prefixed names so it never
+      # accidentally points at prod even when the runtime env points
+      # somewhere else locally.
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+      SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+      SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
 
     steps:
       - name: Checkout
