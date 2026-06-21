@@ -1,40 +1,46 @@
 // Clerk sign-in helper for Playwright.
 //
-// Uses @clerk/testing's `clerk.signIn()` — which talks to Clerk's Backend
-// API and sets the session cookie directly — instead of driving the
-// hosted /sign-in UI. This bypasses:
-//   • the bot-protection challenge,
-//   • the "Use another method" chooser (when OAuth + password are both enabled),
-//   • the new-device email-verification step that fires on fresh CI runners,
-//   • any future UI changes Clerk ships to the sign-in component.
+// Uses @clerk/testing's `clerk.signIn({ emailAddress })` — the ticket flow.
+// This is the only path that fully bypasses Clerk's hosted UI:
+//   • bot-protection challenge
+//   • "Use another method" chooser (when OAuth + password are both enabled)
+//   • new-device email verification (which fires on fresh CI runners)
 //
-// Requires CLERK_SECRET_KEY to be set so @clerk/testing can hit the Backend
-// API. The test user must already exist in the Clerk instance; we don't
-// create it here.
+// Mechanism: @clerk/testing hits Clerk's Backend API
+// (`signInTokens.createSignInToken`) to mint a one-time token bound to the
+// user, then submits it via the `ticket` strategy and waits for
+// `window.Clerk.user !== null`. The password strategy in the same helper
+// doesn't wait for the user to land, and silently no-ops if Clerk's
+// `signIn.create()` returns `needs_first_factor` because of a verification
+// challenge — which is why the previous password attempt left the
+// server-side session cookie unset.
+//
+// Requires CLERK_SECRET_KEY (for Backend API access) and
+// E2E_CLERK_USER_USERNAME to be the user's primary **email address**.
 
 import { clerk } from "@clerk/testing/playwright";
 import type { Page } from "@playwright/test";
 
 export async function signIn(page: Page): Promise<void> {
-  const username = process.env.E2E_CLERK_USER_USERNAME;
-  const password = process.env.E2E_CLERK_USER_PASSWORD;
-  if (!username || !password) {
+  const emailAddress = process.env.E2E_CLERK_USER_USERNAME;
+  if (!emailAddress) {
     throw new Error(
-      "signIn(): E2E_CLERK_USER_USERNAME / E2E_CLERK_USER_PASSWORD must be set",
+      "signIn(): E2E_CLERK_USER_USERNAME must be set to the test user's email address",
     );
   }
 
-  // clerk.signIn() requires the page to be on a Clerk-aware route
-  // (i.e. the ClerkProvider has loaded) before it can set the session
-  // cookie. Hit the public root first — fast, public, ClerkProvider-wrapped.
+  // The page must be on a Clerk-aware route before signIn so the frontend
+  // SDK has loaded. The public root is the cheapest such page.
   await page.goto("/");
 
-  await clerk.signIn({
-    page,
-    signInParams: {
-      strategy: "password",
-      identifier: username,
-      password,
-    },
-  });
+  await clerk.signIn({ page, emailAddress });
+
+  // One-shot diagnostic — if this fails again we want to know whether the
+  // session cookie made it to the app domain. Remove on green.
+  const cookies = await page.context().cookies();
+  // eslint-disable-next-line no-console
+  console.log(
+    "[e2e] cookies after signIn:",
+    cookies.map((c) => `${c.name}@${c.domain}`).join(", "),
+  );
 }
