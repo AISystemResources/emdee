@@ -40,7 +40,26 @@ export async function signIn(page: Page): Promise<void> {
   await identifierInput.fill(username);
   await identifierInput.press("Enter");
 
-  // Password step. Same name-attribute selector.
+  // EMDEE's Clerk Development instance enables Google OAuth alongside
+  // email/password, so after identifier submission Clerk lands on a
+  // "Use another method" screen rather than going straight to the
+  // password input. Click the "Sign in with your password" button
+  // explicitly so the password input becomes enabled. The button is
+  // absent on instances that only have email/password enabled, so
+  // we handle the no-op case gracefully.
+  const passwordMethodButton = page.getByRole("button", {
+    name: /sign in with your password/i,
+  });
+  try {
+    await passwordMethodButton.waitFor({ state: "visible", timeout: 5_000 });
+    await passwordMethodButton.click();
+  } catch {
+    // No "Use another method" screen — Clerk advanced directly to the
+    // password step. Common when only email+password is enabled.
+  }
+
+  // Password step. The input renders disabled briefly during the step
+  // transition; fill() retries until it's enabled.
   const passwordInput = page.locator('input[name="password"]');
   await passwordInput.waitFor({ state: "visible", timeout: 15_000 });
   await passwordInput.fill(password);
