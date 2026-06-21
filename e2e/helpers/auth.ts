@@ -65,6 +65,25 @@ export async function signIn(page: Page): Promise<void> {
   await passwordInput.fill(password);
   await passwordInput.press("Enter");
 
+  // Clerk Dev instances challenge fresh devices with an email
+  // verification step. Test users whose email matches Clerk's
+  // `+clerk_test` convention auto-accept the code `424242`.
+  // The verification UI renders as a single textbox with placeholder
+  // "Enter verification code" — present in DOM only when challenged.
+  const verificationInput = page.getByRole("textbox", {
+    name: /verification code|enter.*code/i,
+  });
+  try {
+    await verificationInput.waitFor({ state: "visible", timeout: 5_000 });
+    // The Clerk magic code for any user with `+clerk_test` in the email.
+    await verificationInput.fill("424242");
+    // Most Clerk verification UIs auto-submit on completion; if not,
+    // pressing Enter advances.
+    await verificationInput.press("Enter");
+  } catch {
+    // No verification screen — the device is already trusted.
+  }
+
   // EMDEE redirects authenticated users from `/` → `/{userId}` (see
   // app/page.tsx). Sign-in component has `fallbackRedirectUrl="/me"`.
   // Accept any URL outside the sign-in flow as "signed in".
