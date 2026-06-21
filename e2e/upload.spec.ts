@@ -32,8 +32,16 @@ test.describe("upload (authenticated)", () => {
 
   test("POST /api/image creates a vault doc and returns a public Supabase URL", async ({ page, baseURL }) => {
     await signIn(page);
-    // signIn() leaves the page on `/` with the Clerk session cookie set.
-    // page.request inherits that cookie, so the POST below is authenticated.
+    // Navigate to `/me` to force Clerk middleware to issue the
+    // server-side session cookie. clerk.signIn() (Backend API) sets the
+    // client-side session, but the HttpOnly cookie that /api/image's
+    // server-side `auth()` reads is only minted on the next request to
+    // a Clerk-aware route. Without this navigation, page.request.post()
+    // hits /api/image with no cookie and gets a 401.
+    await page.goto("/me");
+    await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), {
+      timeout: 10_000,
+    });
 
     const png = await readFile(FIXTURE_PNG_PATH);
     const res = await page.request.post(`${baseURL ?? ""}/api/image`, {
