@@ -106,16 +106,16 @@ Branch protection requires these four checks to be green before any merge (job n
 
 The authoritative protocol lives in EMDEE. CLAUDE.md only summarises:
 
-- `projects/EMDEE_OS/BUILD.md` `## Active sprints` — what's in flight
-- `projects/EMDEE_OS/BUILD.md` `## Next sprint backlog` — what's queued (currently SPRINT-020, 022, 023)
+- `projects/EMDEE_OS/SPRINTS.md` `## Active sprints` — what's in flight
+- `projects/EMDEE_OS/SPRINTS.md` `## Next sprint backlog` — what's queued
 - `projects/EMDEE_OS/sprints/SPRINT-NNN.md` — full spec per sprint
-- `projects/EMDEE_OS/LOGS.md` — shipped sprints (most recent: SPRINT-028 on 2026-05-26)
+- `projects/EMDEE_OS/SIGNALS.md` — customer-grounded evidence; the canonical entry point that triages into a sprint
+- `projects/EMDEE_OS/LOGS.md` — shipped sprints
 - `projects/EMDEE_OS/LEARNINGS.md` — distilled rules; read before starting work in a new area
-- `projects/EMDEE_OS/INSTRUCTIONS.md` — *project-scoped operating protocol; read this first when starting a session*
 
-<!-- TODO: projects/EMDEE_OS/INSTRUCTIONS.md is currently a stub — its sections contain placeholder text like `<How an agent should orient at the start of a session…>` rather than real protocol. Fill in Session start protocol / Writing discipline / Communication conventions / Roles before pointing autonomous runs at it. -->
+(SPRINTS.md was renamed from BUILD.md in SPRINT-049, 2026-06-22. IDEAS/INBOX/OUTBOX hubs were retired in the same sprint.)
 
-When a sprint ships: move its bullet from BUILD's Active to LOGS, update BUILD's Status section, append any new LEARNINGS entry.
+When a sprint ships: move its bullet from SPRINTS' Active to LOGS, update SPRINTS' Status section, append any new LEARNINGS entry.
 
 ## Autonomous agent / Ralph protocol
 
@@ -135,7 +135,7 @@ Before any unattended run:
 - `npm run build` — clean (catches Next-config + runtime issues `tsc` doesn't)
 - No files changed outside the assigned module (`git diff --name-only` matches the spec's scope)
 - Migrations, if any, exist as new files under `supabase/migrations/` (never edited in place)
-- Vault state: BUILD/LOGS/LEARNINGS updated if the change earns it
+- Vault state: SPRINTS/LOGS/LEARNINGS updated if the change earns it
 - Commit on the agent-allowed branch (see deploy-ceiling TODO), never on the protected one
 
 <!-- TODO: add a test-runner gate to Definition of Done once tests exist. -->
@@ -150,8 +150,8 @@ Before any unattended run:
 
 When unattended work hits a wall, surface it loudly in EMDEE — silent failure is worse than loud:
 
-- For *in-flight sprint blockers:* patch `projects/EMDEE_OS/BUILD.md` `## Status` with `BLOCKED — <one-line cause>` and a wiki-link to the sprint file. The sprint file itself gets a `## Blockers` section appended with what was attempted, what's blocking, what would unblock, current branch + commit SHA.
-- For *new bugs discovered mid-sprint that aren't the primary task:* append a one-line entry to `projects/EMDEE_OS/LEARNINGS.md` (if a generalisable rule) OR create a stub sprint file under `sprints/` and add it to BUILD's `## Next sprint backlog` (if it needs its own work).
+- For *in-flight sprint blockers:* patch `projects/EMDEE_OS/SPRINTS.md` `## Status` with `BLOCKED — <one-line cause>` and a wiki-link to the sprint file. The sprint file itself gets a `## Blockers` section appended with what was attempted, what's blocking, what would unblock, current branch + commit SHA.
+- For *new bugs discovered mid-sprint that aren't the primary task:* append a one-line entry to `projects/EMDEE_OS/LEARNINGS.md` (if a generalisable rule) OR create a stub sprint file under `sprints/` and add it to SPRINTS' `## Next sprint backlog` (if it needs its own work).
 - For *vault-shape problems* (asymmetric edges, missing parents, etc.): run `lint_doc` first and capture the warning codes in the flag.
 
 ## Directory map
@@ -195,7 +195,7 @@ docs/                        Local-dev vault (gitignored)
 - [ ] `npm run build` clean (skip only for vault-only changes that don't touch code)
 - [ ] Manual UI verification of the changed surface (run `npm run dev`, exercise the feature)
 - [ ] Migrations, if any, are new files under `supabase/migrations/`
-- [ ] Vault updated in the same commit: BUILD/LOGS/LEARNINGS as appropriate
+- [ ] Vault updated in the same commit: SPRINTS/LOGS/LEARNINGS as appropriate
 - [ ] `git diff --name-only` matches the intent (no accidental drift)
 - [ ] Commit message states what + why; co-author trailer if agent-authored
 - [ ] Pushed to a `feat/<sprint-id>-<slug>` branch (never directly to `main`); PR opened for human review when shippable (see Branch & commit conventions)
