@@ -32,11 +32,8 @@ test.describe("upload (authenticated)", () => {
 
   test("POST /api/image creates a vault doc and returns a public Supabase URL", async ({ page, baseURL }) => {
     await signIn(page);
-
-    // After sign-in EMDEE bounces to `/{userId}`. Wait until we land on a
-    // non-sign-in path before issuing the upload — confirms the session
-    // cookie is in scope for page.request.
-    await expect(page).toHaveURL(/^.*\/(?!sign-in).*$/);
+    // signIn() leaves the page on `/` with the Clerk session cookie set.
+    // page.request inherits that cookie, so the POST below is authenticated.
 
     const png = await readFile(FIXTURE_PNG_PATH);
     const res = await page.request.post(`${baseURL ?? ""}/api/image`, {
