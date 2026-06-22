@@ -67,16 +67,17 @@ Grounded rules an autonomous agent must never break. Each cites where it comes f
 8. **One worktree per agent.** When parallelising work across agents, isolate via `git worktree add` so concurrent edits don't race on the same files. Don't share a checkout.
 9. **Stay in the assigned module.** Sprint specs name a single primary module (e.g. `app/components/GraphViewInner.tsx`, `src/core/syncDocEdges.ts`). Don't drift into unrelated areas mid-sprint; if you find a real bug, log it to EMDEE (LEARNINGS or a new sprint stub) and continue the primary task.
 10. **Write to the vault, not the chat.** Anything durable — a decision, a pattern, a hard-won fact — goes into a named doc in EMDEE immediately. Chat is ephemeral. (Source: LEARNINGS H2 *"Write to the vault, not to the chat."*)
+11. **New or modified MCP tools require a Playwright e2e spec in the same PR.** Any change to a tool's request shape, response shape, or observable side effects must ship with an `e2e/mcp/*.spec.ts` that hits `POST /api/mcp` with realistic params and asserts the response. CI's `playwright (chromium)` check then gates the runtime correctness — without this, a syntactically valid but runtime-broken tool can slip through all four checks and reach prod. Pure refactors (no behaviour change) are exempt but a regression-touching spec is encouraged. (Source: Ralph-loop SPRINT-048, 2026-06-23 — closes the "all checks green, tool broken at first call" failure mode.)
+12. **PRs touching `supabase/migrations/**` are never auto-merged — explicit human approval required.** Migrations are the highest-blast-radius change in the codebase (data loss, irreversible schema mutations). The Ralph routine prompt MUST disable auto-merge on PRs whose diff touches `supabase/migrations/**`. Edmund clicks merge manually after reading the migration. (Source: Ralph-loop SPRINT-048 — destructive-consent carve-out from the otherwise auto-merge-to-main model.)
 
-### Deploy ceiling — feat/* + agent staging model
+### Deploy ceiling — feat/* model (autonomous PRs land on main directly via CI gate)
 
-**Agents work on `feat/<sprint-id>-<slug>` branches, one per sprint, branched from `main` and merged back via PR.** Autonomous (Ralph) PRs target the long-lived `agent` branch, NOT `main`. A human is the only path to production.
+**All work — human or autonomous — lands on `main` via `feat/<sprint-id>-<slug>` PRs gated by 4 required CI checks.** No staging tier. The autonomous Ralph loop opens PRs directly to `main`; auto-merge fires on green CI. Cognitive load stays low (one branch to think about); safety stays acceptable because (a) HARD RULES 11/12 gate the catastrophic failure modes, (b) all other regressions are 5-minute revert problems.
 
-- **`main`** — production. Auto-deploys to **emdee.vercel.app**, which serves live vaults (Edmund's, Junior's, public). **PR-protected with 1 required review.** No direct pushes; the only path is `agent → main` via an Edmund-approved PR.
-- **`agent`** — long-lived autonomous staging branch (SPRINT-048, 2026-06-23). Deploys to a separate Vercel URL with **EMDEE-test** Supabase env (not prod — prevents Ralph from touching live vault data). Ralph opens `feat/SPRINT-NNN-*` PRs targeting `agent` with auto-merge enabled; 4 required CI checks gate the merge, but 0 reviews required. Multiple sprints can accumulate on `agent` before human promotion to `main`.
-- **`feat/<sprint-id>-<slug>`** — one branch per sprint, branched from `main` (human work) or `agent` (Ralph work). Multiple may exist concurrently. Vercel auto-builds these as **Preview deploys** (unique URL per push, useful for visual QA — EMDEE_OS is Cytoscape-heavy).
-- **No long-lived `agents` branch** (plural, retired 2026-05-28). The new singular `agent` is a different concept — staging target, not parallel trunk.
-- **`vercel.json` carries deployment-branch gating** (SPRINT-046, updated SPRINT-048): `main`, `feat/*`, and `agent` are allowed; `agent/*` (wildcard), `agents`, and `dev` are explicitly blocked so naming drift can't sneak prod. The gate is version-controlled, not a dashboard setting.
+- **`main`** — production. Auto-deploys to **emdee.vercel.app**, which serves live vaults (Edmund's, Junior's, public). **PR-protected, human-merge only.** No direct pushes — not even by attended agents — except by the repo owner when the user explicitly approves.
+- **`feat/<sprint-id>-<slug>`** — one branch per sprint, branched from `main`. Multiple may exist concurrently. Vercel auto-builds these as **Preview deploys** (unique URL per push, useful for visual QA of graph/UI changes — EMDEE_OS is Cytoscape-heavy). Production is unreachable from feat/* without a PR merge.
+- **No long-lived `agents` branch.** Retired 2026-05-28 in favour of the feat/* model.
+- **`vercel.json` carries deployment-branch gating** (SPRINT-046): `main` and `feat/*` are allowed; `agent/*`, `agents`, and `dev` are explicitly blocked so naming drift can't sneak prod. The gate is version-controlled, not a dashboard setting.
 
 **Build-minutes tradeoff:** every `feat/*` push triggers a Vercel Preview build. On Vercel's free/Hobby tier this counts against the monthly build-minutes quota. If quota becomes an issue, switch to per-sprint Previews only on PR-open instead of per-push (configure via Vercel project settings → Git → Ignored Build Step).
 
@@ -95,11 +96,11 @@ Branch protection requires these four checks to be green before any merge (job n
 
 ## Branch & commit conventions
 
-- **Branches:** `main` (production, PR-protected, 1 review required), `agent` (autonomous staging, 0 reviews, 4 CI checks, deploys to a separate Vercel URL with EMDEE-test Supabase), `feat/<sprint-id>-<slug>` (one per sprint, merged via PR into `agent` for Ralph or `main` for human work). `uat`, `dev`, and the old plural `agents` are retired. (`uat` retired 2026-05-14; `agents` retired 2026-05-28.)
-- **Ralph (autonomous) target: `agent`.** Open `feat/SPRINT-NNN-*` PRs against `agent`; auto-merge fires on 4 green checks. Periodic human PRs promote `agent → main`.
-- **Human (attended) target: `main` directly via `feat/*` PR**, with 1 review required (you approve your own).
-- **No direct pushes to `main` or `agent`.** PRs only.
-- **Deploy:** `main` → `emdee.vercel.app` (prod Supabase). `agent` → separate Vercel URL (test Supabase). `feat/*` → ephemeral Vercel Preview. CI gates (Typecheck/Lint/Build/Playwright/migration-drift) run on every PR.
+- **Branches:** `main` (production, PR-protected, human-merge only), `feat/<sprint-id>-<slug>` (one per sprint, branched from main, merged back via PR). `uat` and `dev` are retired in the standardised model — do not push to them. (`uat` was retired 2026-05-14; `agents` was retired 2026-05-28.)
+- **Default agent target: `feat/<sprint-id>-<slug>`.** Branch name pattern: `feat/SPRINT-NNN-short-slug` (e.g. `feat/SPRINT-029-density-layout`). One branch per sprint; do not pile multiple sprints into a single feat branch.
+- **Open a PR back to `main` when the sprint is shippable.** The PR is the ceiling — no merge without human review.
+- **No direct pushes to `main`**, attended or not. If branch protection blocks something the user explicitly wants merged, surface it; don't try to circumvent.
+- **Deploy:** `main` auto-deploys to `emdee.vercel.app` via Vercel. `feat/*` auto-deploys as Preview. `.github/workflows/` runs the gating CI (Typecheck/Lint/Build/Playwright/migration-drift) alongside the Vercel build.
 - **Commit messages:** present-tense, what + why. Each commit ends with a `Co-Authored-By: <model>` line when authored by an agent (see recent `git log` for the established style).
 - **Commit cadence:** prefer new commits over `--amend`. Per-task atomic commits; multi-file refactors get one bundled commit if cohesive (see SPRINT-027 / SPRINT-028 for the established granularity).
 
