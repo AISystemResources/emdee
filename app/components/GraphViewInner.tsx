@@ -69,21 +69,45 @@ const PREV_SIBLING_SLOT = 1;
 const NEXT_SIBLING_SLOT = 7;
 const ROTATABLE_SLOTS_WITH_PARENT = [2, 3, 4, 5, 6];
 const ROTATABLE_SLOTS_ROOT = [0, 1, 2, 3, 4, 5, 6, 7];
-// For root focals: when a focal/anchor convention applies (see
-// ANCHOR_BY_FOCAL_TITLE), slot 0 is pinned to the anchor child and the
-// remaining children paginate through slots 1–7. Without an applicable
-// convention, root focals fall back to ROTATABLE_SLOTS_ROOT (no pin).
-const ROTATABLE_SLOTS_ROOT_WITH_ANCHOR = [1, 2, 3, 4, 5, 6, 7];
 
-// Conventional anchor pins: when the focal has a matching title AND it's
-// a root (no parent), the child with the matching title gets slot 0
-// across every page. EMDEE → VAULT is the seed-vault convention; VAULT
-// is the meta-pillar that groups INFO/INSTRUCTIONS/BRAIN/WORKFLOWS, and
-// since both docs ship with the public seed every user's vault inherits
-// this layout. Add entries here for other root/anchor pairs you want to
-// pin. Comparison is case-sensitive against the doc's H1 title.
-const ANCHOR_BY_FOCAL_TITLE: Record<string, string> = {
-  EMDEE: "VAULT",
+// Cardinal pins for root focals — slot → child matcher. When the focal has
+// a matching title AND it's a root (no parent), matching children get
+// pinned to the named cardinal slots across every page; remaining children
+// paginate through the unpinned slots.
+//
+// SPRINT-056 (SIG-005) extends the prior single-anchor convention to four
+// cardinal directions for the EMDEE root, mirroring the canonical 4-node
+// vault structure (VAULT/SHARED/owner/GRAVEYARD). The compass carries
+// meaning: N = system you think through, W = inbound from others, S = you
+// and your work, E = outbound to deletion.
+//
+// `match` is either:
+//   - { kind: "title", title: "X" }: pin the child whose H1 == "X"
+//   - { kind: "owner", excludeTitles: [...] }: pin the first child whose
+//     title is NOT in the exclude list. Used for the user-specific owner
+//     node which is named per-vault (EDMUND, JUNIOR, etc.) — pin by ROLE,
+//     not literal title, so a renamed owner stays at S.
+//
+// Missing children are gracefully skipped — their slot falls back to
+// rotatable. This lets the pinning land before the 4-node vault migration
+// completes; pre-migration vaults just see partial pinning.
+type CardinalMatcher =
+  | { kind: "title"; title: string }
+  | { kind: "owner"; excludeTitles: string[] };
+interface CardinalPin {
+  slot: number;
+  match: CardinalMatcher;
+}
+const CARDINAL_PINS_BY_FOCAL_TITLE: Record<string, CardinalPin[]> = {
+  EMDEE: [
+    { slot: 0, match: { kind: "title", title: "VAULT" } },      // N (12)
+    { slot: 2, match: { kind: "title", title: "SHARED" } },     // W (9)
+    {
+      slot: 4,
+      match: { kind: "owner", excludeTitles: ["VAULT", "SHARED", "GRAVEYARD"] },
+    },                                                          // S (6)
+    { slot: 6, match: { kind: "title", title: "GRAVEYARD" } },  // E (3)
+  ],
 };
 const LAYER2_PER_LAYER1 = 2;
 const RADIUS_LAYER1 = 240;
@@ -295,35 +319,55 @@ function placeLayout(
   if (prevSiblingId) siblingIds.add(prevSiblingId);
   const rotatable = all.filter((n) => n.role !== "parent" && !siblingIds.has(n.id));
 
-  // Root focals can get an "anchor child" pinned to slot 0 (12 o'clock)
-  // across every page. The convention is hard-coded in ANCHOR_BY_FOCAL_TITLE:
-  // currently EMDEE → VAULT, because the seed ships both docs and the
-  // semantic intent (VAULT is the meta-pillar above the content pillars)
-  // is universal across users. forceBranchLayout (public-share root)
+  // Root focals can get cardinal-pinned children — slots 0/2/4/6 (N/W/S/E)
+  // hold known roles (VAULT/SHARED/owner/GRAVEYARD for EMDEE), the rest
+  // paginate through the unpinned slots. The convention is declared in
+  // CARDINAL_PINS_BY_FOCAL_TITLE. forceBranchLayout (public-share root)
   // opts out — that view already pins lineage slots.
   //
-  // Without a matching convention, root focals stay anchorless and use
-  // all 8 slots for rotatable (the original layout). We deliberately do
-  // not pin "rotatable[0]" generically: that would pin whichever child
-  // sorts first alphabetically (e.g. BUSINESS under EMDEE), which is
-  // visually arbitrary and confuses the layout's semantic meaning.
+  // Without a matching convention, root focals stay unpinned and use all
+  // 8 slots for rotatable (the original layout). We deliberately do not
+  // pin "rotatable[0]" generically: that would pin whichever child sorts
+  // first alphabetically, which is visually arbitrary and confuses the
+  // layout's semantic meaning.
   const isRootFocal = !parent && !forceBranchLayout;
-  const anchorTitle = isRootFocal ? ANCHOR_BY_FOCAL_TITLE[focalTitle] : undefined;
-  const anchorChild = anchorTitle
-    ? rotatable.find((n) => titleFor(n.id) === anchorTitle) ?? null
-    : null;
-  const paginated = anchorChild
-    ? rotatable.filter((n) => n.id !== anchorChild.id)
+  const cardinalPins = isRootFocal ? CARDINAL_PINS_BY_FOCAL_TITLE[focalTitle] : undefined;
+  const pinnedBySlot = new Map<number, Neighbor>();
+  const pinnedChildIds = new Set<string>();
+  if (cardinalPins) {
+    for (const pin of cardinalPins) {
+      let match: Neighbor | undefined;
+      if (pin.match.kind === "title") {
+        const target = pin.match.title;
+        match = rotatable.find(
+          (n) => !pinnedChildIds.has(n.id) && titleFor(n.id) === target,
+        );
+      } else {
+        const excludeSet = new Set(pin.match.excludeTitles);
+        match = rotatable.find(
+          (n) => !pinnedChildIds.has(n.id) && !excludeSet.has(titleFor(n.id)),
+        );
+      }
+      if (match) {
+        pinnedBySlot.set(pin.slot, match);
+        pinnedChildIds.add(match.id);
+      }
+    }
+  }
+  const paginated = pinnedChildIds.size > 0
+    ? rotatable.filter((n) => !pinnedChildIds.has(n.id))
     : rotatable;
 
   // Rotatable nodes fill a fixed list of slot positions in declared order.
   // With a parent: only the bottom-half slots (lineage slots 0/1/7 stay
-  // reserved). At root with an anchor: slots 1–7 (slot 0 reserved for the
-  // anchor). At root with no anchor (empty rotatable, edge case): all 8.
-  // forceBranchLayout: lineage slots reserved, bottom-half only.
+  // reserved). At root: full ring minus any cardinal-pinned slots. The
+  // pinned slots get filled deterministically below; rotatable picks up
+  // whatever's left.
   const rotatableSlots = (parent || forceBranchLayout)
     ? ROTATABLE_SLOTS_WITH_PARENT
-    : (anchorChild ? ROTATABLE_SLOTS_ROOT_WITH_ANCHOR : ROTATABLE_SLOTS_ROOT);
+    : (pinnedBySlot.size > 0
+        ? ROTATABLE_SLOTS_ROOT.filter((s) => !pinnedBySlot.has(s))
+        : ROTATABLE_SLOTS_ROOT);
   const pageSize = rotatableSlots.length;
   const totalRotatable = paginated.length;
   const totalPages = Math.max(1, Math.ceil(totalRotatable / pageSize));
@@ -364,21 +408,20 @@ function placeLayout(
     layer1Real.push(parent);
   }
 
-  // Place anchor child at slot 0 for root focals. Styled as a regular
-  // layer1 child (not a parent) — visually it sits where the parent
-  // would, but the edge is a normal Parent-of-focal → anchor hierarchy
-  // edge (drawn elsewhere from the edge data, not synthesised here).
-  if (anchorChild) {
-    const angle = angleForSlot(PARENT_SLOT);
-    layer1AnglesById.set(anchorChild.id, angle);
-    placed.set(anchorChild.id, {
-      id: anchorChild.id,
-      label: shortLabel(anchorChild.id),
+  // Place cardinal-pinned children at their fixed slots for root focals.
+  // Styled as regular layer1 children — edges are normal hierarchy edges
+  // drawn from the edge data, not synthesised here.
+  for (const [slot, pinned] of pinnedBySlot) {
+    const angle = angleForSlot(slot);
+    layer1AnglesById.set(pinned.id, angle);
+    placed.set(pinned.id, {
+      id: pinned.id,
+      label: shortLabel(pinned.id),
       kind: "layer1",
-      category: categoryFor(anchorChild.id),
+      category: categoryFor(pinned.id),
       position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
     });
-    layer1Real.push(anchorChild);
+    layer1Real.push(pinned);
   }
 
   // Next sibling at slot 1 (1:30). Empty slot when none — no backfill.
@@ -723,7 +766,13 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
   const cyRef = useRef<cytoscape.Core | null>(null);
   const focalIdRef = useRef<string | null>(null);
   const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
+  // SPRINT-056 cleanup: ref assignment moved from render → effect to satisfy
+  // React 19's `react-hooks/refs` rule. The effect with no deps runs after
+  // every render, keeping the latest onSelect handler accessible from
+  // event listeners that were registered with a stale closure.
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  });
 
   // Prefer the doc the user was just looking at; fall back to the vault entry.
   const initialFocal =
@@ -733,30 +782,39 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
     null;
   const [focalId, setFocalId] = useState<string | null>(initialFocal);
   const [page, setPage] = useState(0);
-  const [history, setHistory] = useState<string[]>([]);
   const [zoomPct, setZoomPct] = useState<number>(100);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
-  focalIdRef.current = focalId;
-
-  // Reset focal if the active doc disappears from the index
+  // SPRINT-056 cleanup: ref assignment moved from render → effect.
   useEffect(() => {
-    if (!focalId || !index.docs.some((d) => d.path === focalId)) {
-      setFocalId(initialFocal);
-      setPage(0);
-      setHistory([]);
-    }
-  }, [index, focalId, initialFocal]);
+    focalIdRef.current = focalId;
+  });
+
+  // Reset focal if the active doc disappears from the index. SPRINT-056
+  // cleanup: moved from useEffect into render-time setState — the
+  // documented "derived state" pattern. setState during render is allowed
+  // when it's converging (the next render sees `focalId === initialFocal`
+  // and the condition is false, so no cycle).
+  if (focalId !== null && !index.docs.some((d) => d.path === focalId)) {
+    setFocalId(initialFocal);
+    setPage(0);
+  }
 
   // External activePath changes (e.g. user clicks a sidebar item while
-  // staying in graph view) navigate the graph focus here.
-  useEffect(() => {
-    if (!activePath) return;
-    if (activePath === focalIdRef.current) return;
-    if (!index.docs.some((d) => d.path === activePath)) return;
-    if (focalIdRef.current) setHistory((h) => [...h, focalIdRef.current!]);
-    setFocalId(activePath);
-    setPage(0);
-  }, [activePath, index]);
+  // staying in graph view) navigate the graph focus here. SPRINT-056
+  // cleanup: same derived-state pattern using a tracking state for the
+  // previous activePath, to avoid setState-in-effect.
+  const [prevActivePath, setPrevActivePath] = useState(activePath);
+  if (activePath !== prevActivePath) {
+    setPrevActivePath(activePath);
+    if (
+      activePath &&
+      activePath !== focalId &&
+      index.docs.some((d) => d.path === activePath)
+    ) {
+      setFocalId(activePath);
+      setPage(0);
+    }
+  }
 
   // Mount cytoscape once
   useEffect(() => {
@@ -946,7 +1004,6 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
       // doc pane on the right. (Doc + graph are visible simultaneously
       // now, so keeping their selection in sync is the desired behavior.)
       if (id !== currentFocal) {
-        if (currentFocal) setHistory((h) => [...h, currentFocal]);
         setFocalId(id);
         setPage(0);
       }
