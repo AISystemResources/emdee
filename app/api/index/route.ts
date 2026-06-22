@@ -286,10 +286,18 @@ export async function GET(request: Request) {
     let pageStart = 0;
     let error: Error | { message: string } | null = null;
     while (true) {
+      // ORDER BY is mandatory for paginated .range(). Without a stable
+      // sort, Postgres can return rows in different orders across the
+      // two pages, silently dropping or duplicating rows at the boundary.
+      // Symptom: leaf docs (e.g. seminar concepts) lose their hierarchy
+      // edge and surface as top-level "orphans" in the sidebar tree.
       const { data, error: pageErr } = await adminClient()
         .from("doc_edges")
         .select("from_path, to_path, kind")
         .eq("namespace", ns)
+        .order("from_path", { ascending: true })
+        .order("to_path", { ascending: true })
+        .order("kind", { ascending: true })
         .range(pageStart, pageStart + PAGE_SIZE - 1);
       if (pageErr) { error = pageErr; break; }
       if (!data || data.length === 0) break;
