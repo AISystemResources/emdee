@@ -22,6 +22,8 @@ import {
   addAssociation,
   getImage,
   moveDoc,
+  trashDoc,
+  restoreDoc,
 } from "../lib/mcp/tools/index.js";
 import type { ToolContext } from "../lib/mcp/tools/types.js";
 // SPRINT-021: this stdio entrypoint is hardcoded to local mode (no
@@ -291,6 +293,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["path", "new_parent_path"],
       },
     },
+    {
+      name: "trash_doc",
+      description:
+        "Flag a doc as trashed without reparenting or rewriting its markdown. The doc's `## Child of` and `## Parent of` stay intact so restore is lossless. State persists in `.emdee/trashed.json` keyed by doc path. Idempotent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path of the doc to trash." },
+          original_parent_path: {
+            type: "string",
+            description: "Override the auto-derived restore target. Use when the Child of bullet is ambiguous or unresolvable.",
+          },
+        },
+        required: ["path"],
+      },
+    },
+    {
+      name: "restore_doc",
+      description:
+        "Reverse a previous `trash_doc`. Clears the doc's entry in `.emdee/trashed.json` so the renderer surfaces it again under its original parent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path of the trashed doc to restore." },
+        },
+        required: ["path"],
+      },
+    },
   ],
 }));
 
@@ -314,6 +344,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
     case "add_association":   return await addAssociation(ctx, a) as CallToolResult;
     case "get_image":         return await getImage(ctx, a) as CallToolResult;
     case "move_doc":          return await moveDoc(ctx, a) as CallToolResult;
+    case "trash_doc":         return await trashDoc(ctx, a) as CallToolResult;
+    case "restore_doc":       return await restoreDoc(ctx, a) as CallToolResult;
     default:
       throw new Error(`unknown tool: ${name}`);
   }

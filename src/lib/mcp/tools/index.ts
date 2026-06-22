@@ -20,4 +20,6 @@ export { distillDoc } from "./distill_doc";
 export { createChild } from "./create_child";
 export { addAssociation } from "./add_association";
 export { moveDoc } from "./move_doc";
+export { trashDoc } from "./trash_doc";
+export { restoreDoc } from "./restore_doc";
 export { getImage } from "./get_image";
