@@ -44,6 +44,9 @@ npm run e2e:report # playwright show-report
 npm run check:migrations  # node scripts/check-migration-drift.mjs — fails if a repo migration isn't applied to the cloud DB
 ```
 
+Public endpoints (no auth):
+- `GET /api/health` — liveness probe; returns `{ status: "ok", deployed_at: <ISO> }`. Added in SPRINT-053. Poll target for UptimeRobot / Vercel monitoring.
+
 One-off scripts live in `scripts/` (run with `npx tsx scripts/<name>.ts` or `node scripts/<name>.mjs`). Repair examples:
 - `npx tsx scripts/backfill-doc-edges.ts --namespace=<ns>` — rebuild `doc_edges` for one user
 - `node scripts/backfill-vault-files.mjs` — repopulate the `vault_files` cache from Storage
