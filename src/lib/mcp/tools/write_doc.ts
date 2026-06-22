@@ -2,6 +2,7 @@ import { validatePath, writeVaultFile, loadVaultIndex } from "./vault";
 import { lintDocContent } from "./lint";
 import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
+import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { ToolContext } from "./types";
 
 function json(value: unknown) {
@@ -37,6 +38,20 @@ function parseGateCodes(raw: unknown): string[] {
 export async function writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const rel = String(args.path);
   validatePath(rel);
+
+  // SPRINT-055 (SIG-004): refuse non-uppercase filenames at the entry point.
+  // Cheaper than letting them in and lint-warning later — keeps the on-disk
+  // namespace homogeneous. Auto-fix via `normalizeFilenameInPath` is offered
+  // in the error envelope so the caller can re-run without recomputing.
+  if (!isUppercaseFilename(rel)) {
+    return json({
+      error: "filename_not_uppercase",
+      path: rel,
+      suggested: normalizeFilenameInPath(rel),
+      hint: "EMDEE filenames are all-caps ASCII (CLAUDE.md, SPRINT-029.md). Re-run write_doc with `path: <suggested>`.",
+    });
+  }
+
   const content = String(args.content ?? "");
   const gateCodes = parseGateCodes(args.gate_on_warnings);
 

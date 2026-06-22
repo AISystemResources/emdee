@@ -41,7 +41,8 @@ export interface LintWarning {
     | "sibling_assoc_redundant"
     | "split_candidate"
     | "subgroup_materialization_candidate"
-    | "media_asset_missing_url";
+    | "media_asset_missing_url"
+    | "filename_not_uppercase";
   message: string;
   suggestion: string;
   title?: string;
@@ -340,6 +341,27 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
   const inlineCounts = collectInlineMentions(content);
 
   const warnings: LintWarning[] = [];
+
+  // SPRINT-055 (SIG-004): filename casing rule. The on-disk filename should
+  // be all-caps + ASCII (CLAUDE.md, SPRINT-029.md). Display titles stay
+  // free-form because wiki-links are case-insensitive. ctx.selfPath required
+  // because this is a path-level check; standalone lint of content alone
+  // has no filename to evaluate.
+  if (ctx?.selfPath) {
+    const base = ctx.selfPath.split("/").pop() ?? ctx.selfPath;
+    const ok = /^[A-Z0-9._-]+\.md$/.test(base);
+    if (!ok) {
+      warnings.push({
+        code: "filename_not_uppercase",
+        message:
+          `Filename \`${base}\` isn't uppercase ASCII. EMDEE convention: on-disk filenames are all-caps (the H1 display title can stay free-form — wiki-links are case-insensitive).`,
+        suggestion:
+          `Rename via \`rename_doc\` so the basename matches \`[A-Z0-9._-]+\\.md\`. Inbound \`[[wiki-links]]\` reference the H1 title, not the path, so the rename leaves them intact.`,
+        title: base,
+        line: 1,
+      });
+    }
+  }
 
   if (!has_preamble && preamble !== null) {
     warnings.push({

@@ -21,8 +21,17 @@ function deriveTitle(content: string, fallbackPath: string): string {
 function sanitizeFilename(title: string): string {
   // Mirror materialize_subgroup: hyphen for em-dash (Supabase Storage key
   // restriction), strip slashes/backslashes to keep the filename within
-  // a single directory.
-  return title.replace(/\s*—\s*/g, "-").replace(/[/\\]/g, "_");
+  // a single directory. SPRINT-055 (SIG-004): uppercase and ASCII-only
+  // so create_child-derived filenames hit the project convention by
+  // construction (rather than relying on the user passing CAPS).
+  return title
+    .replace(/\s*—\s*/g, "-")
+    .replace(/[/\\]/g, "_")
+    .toUpperCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Z0-9._-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
 }
 
 function hashBody(body: string): string {
