@@ -330,7 +330,13 @@ export async function GET(request: Request) {
           edges.push({ from, to, kind });
         }
       }
-      index.edges = edges;
+      // Defensive trash-cascade: doc_edges retains rows for trashed docs
+      // (so restore is lossless), but the renderer must not see edges
+      // pointing at filtered docs — they materialize as phantom nodes
+      // labeled by raw path (titleFor falls back when the target isn't
+      // in index.docs). Drop any edge whose endpoint isn't a kept doc.
+      const keptPaths = new Set(index.docs.map((d) => d.path));
+      index.edges = edges.filter((e) => keptPaths.has(e.from) && keptPaths.has(e.to));
     }
   }
 
