@@ -18,7 +18,8 @@ function ext(mediaType: SupportedMediaType): string {
 }
 
 function slugify(s: string): string {
-  return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  // SPRINT-055 (SIG-004): uppercase filenames are project convention.
+  return s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function json(value: unknown) {
