@@ -9,6 +9,7 @@ interface Props {
 export default async function UserWorkspace({ params }: Props) {
   const { userId: currentUserId } = await auth();
   const { userId } = await params;
-  if (currentUserId !== userId) redirect("/");
+  // The "public" namespace is the unauthenticated demo vault — anyone can browse it.
+  if (userId !== "public" && currentUserId !== userId) redirect("/");
   return <AppShell namespace={userId} />;
 }

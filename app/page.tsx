@@ -1,12 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { AppShell } from "./components/AppShell";
+import { LandingPage } from "./components/LandingPage";
 
 export const dynamic = "force-dynamic";
 
-// Public workspace for unauthenticated visitors. Signed-in users go straight to their workspace.
-export default async function PublicWorkspace() {
+export default async function Root() {
   const { userId } = await auth();
   if (userId) redirect(`/${userId}`);
-  return <AppShell namespace="public" />;
+  return <LandingPage />;
 }

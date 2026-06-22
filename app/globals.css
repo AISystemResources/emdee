@@ -2520,3 +2520,76 @@ a.sidebar-footer-btn { text-decoration: none; }
 /* On the public share, the .app shell hides the user dropdown / cloud
    icon since they don't apply to anonymous viewers. */
 .app[data-public-share="true"] .mobile-title { color: var(--fg); text-decoration: none; }
+
+/* ── Landing page (unauthenticated root) ──────────────────── */
+.landing {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.landing-header {
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+}
+.landing-wordmark {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--fg);
+}
+.landing-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 80px 32px;
+  max-width: 680px;
+}
+.landing-headline {
+  font-size: clamp(28px, 5vw, 48px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0 0 20px;
+  color: var(--fg);
+}
+.landing-sub {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 36px;
+  max-width: 540px;
+}
+.landing-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.landing-cta-primary {
+  display: inline-block;
+  padding: 12px 24px;
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.landing-cta-primary:hover { background: var(--accent-hover); }
+.landing-cta-secondary {
+  display: inline-block;
+  font-size: 15px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.landing-cta-secondary:hover { text-decoration: underline; }
+@media (max-width: 480px) {
+  .landing-hero { padding: 48px 20px; }
+  .landing-header { padding: 16px 20px; }
+}
