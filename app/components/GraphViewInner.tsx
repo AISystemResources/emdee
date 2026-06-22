@@ -70,45 +70,65 @@ const NEXT_SIBLING_SLOT = 7;
 const ROTATABLE_SLOTS_WITH_PARENT = [2, 3, 4, 5, 6];
 const ROTATABLE_SLOTS_ROOT = [0, 1, 2, 3, 4, 5, 6, 7];
 
-// Cardinal pins for root focals — slot → child matcher. When the focal has
-// a matching title AND it's a root (no parent), matching children get
-// pinned to the named cardinal slots across every page; remaining children
+// Cardinal pins for root focals — position → child matcher. When the focal
+// has a matching title AND it's a root (no parent), matching children get
+// pinned to the named positions across every page; remaining children
 // paginate through the unpinned slots.
 //
-// SPRINT-056 (SIG-005) extends the prior single-anchor convention to four
-// cardinal directions for the EMDEE root, mirroring the canonical 4-node
-// vault structure (VAULT/SHARED/owner/GRAVEYARD). The compass carries
-// meaning: N = system you think through, W = inbound from others, S = you
-// and your work, E = outbound to deletion.
+// Position is one of:
+//   - `slot: 0..7` (anticlockwise from 12, 45° steps — the original 8-slot
+//     system, composes with rotatable slot layout)
+//   - `angleDegrees: 0..360` (CLOCKWISE from 12 — arbitrary angle, used
+//     when the focal's top-level layout doesn't fit cleanly into 8 slots,
+//     e.g. EMDEE's 5 nodes at 72° spacing)
 //
-// `match` is either:
+// `match`:
 //   - { kind: "title", title: "X" }: pin the child whose H1 == "X"
 //   - { kind: "owner", excludeTitles: [...] }: pin the first child whose
-//     title is NOT in the exclude list. Used for the user-specific owner
-//     node which is named per-vault (EDMUND, JUNIOR, etc.) — pin by ROLE,
-//     not literal title, so a renamed owner stays at S.
+//     title is NOT in the exclude list — used for the user-specific owner
+//     node whose name varies per-vault (EDMUND, JUNIOR, etc.).
 //
-// Missing children are gracefully skipped — their slot falls back to
-// rotatable. This lets the pinning land before the 4-node vault migration
-// completes; pre-migration vaults just see partial pinning.
+// Missing children are gracefully skipped — pre-migration vaults see
+// partial pinning, no crash.
+//
+// SPRINT-056 introduced the 4-cardinal pinning for EMDEE; SPRINT-061
+// generalised to angle-based positions for EMDEE's 5-node root after
+// IMAGES was promoted to top level.
 type CardinalMatcher =
   | { kind: "title"; title: string }
   | { kind: "owner"; excludeTitles: string[] };
 interface CardinalPin {
-  slot: number;
+  slot?: number;
+  angleDegrees?: number;
   match: CardinalMatcher;
 }
 const CARDINAL_PINS_BY_FOCAL_TITLE: Record<string, CardinalPin[]> = {
   EMDEE: [
-    { slot: 0, match: { kind: "title", title: "VAULT" } },      // N (12)
-    { slot: 2, match: { kind: "title", title: "SHARED" } },     // W (9)
+    // 5 equally-spaced clockwise from 12, in the order Edmund specified:
+    //   12 o'clock → VAULT
+    //   2:24       → GRAVEYARD
+    //   4:48       → IMAGES
+    //   7:12       → EDMUND (owner)
+    //   9:36       → SHARED
+    { angleDegrees: 0,   match: { kind: "title", title: "VAULT" } },
+    { angleDegrees: 72,  match: { kind: "title", title: "GRAVEYARD" } },
+    { angleDegrees: 144, match: { kind: "title", title: "IMAGES" } },
     {
-      slot: 4,
-      match: { kind: "owner", excludeTitles: ["VAULT", "SHARED", "GRAVEYARD"] },
-    },                                                          // S (6)
-    { slot: 6, match: { kind: "title", title: "GRAVEYARD" } },  // E (3)
+      angleDegrees: 216,
+      match: { kind: "owner", excludeTitles: ["VAULT", "SHARED", "GRAVEYARD", "IMAGES"] },
+    },
+    { angleDegrees: 288, match: { kind: "title", title: "SHARED" } },
   ],
 };
+
+function angleForPin(pin: CardinalPin): number {
+  if (pin.angleDegrees !== undefined) {
+    // Clockwise degrees from 12 o'clock → screen-radians (y-axis flipped).
+    // 0° → -π/2 (cos=0, sin=-1 → (0, -R) i.e. straight up).
+    return -Math.PI / 2 + (pin.angleDegrees * Math.PI) / 180;
+  }
+  return angleForSlot(pin.slot ?? 0);
+}
 const LAYER2_PER_LAYER1 = 2;
 const RADIUS_LAYER1 = 240;
 const RADIUS_LAYER2 = 400;
@@ -332,7 +352,10 @@ function placeLayout(
   // layout's semantic meaning.
   const isRootFocal = !parent && !forceBranchLayout;
   const cardinalPins = isRootFocal ? CARDINAL_PINS_BY_FOCAL_TITLE[focalTitle] : undefined;
-  const pinnedBySlot = new Map<number, Neighbor>();
+  // Pinned positions resolved at this point: each entry pairs a matched
+  // neighbour with the explicit angle it should land at. Slot-based pins
+  // ALSO record their slot index so rotatable picking excludes it.
+  const pinnedPositions: Array<{ neighbor: Neighbor; angle: number; slot?: number }> = [];
   const pinnedChildIds = new Set<string>();
   if (cardinalPins) {
     for (const pin of cardinalPins) {
@@ -349,7 +372,11 @@ function placeLayout(
         );
       }
       if (match) {
-        pinnedBySlot.set(pin.slot, match);
+        pinnedPositions.push({
+          neighbor: match,
+          angle: angleForPin(pin),
+          slot: pin.slot,
+        });
         pinnedChildIds.add(match.id);
       }
     }
@@ -360,13 +387,17 @@ function placeLayout(
 
   // Rotatable nodes fill a fixed list of slot positions in declared order.
   // With a parent: only the bottom-half slots (lineage slots 0/1/7 stay
-  // reserved). At root: full ring minus any cardinal-pinned slots. The
-  // pinned slots get filled deterministically below; rotatable picks up
-  // whatever's left.
+  // reserved). At root: full ring minus any slot-pinned indices.
+  // Angle-pinned positions are off-slot — they don't reserve any slot.
+  const slotPinnedIndices = new Set<number>(
+    pinnedPositions
+      .map((p) => p.slot)
+      .filter((s): s is number => s !== undefined),
+  );
   const rotatableSlots = (parent || forceBranchLayout)
     ? ROTATABLE_SLOTS_WITH_PARENT
-    : (pinnedBySlot.size > 0
-        ? ROTATABLE_SLOTS_ROOT.filter((s) => !pinnedBySlot.has(s))
+    : (slotPinnedIndices.size > 0
+        ? ROTATABLE_SLOTS_ROOT.filter((s) => !slotPinnedIndices.has(s))
         : ROTATABLE_SLOTS_ROOT);
   const pageSize = rotatableSlots.length;
   const totalRotatable = paginated.length;
@@ -408,20 +439,21 @@ function placeLayout(
     layer1Real.push(parent);
   }
 
-  // Place cardinal-pinned children at their fixed slots for root focals.
+  // Place cardinal-pinned children at their resolved angles for root focals.
   // Styled as regular layer1 children — edges are normal hierarchy edges
-  // drawn from the edge data, not synthesised here.
-  for (const [slot, pinned] of pinnedBySlot) {
-    const angle = angleForSlot(slot);
-    layer1AnglesById.set(pinned.id, angle);
-    placed.set(pinned.id, {
-      id: pinned.id,
-      label: shortLabel(pinned.id),
+  // drawn from the edge data, not synthesised here. Angles come from
+  // angleForPin which handles both slot-based (anticlockwise 8-slot) and
+  // angleDegrees-based (arbitrary clockwise) pin styles.
+  for (const { neighbor, angle } of pinnedPositions) {
+    layer1AnglesById.set(neighbor.id, angle);
+    placed.set(neighbor.id, {
+      id: neighbor.id,
+      label: shortLabel(neighbor.id),
       kind: "layer1",
-      category: categoryFor(pinned.id),
+      category: categoryFor(neighbor.id),
       position: { x: Math.cos(angle) * RADIUS_LAYER1, y: Math.sin(angle) * RADIUS_LAYER1 },
     });
-    layer1Real.push(pinned);
+    layer1Real.push(neighbor);
   }
 
   // Next sibling at slot 1 (1:30). Empty slot when none — no backfill.
