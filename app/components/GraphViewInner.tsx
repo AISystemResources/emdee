@@ -129,6 +129,38 @@ function angleForPin(pin: CardinalPin): number {
   }
   return angleForSlot(pin.slot ?? 0);
 }
+
+// SPRINT-062: adaptive bottom-fan for non-root focals' rotatable children.
+// Per-count angles keep the layout visually balanced instead of clustering
+// at the bottom:
+//   N=1 → 6 (single child centred)
+//   N=2 → 7 + 5 (60° apart, ±30° from 6)
+//   N=3 → 9, 6, 3 (90° apart, full arc — all four gaps around the circle
+//                  are 90° so the layout reads as geometrically uniform)
+//   N=4 → 9, 7, 5, 3 (60° apart, full 180° arc)
+//   N=5 → 9, 7:30, 6, 4:30, 3 (45° apart, full arc — matches the legacy
+//                              5-slot layout exactly)
+// Pagination stays at 5 max per page; the second page (if any) uses its
+// own count for spacing — e.g. 6 children → page 1 of 5 + page 2 of 1
+// centred at 6.
+function angleForBottomFanPosition(index: number, count: number): number {
+  // Screen-radians: π/2 = 6 o'clock, π = 9, 0 = 3. Walk leftmost → rightmost.
+  switch (count) {
+    case 1:
+      return Math.PI / 2;
+    case 2: {
+      const half = Math.PI / 6; // 30°
+      return Math.PI / 2 + (index === 0 ? half : -half);
+    }
+    case 3:
+      return Math.PI - index * (Math.PI / 2);  // 9, 6, 3
+    case 4:
+      return Math.PI - index * (Math.PI / 3);  // 9, 7, 5, 3
+    default:
+      return Math.PI - index * (Math.PI / 4);  // 9, 7:30, 6, 4:30, 3
+  }
+}
+
 const LAYER2_PER_LAYER1 = 2;
 const RADIUS_LAYER1 = 240;
 const RADIUS_LAYER2 = 400;
@@ -482,12 +514,26 @@ function placeLayout(
     });
   }
 
-  // Rotatable neighbors fill the slot list in declared order. Bottom-half
-  // anticlockwise for non-root focals (9 → 3 o'clock); full ring for root.
+  // Rotatable neighbours. Two placement modes:
+  //   - Non-root focals (has parent OR forceBranchLayout): adaptive
+  //     bottom-fan via angleForBottomFanPosition — distributes 1..5
+  //     children across the bottom arc with per-count angles so the
+  //     visible white space stays balanced (SPRINT-062).
+  //   - Root focals (no parent, no forceBranchLayout): legacy 8-slot
+  //     placement around the full ring with cardinal-pinned slots
+  //     excluded. Root focals typically also use angle-based pins for
+  //     the canonical 5 children (SPRINT-061), so this slot path mainly
+  //     covers fall-through cases (root without pins).
+  const useBottomFan = !!parent || !!forceBranchLayout;
   onPage.forEach((n, i) => {
-    const slot = rotatableSlots[i];
-    if (slot === undefined) return;
-    const angle = angleForSlot(slot);
+    let angle: number;
+    if (useBottomFan) {
+      angle = angleForBottomFanPosition(i, onPage.length);
+    } else {
+      const slot = rotatableSlots[i];
+      if (slot === undefined) return;
+      angle = angleForSlot(slot);
+    }
     layer1AnglesById.set(n.id, angle);
     placed.set(n.id, {
       id: n.id,
