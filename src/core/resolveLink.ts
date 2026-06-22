@@ -50,6 +50,17 @@ export function resolvableKeysLower(docs: DocNode[]): Set<string> {
  * within a tier, shorter shared prefix loses (i.e. more shared segments
  * is better). Falls back to first candidate if `fromPath` is missing.
  *
+ * SPRINT-060 (SIG-007 part B): before locality scoring, candidates are
+ * filtered by **namespace family** to prevent shared content shadowing
+ * own content (and vice versa). The namespace family of a path:
+ *   - `__shared:<ownerId>:<rest>` → shared, scoped to that ownerId
+ *   - any other path                → own
+ * A wiki-link from an own doc only resolves to own candidates when an
+ * own candidate exists; from a shared doc by owner X only to candidates
+ * also shared by X. If no same-family candidate exists, fall through to
+ * the cross-family pool (preserves prior behaviour for single-match
+ * shared docs linked from own context).
+ *
  * Tiers (from `fromPath`'s point of view):
  *   5 — same directory as the linking doc (sibling)
  *   4 — descendant of "fromPath as a folder" (matches the common pattern
@@ -58,15 +69,38 @@ export function resolvableKeysLower(docs: DocNode[]): Set<string> {
  *   2 — shares any leading path segments
  *   1 — no overlap; first match wins
  */
+const SHARED_PATH_RE = /^__shared:([^:]+):/;
+
+function namespaceFamily(path: string): { kind: "shared"; ownerId: string } | { kind: "own" } {
+  const m = path.match(SHARED_PATH_RE);
+  if (m) return { kind: "shared", ownerId: m[1] };
+  return { kind: "own" };
+}
+
+function sameFamily(a: string, b: string): boolean {
+  const fa = namespaceFamily(a);
+  const fb = namespaceFamily(b);
+  if (fa.kind !== fb.kind) return false;
+  if (fa.kind === "shared" && fb.kind === "shared") return fa.ownerId === fb.ownerId;
+  return true;
+}
+
 export function pickByLocality<T extends { path: string }>(candidates: T[], fromPath?: string): T {
   if (!fromPath || candidates.length === 0) return candidates[0];
+
+  // Namespace-family filter: if any candidate shares the linking doc's
+  // namespace family, restrict to those. Prevents own/shared shadowing
+  // when both have docs with the same title.
+  const sameFamilyCandidates = candidates.filter((c) => sameFamily(c.path, fromPath));
+  const effective = sameFamilyCandidates.length > 0 ? sameFamilyCandidates : candidates;
+
   const fromSegs = fromPath.split("/");
   const fromDir = fromSegs.slice(0, -1);
   const fromBase = (fromSegs[fromSegs.length - 1] ?? "").replace(/\.md$/i, "");
 
-  let best = candidates[0];
+  let best = effective[0];
   let bestScore = -1;
-  for (const c of candidates) {
+  for (const c of effective) {
     const cSegs = c.path.split("/");
     const cDir = cSegs.slice(0, -1);
     const shared = sharedPrefix(fromDir, cDir);
