@@ -9,17 +9,24 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("smoke (anonymous)", () => {
-  test("public workspace renders and includes the seeded INFO node", async ({ page }) => {
+  test("public root renders the LANDING doc and the sign-in CTA", async ({ page }) => {
+    // SPRINT-052 (SIG-009): root no longer exposes the operator's INFO. The
+    // public namespace renders LANDING.md at `/` plus a sign-in CTA banner.
     const response = await page.goto("/");
     expect(response, "navigation returned a response").not.toBeNull();
     expect(response!.status(), "no 5xx on public root").toBeLessThan(500);
-    // Body has to actually paint — defends against empty-env white screen.
     await expect(page.locator("body")).toBeVisible();
-    // Sidebar / tree should mention the seeded fixture root. Use a regex
-    // so we tolerate either the bare basename ("INFO") or a fuller title
-    // ("EMDEE_TEST_VAULT — INFO") depending on what surface the renderer
-    // surfaces in the navigation chrome.
-    await expect(page.getByText(/INFO/i).first()).toBeVisible({ timeout: 10_000 });
+    // LANDING's H1 / value-prop content is what visitors see — pin on a
+    // distinctive phrase from the placeholder body. Edits to LANDING content
+    // (via MCP, post-merge) should keep the "knowledge graph" phrase to
+    // keep this assertion valid; otherwise update the spec at the same time.
+    await expect(
+      page.getByText(/your knowledge graph/i).first(),
+    ).toBeVisible({ timeout: 10_000 });
+    // CTA banner — SSR'd at the top of the shell for unauthenticated visitors.
+    await expect(
+      page.getByRole("link", { name: /sign in to start your own vault/i }).first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("/api/index returns the seeded fixture vault for the public namespace", async ({ request, baseURL }) => {
@@ -33,7 +40,9 @@ test.describe("smoke (anonymous)", () => {
     };
     expect(Array.isArray(body.docs), "docs array shape").toBe(true);
     const paths = (body.docs ?? []).map((d) => d.path);
-    // The seed plants at minimum INFO.md plus the three node-type fixtures.
+    // The seed plants at minimum INFO.md plus the three node-type fixtures,
+    // and SPRINT-052 added LANDING.md as the canonical public-root doc.
+    expect(paths).toContain("LANDING.md");
     expect(paths).toContain("INFO.md");
     expect(paths).toContain("hubs/test-hub.md");
     expect(paths).toContain("templates/PERSON.md");

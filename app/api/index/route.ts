@@ -43,6 +43,38 @@ export const runtime = "nodejs";
 const EMPTY = { docs: [], edges: [], entry: null };
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
+// SPRINT-052 (SIG-009): public landing seed. Written into the public namespace
+// on first request if absent. Editable post-seed via MCP — this constant is
+// only the bootstrap content; the source of truth becomes the file once
+// written.
+const PUBLIC_LANDING_INITIAL = `# EMDEE
+
+> Your knowledge graph, in markdown, for you and Claude.
+
+EMDEE is a local-first knowledge graph + MCP server. Plain markdown files, structured edges between them, rendered as a navigable graph and read by Claude as context. Yours stays yours — write notes once, query them everywhere.
+
+## What you get
+
+- A live graph of your own ideas, projects, people, and notes — all backed by markdown files you own
+- Claude as your default agent over those files — read, write, search, summarize, distill
+- Cross-session memory — Claude remembers what's in your vault even when chat history doesn't
+
+## Get started
+
+Click **Sign in** above to create your own vault.
+`;
+
+async function ensurePublicLanding(
+  storage: VaultStorage,
+  prefix: string,
+  listed: Awaited<ReturnType<typeof storage.listWithContent>>,
+): Promise<boolean> {
+  const path = `${prefix}LANDING.md`;
+  if (listed.some((f) => f.path === path)) return false;
+  await storage.write(path, PUBLIC_LANDING_INITIAL);
+  return true;
+}
+
 function publicCacheHeaders(ns: string): Record<string, string> {
   return {
     "Cache-Control": "public, s-maxage=60, stale-while-revalidate=600",
@@ -133,6 +165,25 @@ export async function GET(request: Request) {
     }
   }
 
+  // SPRINT-052 (SIG-009): ensure LANDING.md exists in the public namespace.
+  // Self-heals after deploys + does not depend on a separate seed script.
+  // Idempotent — only writes if missing. Once written, subsequent edits via
+  // MCP become the source of truth.
+  if (!isLocal && ns === "public" && listed.length > 0) {
+    try {
+      const wrote = await ensurePublicLanding(storage, prefix || "", listed);
+      if (wrote) {
+        try {
+          listed = await storage.listWithContent(prefix || undefined);
+        } catch {
+          /* keep previous listed; LANDING write succeeded server-side. */
+        }
+      }
+    } catch (e) {
+      console.error("ensurePublicLanding failed:", e);
+    }
+  }
+
   if (listed.length === 0) {
     return Response.json(EMPTY, NO_STORE);
   }
@@ -143,6 +194,13 @@ export async function GET(request: Request) {
   }));
 
   const index = buildIndexFromContents(files);
+
+  // SPRINT-052 (SIG-009): the public namespace always lands on LANDING.md.
+  // Override the indexer's natural entry-picking — operator's INFO must
+  // never be the public entry (graph-topology leak + wrong audience).
+  if (ns === "public" && index.docs.some((d) => d.path === "LANDING.md")) {
+    index.entry = "LANDING.md";
+  }
 
   // SPRINT-018 Phase 3: in cloud mode, override the indexer's parsed
   // edges with the materialized doc_edges rows. Same suppression rules
