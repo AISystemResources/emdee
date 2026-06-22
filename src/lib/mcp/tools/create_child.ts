@@ -4,6 +4,7 @@ import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./v
 import { lintDocContent } from "./lint";
 import { buildLintVaultContext } from "./lint_doc";
 import { evaluateLintGate, type LintFix } from "./lint_gate";
+import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { LintWarning } from "./lint";
 import type { ToolContext } from "./types";
 
@@ -183,6 +184,20 @@ export async function createChild(ctx: ToolContext, args: Record<string, unknown
         return dir === "." ? fname : `${dir}/${fname}`;
       })();
   validatePath(childPath);
+
+  // SPRINT-055 (SIG-004): explicit child_path must be uppercase — mirrors
+  // write_doc's refusal. Title-derived paths go through sanitizeFilename
+  // which already uppercases, so this only fires when the caller passes
+  // child_path directly. Surface the corrected path so the caller can
+  // re-run without recomputing.
+  if (!isUppercaseFilename(childPath)) {
+    return json({
+      error: "filename_not_uppercase",
+      path: childPath,
+      suggested: normalizeFilenameInPath(childPath),
+      hint: "EMDEE filenames are all-caps ASCII. Re-run create_child with `child_path: <suggested>`, or omit child_path so it's derived from the title.",
+    });
+  }
 
   const parentContent = await readVaultFile(ctx, parentPath);
   if (parentContent === null) return json({ error: "parent_not_found", path: parentPath });

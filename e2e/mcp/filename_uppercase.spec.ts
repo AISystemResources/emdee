@@ -106,14 +106,10 @@ test.describe("filename uppercase enforcement (local-mode)", () => {
     expect(body.child_path).toMatch(/MY-NEW-CHILD-NODE\.md$/);
   });
 
-  test("create_child uppercases an explicit child_path that's lowercase", async () => {
-    // When child_path is provided explicitly, the user is bypassing the
-    // title-derivation, but write_doc / writeVaultFile downstream still
-    // need the path uppercase. Today create_child doesn't re-normalise an
-    // explicit child_path — it passes it through. The lint warning catches
-    // it post-write. This test pins the documented behaviour: lowercase
-    // child_path may write through, but the post-write lint warning is
-    // visible in the response.
+  test("create_child refuses explicit lowercase child_path with a suggested fix", async () => {
+    // Mirrors write_doc's refusal. Caller can re-run with the suggested
+    // uppercase path, or omit child_path so the title-derived path is
+    // generated (which goes through the uppercased sanitizeFilename).
     const body = parseToolResult(
       await createChild(ctx, {
         parent_path: "PARENT.md",
@@ -121,12 +117,8 @@ test.describe("filename uppercase enforcement (local-mode)", () => {
         child_path: "lowercase-forced.md",
       }),
     );
-    if (body.ok) {
-      const warnings = (body.warnings ?? []) as Array<{ code: string }>;
-      expect(warnings.some((w) => w.code === "filename_not_uppercase")).toBe(true);
-    } else {
-      // If create_child grows a refusal path later, that's also acceptable.
-      expect(body.error).toBe("filename_not_uppercase");
-    }
+    expect(body.error).toBe("filename_not_uppercase");
+    expect(body.path).toBe("lowercase-forced.md");
+    expect(body.suggested).toBe("LOWERCASE-FORCED.md");
   });
 });
