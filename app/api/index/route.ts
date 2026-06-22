@@ -7,6 +7,8 @@ import { ensureProfile } from "@/src/lib/supabase/oauth";
 import { vaultListTag } from "@/src/lib/cache/bust";
 import { backfillNamespace } from "@/src/core/syncDocEdges";
 import { fetchSharesForGrantee } from "@/src/lib/share/grants";
+import { listTrashedPaths } from "@/src/lib/trash/state";
+import type { ToolContext } from "@/src/lib/mcp/tools/types";
 
 const SHARED_PREFIX = "__shared:";
 const SHARED_ROOT_PATH = "SHARED.md";
@@ -188,10 +190,32 @@ export async function GET(request: Request) {
     return Response.json(EMPTY, NO_STORE);
   }
 
-  const files = listed.map((f) => ({
+  let files = listed.map((f) => ({
     path: prefix ? f.path.slice(prefix.length) : f.path,
     content: f.content,
   }));
+
+  // SPRINT-057 (SIG-008): filter out trashed docs from the renderer's view.
+  // Trash state lives in `.emdee/trashed.json` (per namespace). The doc's
+  // markdown is unchanged and its edges in doc_edges stay intact for
+  // lossless restore — only the renderer hides it. A future GRAVEYARD view
+  // can surface trashed docs by passing `?include_trashed=true`.
+  const includeTrashed = url.searchParams.get("include_trashed") === "true";
+  if (!includeTrashed) {
+    const trashCtx: ToolContext = isLocal
+      ? { mode: "local", docsDir: process.env.EMDEE_DOCS ?? "" }
+      : { mode: "cloud", storage, userId: ns };
+    try {
+      const trashed = await listTrashedPaths(trashCtx);
+      if (trashed.size > 0) {
+        files = files.filter((f) => !trashed.has(f.path));
+      }
+    } catch (e) {
+      // Don't fail the whole index if the trash sidecar is malformed —
+      // surface to the server log and proceed with no filter.
+      console.error(`[api/index] trash filter skipped for ${ns}:`, e);
+    }
+  }
 
   const index = buildIndexFromContents(files);
 
