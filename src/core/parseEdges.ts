@@ -69,12 +69,29 @@ function parseBullet(text: string): BulletParse | null {
 export function parseEdges(content: string): ParsedEdge[] {
   const out: ParsedEdge[] = [];
   let kind: ParsedEdgeKind | null = null;
+  // Heading level at which `kind` was set. A deeper sub-heading (e.g.
+  // `### Vocabulary & units` inside `## Parent of`) does NOT exit the
+  // relation section — bullets under the sub-heading still count.
+  // Only an equal-or-shallower heading exits the section.
+  let kindLevel = 0;
   let pos = 0;
   for (const line of outsideFences(content)) {
     const h = line.match(HEADING);
     if (h) {
-      kind = classifyHeading(h[2]);
-      pos = 0;
+      const level = h[1].length;
+      const classified = classifyHeading(h[2]);
+      if (classified) {
+        kind = classified;
+        kindLevel = level;
+        pos = 0;
+      } else if (level <= kindLevel) {
+        // Sibling-or-shallower heading exits the relation section.
+        kind = null;
+        kindLevel = 0;
+        pos = 0;
+      }
+      // Otherwise (deeper heading inside relation section): keep `kind`
+      // and `pos` so bullets under sub-headings continue to accrue.
       continue;
     }
     if (!kind) continue;

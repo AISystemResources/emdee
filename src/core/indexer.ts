@@ -127,10 +127,23 @@ interface Sections {
 function extractSections(content: string): Sections {
   const out: Sections = { parents: [], children: [], associates: [] };
   let role: Role | null = null;
+  // Heading level at which `role` was set. Deeper sub-headings keep us
+  // inside the relation section; equal-or-shallower headings exit it.
+  // Mirrors parseEdges.ts to keep the indexer and the doc_edges sync
+  // path in agreement.
+  let roleLevel = 0;
   for (const line of outsideFences(content)) {
     const h = line.match(HEADING);
     if (h) {
-      role = classifyHeading(h[2]);
+      const level = h[1].length;
+      const classified = classifyHeading(h[2]);
+      if (classified) {
+        role = classified;
+        roleLevel = level;
+      } else if (level <= roleLevel) {
+        role = null;
+        roleLevel = 0;
+      }
       continue;
     }
     if (!role) continue;
