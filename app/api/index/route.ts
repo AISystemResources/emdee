@@ -343,6 +343,15 @@ export async function GET(request: Request) {
     try {
       const shares = await fetchSharesForGrantee(ns);
       const hasSharedRoot = index.docs.some((d) => d.path === SHARED_ROOT_PATH);
+
+      // SPRINT-060 (SIG-007 part B): dedupe synthetic owner nodes — if
+      // the same owner shares multiple subtrees, they get ONE owner node
+      // grouping them all (mirrors Google Drive's "Shared with me" by
+      // contributor). Path scheme `__shared_owner:<ownerId>` keeps it
+      // distinct from regular `__shared:<ownerId>:<path>` doc keys.
+      const ownerNodePathFor = (ownerId: string) => `__shared_owner:${ownerId}`;
+      const synthesizedOwners = new Set<string>();
+
       for (const group of shares) {
         const pathSet = new Set(group.docs.map((d) => d.path));
         for (const doc of group.docs) {
@@ -366,13 +375,44 @@ export async function GET(request: Request) {
             kind: e.kind,
           });
         }
-        // One synthetic edge per share group anchoring the share root to the
-        // user's own SHARED.md so the graph can walk SHARED → shared
-        // subtree. Skipped if SHARED.md isn't in this user's vault for any
-        // reason (seed should always have placed it; defensive only).
-        if (hasSharedRoot && pathSet.has(group.shareRoot)) {
+
+        // SPRINT-060: synthesize per-owner intermediate. SHARED → owner
+        // → share-root, instead of SHARED → share-root directly. Owner
+        // node title derives from the contributor's email local-part
+        // (same helper SIG-006 uses for the user's own owner node), so
+        // "Alice's BUSINESS" surfaces as `SHARED → ALICE → BUSINESS`
+        // rather than just `SHARED → BUSINESS`.
+        const ownerSyntheticPath = ownerNodePathFor(group.ownerId);
+        const ownerDisplayTitle = group.ownerEmail
+          ? ownerTitleFromEmail(group.ownerEmail)
+          : `USER-${group.ownerId.slice(-6).toUpperCase()}`;
+
+        if (!synthesizedOwners.has(group.ownerId)) {
+          synthesizedOwners.add(group.ownerId);
+          index.docs.push({
+            path: ownerSyntheticPath,
+            title: ownerDisplayTitle,
+            content: "",
+            summary: `Shared content from ${group.ownerEmail ?? ownerDisplayTitle}.`,
+            parents: [],
+            children: [],
+            associates: [],
+            mentions: [],
+          });
+          // SHARED → owner-intermediate (one edge per owner, not per group).
+          if (hasSharedRoot) {
+            index.edges.push({
+              from: SHARED_ROOT_PATH,
+              to: ownerSyntheticPath,
+              kind: "hierarchy",
+            });
+          }
+        }
+
+        // owner-intermediate → share-root (one per share group).
+        if (pathSet.has(group.shareRoot)) {
           index.edges.push({
-            from: SHARED_ROOT_PATH,
+            from: ownerSyntheticPath,
             to: sharedKey(group.ownerId, group.shareRoot),
             kind: "hierarchy",
           });
