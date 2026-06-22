@@ -21,6 +21,7 @@ import {
   createChild,
   addAssociation,
   getImage,
+  moveDoc,
 } from "../lib/mcp/tools/index.js";
 import type { ToolContext } from "../lib/mcp/tools/types.js";
 // SPRINT-021: this stdio entrypoint is hardcoded to local mode (no
@@ -265,6 +266,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["doc_path"],
       },
     },
+    {
+      name: "move_doc",
+      description:
+        "Atomic reparenting. Removes the child's bullet from old parent's `## Parent of`, adds it to new parent's, and rewrites the child's `## Child of` to declare the new parent — all in one call. Replaces the 3-write hash-guarded patch_section dance that drops asymmetric edges if any step fails. If the child has more than one Child of bullet, `old_parent_path` MUST disambiguate; otherwise refuses with `ambiguous_parent`. Idempotent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Child doc path to reparent." },
+          new_parent_path: { type: "string", description: "Path of the new parent doc." },
+          old_parent_path: {
+            type: "string",
+            description: "Disambiguating old parent when the child has multiple Child of bullets. Required only in that case.",
+          },
+          position: {
+            type: "number",
+            description: "Optional 0-indexed bullet position in the new parent's Parent of. Default: append at end.",
+          },
+          gate_on_warnings: {
+            type: "array", items: { type: "string" },
+            description: "Lint codes to hard-block on. Default [].",
+          },
+        },
+        required: ["path", "new_parent_path"],
+      },
+    },
   ],
 }));
 
@@ -287,6 +313,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
     case "create_child":      return await createChild(ctx, a) as CallToolResult;
     case "add_association":   return await addAssociation(ctx, a) as CallToolResult;
     case "get_image":         return await getImage(ctx, a) as CallToolResult;
+    case "move_doc":          return await moveDoc(ctx, a) as CallToolResult;
     default:
       throw new Error(`unknown tool: ${name}`);
   }
