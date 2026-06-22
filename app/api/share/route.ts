@@ -207,6 +207,23 @@ export async function POST(request: Request) {
 
   if (!email.includes("@")) return Response.json({ error: "invalid email" }, { status: 400 });
 
+  // SPRINT-059 (SIG-007 part A): RBAC — only share what you own.
+  // Paths under `__shared__/` are content shared TO this user; allowing
+  // them to be re-shared would let a recipient grant access to someone
+  // else's docs. The future roles model (SIG-007 acceptance #4) may
+  // relax this for Owner/Admin members of a shared workspace, but the
+  // default share-only-what-you-own rule is the floor.
+  if (path.startsWith("__shared__/") || path === "__shared__" || path.startsWith("__shared:")) {
+    return Response.json(
+      {
+        error: "cannot_share_received_content",
+        path,
+        hint: "Items under `__shared__/` are shared TO you and cannot be re-shared. The original owner has to share with the new recipient directly.",
+      },
+      { status: 403 },
+    );
+  }
+
   await ensureProfile(userId);
 
   const paths = cascade
