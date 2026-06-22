@@ -286,10 +286,18 @@ export async function GET(request: Request) {
     let pageStart = 0;
     let error: Error | { message: string } | null = null;
     while (true) {
+      // ORDER BY is mandatory for paginated .range(). Without a stable
+      // sort, Postgres can return rows in different orders across the
+      // two pages, silently dropping or duplicating rows at the boundary.
+      // Symptom: leaf docs (e.g. seminar concepts) lose their hierarchy
+      // edge and surface as top-level "orphans" in the sidebar tree.
       const { data, error: pageErr } = await adminClient()
         .from("doc_edges")
         .select("from_path, to_path, kind")
         .eq("namespace", ns)
+        .order("from_path", { ascending: true })
+        .order("to_path", { ascending: true })
+        .order("kind", { ascending: true })
         .range(pageStart, pageStart + PAGE_SIZE - 1);
       if (pageErr) { error = pageErr; break; }
       if (!data || data.length === 0) break;
@@ -330,7 +338,13 @@ export async function GET(request: Request) {
           edges.push({ from, to, kind });
         }
       }
-      index.edges = edges;
+      // Defensive trash-cascade: doc_edges retains rows for trashed docs
+      // (so restore is lossless), but the renderer must not see edges
+      // pointing at filtered docs — they materialize as phantom nodes
+      // labeled by raw path (titleFor falls back when the target isn't
+      // in index.docs). Drop any edge whose endpoint isn't a kept doc.
+      const keptPaths = new Set(index.docs.map((d) => d.path));
+      index.edges = edges.filter((e) => keptPaths.has(e.from) && keptPaths.has(e.to));
     }
   }
 
