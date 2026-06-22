@@ -4,6 +4,7 @@
     "deploymentEnabled": {
       "main": true,
       "feat/*": true,
+      "agent": true,
       "agent/*": false,
       "agents": false,
       "dev": false
