@@ -1,12 +1,5 @@
 {
   "mcpServers": {
-    "emdee": {
-      "command": "npx",
-      "args": ["-y", "tsx", "/Users/whatelz/Documents/GitHub/silent-mane/src/mcp/server.ts"],
-      "env": {
-        "EMDEE_DOCS": "/Users/whatelz/Documents/GitHub/silent-mane/docs"
-      }
-    },
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp"

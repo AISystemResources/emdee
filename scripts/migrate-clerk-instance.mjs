@@ -54,20 +54,33 @@ dotenv.config({ path: ".env.local" });
 // or via the Clerk Management API:
 //   GET https://api.clerk.com/v1/users?limit=100
 //   Authorization: Bearer <clerk_secret_key>
+// Dev IDs are pre-populated. Fill in prod IDs as each user signs in on
+// emdee.tech — find them under Clerk prod dashboard → Users.
+// Run with --dry-run first, then live for each batch.
 const ID_MAP = {
-  // "user_<dev_id>": "user_<prod_id>",
-  // Example:
-  // "user_3DbybqEDdQdhvmvBFTmpZEAcQLS": "user_<new_prod_id>",
+  "user_3DbybqEDdQdhvmvBFTmpZEAcQLS": "user_3FXDLXbkdJ2TSWM0tc8SYMql9ZO", // elz.work22 (Edmund primary)
+  "user_3Dgy0C20oB513H5cU1cIs738kdO": "", // elz.news22 (Edmund secondary)
+  "user_3DicC9J0L62zcUqG4SZb4CZIL4D": "", // jasclapforyou
+  "user_3Dj1898GTvq923JNDChKmz60CbD": "", // lisa.see02
+  "user_3DkDnQtT43v0fN2QjMdjF14ZQ08": "", // emily.ruixian
+  "user_3DgtXPnEOTj1n6ysJyhZKDGZo8S": "", // desmondchye321
+  "user_3DoXnTZK4u1kKe1TSTkJr4DgSzs": "", // teklin.lim
+  "user_3E52OBWZMRDS8RhRmoKo60gQZX6": "", // yeosimyee
+  "user_3EOefznLM7Zv662VBXUHNrUu8kI": "", // kiranmega7 (Kiran)
+  "user_3EedPbcAY8QLWKrAoY0U1wEnJV4": "", // shaunliew20 (Shaun)
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { values } = parseArgs({ options: { "dry-run": { type: "boolean", default: false } } });
 const DRY_RUN = values["dry-run"];
 
-if (Object.keys(ID_MAP).length === 0) {
-  console.error("❌  ID_MAP is empty — fill in dev→prod mappings before running.");
+const readyEntries = Object.entries(ID_MAP).filter(([, v]) => v.trim() !== "");
+if (readyEntries.length === 0) {
+  console.error("❌  No prod IDs filled in — paste prod user IDs (from Clerk → Users) into ID_MAP before running.");
   process.exit(1);
 }
+// Only migrate entries that have a prod ID — skip blanks silently.
+const ACTIVE_MAP = Object.fromEntries(readyEntries);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -83,7 +96,7 @@ async function run() {
   }
   console.log();
 
-  for (const [devId, prodId] of Object.entries(ID_MAP)) {
+  for (const [devId, prodId] of Object.entries(ACTIVE_MAP)) {
     console.log(`\n── Migrating ${devId} → ${prodId} ──`);
 
     // 1. profiles (PK — must go first; all FKs cascade from here)
@@ -94,6 +107,8 @@ async function run() {
         .eq("clerk_id", devId)
         .single();
       if (!existing) throw new Error(`No profile found for dev ID ${devId}`);
+      // If prod sign-in already created a profile row, delete it first so INSERT doesn't conflict.
+      await supabase.from("profiles").delete().eq("clerk_id", prodId);
       await supabase.from("profiles").insert({
         clerk_id: prodId,
         vault_id: existing.vault_id,
@@ -160,6 +175,8 @@ async function run() {
       console.log(`    ${allRows.length} vault_files rows to migrate`);
       if (allRows.length > 0) {
         const newRows = allRows.map((r) => ({ ...r, namespace: prodId }));
+        // Clear any auto-created prod rows (e.g. default seed from first sign-in) before inserting dev data.
+        await supabase.from("vault_files").delete().eq("namespace", prodId);
         await supabase.from("vault_files").upsert(newRows, { onConflict: "namespace,file_path" });
         await supabase.from("vault_files").delete().eq("namespace", devId);
       }
