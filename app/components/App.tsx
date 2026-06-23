@@ -1056,6 +1056,15 @@ export function App({ namespace }: { namespace: string }) {
       <div className="sidebar-wrap" data-open={mobileSidebarOpen}>
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
           <h1>EMDEE</h1>
+          <DocTree
+            nodes={docTree}
+            parentPath={null}
+            parentTitle={null}
+            activePath={activePath}
+            collapsed={collapsed}
+            onSelect={selectDoc}
+            onToggle={toggleCollapsed}
+          />
           {canSync && (
             <div className="connect-section">
               <span className="pat-label">Cloud Account</span>
@@ -1177,15 +1186,6 @@ export function App({ namespace }: { namespace: string }) {
               <a href={`/${user?.id}`} className="signin-btn">Go to my workspace</a>
             </div>
           )}
-          <DocTree
-            nodes={docTree}
-            parentPath={null}
-            parentTitle={null}
-            activePath={activePath}
-            collapsed={collapsed}
-            onSelect={selectDoc}
-            onToggle={toggleCollapsed}
-          />
           <div className="sidebar-footer">
             {isAdmin && (
               <>
