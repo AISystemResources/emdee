@@ -23,7 +23,7 @@ const SPEC = {
     description:
       "REST surface over the Emdee vault. Reuses the same OAuth token system as the MCP server — a token minted via the claude.ai OAuth flow works here too. Email-based access control (doc_shares) governs cross-namespace access.",
   },
-  servers: [{ url: "https://emdee.vercel.app", description: "Production" }],
+  servers: [{ url: "https://emdee.tech", description: "Production" }],
   components: {
     securitySchemes: {
       bearerAuth: {

@@ -228,7 +228,7 @@ export function App({ namespace }: { namespace: string }) {
 
   // Opens the prod handshake in a new tab. After Clerk auth, it bounces back
   // to /cloud-link/callback which writes localStorage.emdee_cloud_user_id.
-  const cloudOrigin = process.env.NEXT_PUBLIC_CLOUD_ORIGIN ?? "https://emdee.vercel.app";
+  const cloudOrigin = process.env.NEXT_PUBLIC_CLOUD_ORIGIN ?? "https://emdee.tech";
   const linkCloudAccount = useCallback(() => {
     const returnUrl = `${window.location.origin}/cloud-link/callback`;
     const url = `${cloudOrigin}/cloud-link?return=${encodeURIComponent(returnUrl)}`;
