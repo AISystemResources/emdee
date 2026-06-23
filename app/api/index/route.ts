@@ -175,8 +175,10 @@ export async function GET(request: Request) {
       return Response.json(EMPTY, NO_STORE);
     }
     canSeedIfEmpty = true;
-    // Backfill email + claim any pending share invitations on first index load.
-    ensureProfile(userId).catch(() => {});
+    // Await ensureProfile so a Clerk-instance migration (dev→prod ID remap)
+    // can populate vault_files before the seed-if-empty check below runs.
+    // For repeat visitors the call short-circuits immediately (email already set).
+    await ensureProfile(userId).catch(() => {});
   }
 
   let listed: Awaited<ReturnType<typeof storage.listWithContent>>;
