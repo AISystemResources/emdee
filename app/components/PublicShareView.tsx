@@ -49,14 +49,13 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
   // Draggable divider between the graph and doc panes — same UX as the
   // owner view. Persists to localStorage under a separate key so the
   // public reader's preference doesn't bleed into the owner workspace.
-  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [splitRatio, setSplitRatio] = useState(() => {
+    if (typeof window === "undefined") return 0.5;
+    const ratio = parseFloat(localStorage.getItem("emdee_share_split_ratio") ?? "");
+    return Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
+  });
   const [draggingSplit, setDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const ratio = parseFloat(localStorage.getItem("emdee_share_split_ratio") ?? "");
-    if (Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85) setSplitRatio(ratio);
-  }, []);
 
   const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
     const container = splitContainerRef.current;

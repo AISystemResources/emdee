@@ -61,7 +61,7 @@ export async function appendSection(ctx: ToolContext, args: Record<string, unkno
       heading_resolves_to: resolved.heading_resolves_to,
     });
   }
-  let target: SectionLoc | undefined = resolved.kind === "ok" ? resolved.loc : undefined;
+  const target: SectionLoc | undefined = resolved.kind === "ok" ? resolved.loc : undefined;
 
   if (!target) {
     if (!createIfMissing || !headingArg) {

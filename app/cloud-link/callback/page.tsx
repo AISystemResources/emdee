@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default function CloudLinkCallback() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("cloud_user_id");
     if (!id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("error");
       return;
     }
@@ -49,7 +51,7 @@ export default function CloudLinkCallback() {
               Local dev will push to <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 4 }}>{cloudUserId}</code>.
             </p>
             <p style={{ color: "#9ca3af", fontSize: 13 }}>You can close this tab.</p>
-            <a href="/" style={{ display: "inline-block", marginTop: 20, padding: "8px 18px", borderRadius: 7, background: "#111", color: "#fff", textDecoration: "none", fontSize: 14 }}>Back to app</a>
+            <Link href="/" style={{ display: "inline-block", marginTop: 20, padding: "8px 18px", borderRadius: 7, background: "#111", color: "#fff", textDecoration: "none", fontSize: 14 }}>Back to app</Link>
           </>
         )}
       </div>

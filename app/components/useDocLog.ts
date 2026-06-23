@@ -23,6 +23,7 @@ export function useDocLog(namespace: string) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey(namespace));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setEntries(JSON.parse(raw));
     } catch {}
   }, [namespace]);

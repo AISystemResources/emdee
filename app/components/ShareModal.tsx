@@ -124,6 +124,7 @@ export function ShareModal({ path, title, index, onClose }: Props) {
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!EMAIL_RE.test(q)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExactMatchEmail(null);
       return;
     }
@@ -153,6 +154,7 @@ export function ShareModal({ path, title, index, onClose }: Props) {
       .slice(0, 5);
   }, [trimmed, suggestions, alreadySharedEmails]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setHighlightIdx(0); }, [visibleSuggestions.length, query]);
 
   const isPublic = !!publication;
