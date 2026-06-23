@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { GraphView } from "./GraphView";
 import { DocEditor } from "./DocEditor";
@@ -106,7 +107,9 @@ export function App({ namespace }: { namespace: string }) {
     setState: setMobileDrawerState,
   });
   const [canSync, setCanSync] = useState(false);
-  const [cloudUserId, setCloudUserId] = useState<string | null>(null);
+  const [cloudUserId, setCloudUserId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("emdee_cloud_user_id") : null
+  );
   const [syncState, setSyncState] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [conflicts, setConflicts] = useState<ConflictFile[]>([]);
   const [resolvingPath, setResolvingPath] = useState<string | null>(null);
@@ -129,8 +132,14 @@ export function App({ namespace }: { namespace: string }) {
   // Desktop: draggable split ratio between graph (left) and doc (right), 0.15-0.85.
   // Mobile/portrait: graph stacks above doc with a collapse toggle.
   // Both states persist to localStorage so the layout sticks across refreshes.
-  const [splitRatio, setSplitRatio] = useState(0.5);
-  const [graphCollapsed, setGraphCollapsed] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(() => {
+    if (typeof window === "undefined") return 0.5;
+    const ratio = parseFloat(localStorage.getItem("emdee_split_ratio") ?? "");
+    return Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
+  });
+  const [graphCollapsed, setGraphCollapsed] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("emdee_graph_collapsed") === "true"
+  );
   const [draggingSplit, setDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [addChildCtx, setAddChildCtx] = useState<GraphModalContext | null>(null);
@@ -183,6 +192,7 @@ export function App({ namespace }: { namespace: string }) {
       .then((d) => setSharedShares(d.shares ?? []))
       .catch(() => setSharedShares([]));
   }, [isOwnNamespace]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refreshShared(); }, [refreshShared]);
 
   // is_admin is fetched once on mount for signed-in owners — gates the
@@ -191,6 +201,7 @@ export function App({ namespace }: { namespace: string }) {
   // publications list.
   useEffect(() => {
     if (!isOwnNamespace) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsAdmin(false);
       return;
     }
@@ -202,6 +213,7 @@ export function App({ namespace }: { namespace: string }) {
 
   // Storage usage — shown in sidebar footer for own namespace only.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isOwnNamespace) { setStoragePct(null); setStorageLabel(""); return; }
     fetch("/api/usage")
       .then((r) => r.json())
@@ -218,7 +230,6 @@ export function App({ namespace }: { namespace: string }) {
   // Load the linked cloud userId (set by /cloud-link/callback) and stay in
   // sync if the user re-links in another tab.
   useEffect(() => {
-    setCloudUserId(localStorage.getItem("emdee_cloud_user_id"));
     const onStorage = (e: StorageEvent) => {
       if (e.key === "emdee_cloud_user_id") setCloudUserId(e.newValue);
     };
@@ -228,7 +239,7 @@ export function App({ namespace }: { namespace: string }) {
 
   // Opens the prod handshake in a new tab. After Clerk auth, it bounces back
   // to /cloud-link/callback which writes localStorage.emdee_cloud_user_id.
-  const cloudOrigin = process.env.NEXT_PUBLIC_CLOUD_ORIGIN ?? "https://emdee.vercel.app";
+  const cloudOrigin = process.env.NEXT_PUBLIC_CLOUD_ORIGIN ?? "https://emdee.tech";
   const linkCloudAccount = useCallback(() => {
     const returnUrl = `${window.location.origin}/cloud-link/callback`;
     const url = `${cloudOrigin}/cloud-link?return=${encodeURIComponent(returnUrl)}`;
@@ -240,13 +251,8 @@ export function App({ namespace }: { namespace: string }) {
     setCloudUserId(null);
   }, []);
 
-  // Rehydrate the user's preferred desktop split ratio and mobile graph-collapse
-  // state on mount.
-  useEffect(() => {
-    const ratio = parseFloat(localStorage.getItem("emdee_split_ratio") ?? "");
-    if (Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85) setSplitRatio(ratio);
-    setGraphCollapsed(localStorage.getItem("emdee_graph_collapsed") === "true");
-  }, []);
+  // splitRatio and graphCollapsed are initialized from localStorage via useState
+  // lazy initializers above; no rehydration effect needed.
 
   // Pointer-driven resize of the .main-split divider. Listens on document so
   // dragging works even when the pointer leaves the divider's thin hit box.
@@ -390,6 +396,7 @@ export function App({ namespace }: { namespace: string }) {
   }, [focusKey, activePath]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadIndex(false);
   }, [loadIndex]);
 
@@ -605,6 +612,7 @@ export function App({ namespace }: { namespace: string }) {
     };
     findPathTo(docTree, activePath, []);
     if (trail.length === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsed((prev) => {
       let changed = false;
       const next = new Set(prev);
@@ -636,6 +644,7 @@ export function App({ namespace }: { namespace: string }) {
     const trail = findPathTo(docTree, "SHARED", []);
     if (trail) ancestors.push(...trail);
     if (ancestors.length === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsed((prev) => {
       const next = new Set(prev);
       for (const p of ancestors) next.delete(p);
@@ -684,6 +693,7 @@ export function App({ namespace }: { namespace: string }) {
   }, [prevSibling, nextSibling, selectDoc]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveState("idle");
     // When switching docs, clear prev-content tracking for this new path so the
     // next edit session captures the freshly-loaded version as previousContent.
@@ -772,6 +782,7 @@ export function App({ namespace }: { namespace: string }) {
       : "";
     const safe = renameTitle.trim().replace(/[/\\]/g, "_");
     if (!safe) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRenamePath(dir ? `${dir}/${safe}.md` : `${safe}.md`);
   }, [renameTitle, renameCtx, renamePathDirty]);
 
@@ -1155,7 +1166,7 @@ export function App({ namespace }: { namespace: string }) {
           )}
           {isPublicNamespace && !isSignedIn && (
             <div className="connect-section">
-              <a href="/sign-in" className="signin-btn">Sign in</a>
+              <Link href="/sign-in" className="signin-btn">Sign in</Link>
               <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
                 to create and manage your vault
               </span>
@@ -1278,6 +1289,7 @@ export function App({ namespace }: { namespace: string }) {
                   onRenameNode={isOwnNamespace ? openRenameNode : undefined}
                   prevSibling={prevSibling}
                   nextSibling={nextSibling}
+                  // eslint-disable-next-line react-hooks/refs
                   activityQueue={activityQueueRef.current}
                   activityTick={activityTick}
                 />

@@ -73,10 +73,94 @@ async function claimPendingInvitations(clerkId: string, email: string): Promise<
 }
 
 /**
+ * Recursively moves all Storage files under oldPrefix/ to newPrefix/ using
+ * the server-side move API (no download/upload — metadata rename only).
+ */
+async function moveStoragePrefix(oldPrefix: string, newPrefix: string, sub = ""): Promise<void> {
+  const folder = sub ? `${oldPrefix}/${sub}` : oldPrefix;
+  const { data: items } = await adminClient().storage.from("vaults").list(folder, { limit: 1000 });
+  if (!items) return;
+  for (const item of items) {
+    const oldPath = sub ? `${oldPrefix}/${sub}/${item.name}` : `${oldPrefix}/${item.name}`;
+    const newPath = sub ? `${newPrefix}/${sub}/${item.name}` : `${newPrefix}/${item.name}`;
+    if (!item.id) {
+      // folder — recurse
+      await moveStoragePrefix(oldPrefix, newPrefix, sub ? `${sub}/${item.name}` : item.name);
+    } else {
+      const { error } = await adminClient().storage.from("vaults").move(oldPath, newPath);
+      if (error) console.warn(`storage move failed ${oldPath}: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * When a new Clerk ID signs in with an email that already has a profile row
+ * (from a prior Clerk instance), remap every table that uses clerk_id as a
+ * key so all existing vault data appears under the new ID.
+ *
+ * Handles: profiles (PK), doc_shares, oauth_tokens, sync_manifest, oauth_codes,
+ * share_invitations, publications, subscriptions, publication_events (FK tables),
+ * plus doc_edges, vault_files, mcp_activity (plain-text namespace fields),
+ * plus the Storage vaults bucket folder (server-side move, no data transfer).
+ */
+async function migrateClerkInstance(devId: string, prodId: string): Promise<void> {
+  const admin = adminClient();
+
+  // Remove any rows auto-created for the new ID so inserts below don't conflict.
+  await admin.from("vault_files").delete().eq("namespace", prodId);
+  await admin.from("doc_edges").delete().eq("namespace", prodId);
+  await admin.from("mcp_activity").delete().eq("clerk_id", prodId);
+  // Cascade-deletes FK children (doc_shares, sync_manifest, oauth_*, publications, subscriptions).
+  await admin.from("profiles").delete().eq("clerk_id", prodId);
+
+  // Insert prod profile, preserving vault_id + email + created_at from dev row.
+  const { data: devProfile } = await admin
+    .from("profiles")
+    .select("vault_id, email, created_at")
+    .eq("clerk_id", devId)
+    .single();
+  if (!devProfile) return;
+  await admin.from("profiles").insert({
+    clerk_id: prodId,
+    vault_id: devProfile.vault_id,
+    email: devProfile.email,
+    created_at: devProfile.created_at,
+  });
+
+  // Update FK tables (prod profile now exists, so FK checks pass).
+  await admin.from("doc_shares").update({ owner_id: prodId }).eq("owner_id", devId);
+  await admin.from("doc_shares").update({ grantee_id: prodId }).eq("grantee_id", devId);
+  await admin.from("oauth_tokens").update({ clerk_id: prodId }).eq("clerk_id", devId);
+  await admin.from("sync_manifest").update({ clerk_id: prodId }).eq("clerk_id", devId);
+  await admin.from("oauth_codes").update({ clerk_id: prodId }).eq("clerk_id", devId);
+  await admin.from("share_invitations").update({ inviter_id: prodId }).eq("inviter_id", devId);
+  await admin.from("publications").update({ owner_id: prodId }).eq("owner_id", devId);
+  await admin.from("subscriptions").update({ subscriber_id: prodId }).eq("subscriber_id", devId);
+  await admin.from("publication_events").update({ viewer_user_id: prodId }).eq("viewer_user_id", devId);
+
+  // Update plain-text namespace fields.
+  await admin.from("doc_edges").update({ namespace: prodId }).eq("namespace", devId);
+  await admin.from("vault_files").update({ namespace: prodId }).eq("namespace", devId);
+  await admin.from("mcp_activity")
+    .update({ namespace: prodId, clerk_id: prodId })
+    .eq("clerk_id", devId);
+
+  // Remove the now-orphaned dev profile.
+  await admin.from("profiles").delete().eq("clerk_id", devId);
+
+  // Rename the Storage folder — server-side move, no download/upload.
+  await moveStoragePrefix(devId, prodId);
+}
+
+/**
  * Ensure a profiles row exists for this clerk_id so FK-bearing inserts succeed.
  * Also backfills email from Clerk if the existing row has none — needed for
  * email-based sharing lookups — and claims any pending share invitations
  * addressed to that email.
+ *
+ * If the Clerk email matches an existing profile with a different clerk_id, this
+ * is a Clerk-instance migration (dev → prod). We remap all data to the new ID
+ * automatically instead of creating a new empty profile.
  */
 export async function ensureProfile(clerkId: string): Promise<void> {
   const admin = adminClient();
@@ -89,6 +173,21 @@ export async function ensureProfile(clerkId: string): Promise<void> {
   if (existing?.email) return;
 
   const email = await fetchClerkEmail(clerkId);
+
+  if (email) {
+    const { data: priorProfile } = await admin
+      .from("profiles")
+      .select("clerk_id")
+      .eq("email", email)
+      .neq("clerk_id", clerkId)
+      .maybeSingle();
+
+    if (priorProfile) {
+      await migrateClerkInstance(priorProfile.clerk_id, clerkId);
+      return;
+    }
+  }
+
   const row: { clerk_id: string; email?: string } = { clerk_id: clerkId };
   if (email) row.email = email;
 
