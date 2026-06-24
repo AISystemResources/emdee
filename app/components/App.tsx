@@ -94,6 +94,12 @@ export function App({ namespace }: { namespace: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const collapsedInitialized = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 260;
+    const w = parseInt(localStorage.getItem("emdee_sidebar_width") ?? "", 10);
+    return Number.isFinite(w) && w >= 160 && w <= 480 ? w : 260;
+  });
+  const appRef = useRef<HTMLDivElement | null>(null);
   // Mobile drawer for the doc pane. Three states: closed (graph full,
   // FAB visible), peek (drawer shows title + summary blockquote, ~32svh),
   // full (drawer covers ~90svh, scrollable). Tapping a node bumps closed
@@ -134,9 +140,9 @@ export function App({ namespace }: { namespace: string }) {
   // Mobile/portrait: graph fills screen, doc slides up as a bottom drawer.
   // Both states persist to localStorage so the layout sticks across refreshes.
   const [graphWidth, setGraphWidth] = useState(() => {
-    if (typeof window === "undefined") return 300;
+    if (typeof window === "undefined") return 420;
     const w = parseInt(localStorage.getItem("emdee_graph_width") ?? "", 10);
-    return Number.isFinite(w) && w >= 200 && w <= 600 ? w : 300;
+    return Number.isFinite(w) && w >= 200 && w <= 800 ? w : 420;
   });
   const [graphCollapsed, setGraphCollapsed] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("emdee_graph_collapsed") === "true"
@@ -269,7 +275,7 @@ export function App({ namespace }: { namespace: string }) {
     document.body.dataset.resizingSplit = "true";
     const rect = container.getBoundingClientRect();
     const onMove = (ev: PointerEvent) => {
-      const w = Math.max(200, Math.min(600, rect.right - ev.clientX));
+      const w = Math.max(200, Math.min(800, rect.right - ev.clientX));
       setGraphWidth(w);
     };
     const onUp = () => {
@@ -293,6 +299,41 @@ export function App({ namespace }: { namespace: string }) {
       return next;
     });
   }, []);
+
+  // Sidebar rail is dual-purpose: drag to resize, click (no movement) to toggle.
+  // Measured against the .app root so even a partially-collapsed sidebar gives correct coords.
+  const onSidebarRailPointerDown = useCallback((e: React.PointerEvent) => {
+    if (sidebarCollapsed) {
+      setSidebarCollapsed(false);
+      return;
+    }
+    const appEl = appRef.current;
+    if (!appEl) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const rect = appEl.getBoundingClientRect();
+    let moved = false;
+
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) > 4) moved = true;
+      if (!moved) return;
+      setSidebarWidth(Math.max(160, Math.min(480, ev.clientX - rect.left)));
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      if (!moved) {
+        setSidebarCollapsed((v) => !v);
+      } else {
+        setSidebarWidth((w) => {
+          localStorage.setItem("emdee_sidebar_width", String(Math.round(w)));
+          return w;
+        });
+      }
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, [sidebarCollapsed]);
 
   const copyMcpCommand = useCallback(() => {
     if (!mcpCommand) return;
@@ -1064,7 +1105,7 @@ export function App({ namespace }: { namespace: string }) {
   }, [index, addAssocCtx, assocQuery]);
 
   return (
-    <div className="app">
+    <div className="app" ref={appRef}>
       <div
         className="sidebar-backdrop"
         data-open={mobileSidebarOpen}
@@ -1084,18 +1125,24 @@ export function App({ namespace }: { namespace: string }) {
         </button>
         <span className="mobile-title">EMDEE</span>
       </div>
-      <div className="sidebar-wrap" data-open={mobileSidebarOpen}>
+      <div className="sidebar-wrap" data-open={mobileSidebarOpen} style={{ "--sidebar-width": sidebarWidth + "px" } as React.CSSProperties}>
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
           <h1>EMDEE</h1>
-          <DocTree
-            nodes={docTree}
-            parentPath={null}
-            parentTitle={null}
-            activePath={activePath}
-            collapsed={collapsed}
-            onSelect={selectDoc}
-            onToggle={toggleCollapsed}
-          />
+          <div className="sidebar-tree">
+            {index === null ? (
+              <span className="sidebar-loading">Loading…</span>
+            ) : (
+              <DocTree
+                nodes={docTree}
+                parentPath={null}
+                parentTitle={null}
+                activePath={activePath}
+                collapsed={collapsed}
+                onSelect={selectDoc}
+                onToggle={toggleCollapsed}
+              />
+            )}
+          </div>
           {canSync && (
             <div className="connect-section">
               <span className="pat-label">Cloud Account</span>
@@ -1285,7 +1332,7 @@ export function App({ namespace }: { namespace: string }) {
         </aside>
         <button
           className="sidebar-rail"
-          onClick={() => setSidebarCollapsed((v) => !v)}
+          onPointerDown={onSidebarRailPointerDown}
           aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
           type="button"
         >
@@ -1298,7 +1345,12 @@ export function App({ namespace }: { namespace: string }) {
             <span className="drag-overlay-label">Drop image here</span>
           </div>
         )}
-        {view === "main" && (
+        {view === "main" && index === null && !needsNickname && (
+          <div className="index-loading">
+            <span className="index-loading-text">Loading vault…</span>
+          </div>
+        )}
+        {view === "main" && index !== null && (
           <div
             className="main-split"
             ref={splitContainerRef}
