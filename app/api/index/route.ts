@@ -11,7 +11,7 @@ import { listTrashedPaths } from "@/src/lib/trash/state";
 import { ownerTitleFromEmail, normalizeOwnerTitle, ownerNodeScaffold } from "@/src/lib/owner/identity";
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
-import { SYSTEM_NODES, systemNodeContent } from "@/src/lib/system-nodes";
+import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "@/src/lib/system-nodes";
 
 const SHARED_PREFIX = "__shared:";
 const SHARED_ROOT_PATH = "SHARED.md";
@@ -143,6 +143,9 @@ async function seedFromPublic(storage: VaultStorage, ns: string): Promise<void> 
   await Promise.all(
     seeds.map(async (f) => {
       const relative = f.path.slice("public/".length);
+      // Never overwrite system-node paths — they get injected with current
+      // content at index-build time and a seed copy would lock in stale content.
+      if (SYSTEM_NODE_PATHS.has(relative)) return;
       await storage.write(`${ns}/${relative}`, f.content);
     })
   );
