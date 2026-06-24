@@ -280,12 +280,10 @@ function categoryFor(rawPath: string): Category {
     p === "instructions.md" ||
     p === "brain.md" ||
     p === "workflows.md" ||
-    p === "sample.md" ||
     p.startsWith("info/") ||
     p.startsWith("instructions/") ||
     p.startsWith("brain/") ||
-    p.startsWith("workflows/") ||
-    p.startsWith("sample/")
+    p.startsWith("workflows/")
   ) {
     return "info";
   }
@@ -306,10 +304,8 @@ function neighborsOf(index: DocIndex, focal: string): Neighbor[] {
       if (other && !seen.has(other)) seen.set(other, { id: other, role: "assoc", edge: e });
     }
   }
-  // Layout order:  parent (placed at 12 o'clock) → children alpha by title,
-  // clockwise → associates alpha by title, clockwise. Sorting by title (what
-  // the user sees in the sidebar/graph) rather than path is more intuitive
-  // when docs live in subfolders like `sample/`.
+  // Layout order: parent (placed at 12 o'clock) → children alpha by title,
+  // clockwise → associates alpha by title, clockwise.
   const titleFor = (p: string) => index.docs.find((d) => d.path === p)?.title ?? p;
   return [...seen.values()].sort((a, b) => {
     const order: Record<Role, number> = { parent: 0, child: 1, assoc: 2, sibling: 3 };
