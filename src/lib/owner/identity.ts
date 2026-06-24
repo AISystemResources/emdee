@@ -26,15 +26,24 @@
  * Matches SPRINT-055's filename uppercase convention so the file written
  * to the vault is `<TITLE>.md`, identical shape to other EMDEE filenames.
  */
-export function ownerTitleFromEmail(email: string): string {
-  const localPart = (email.split("@")[0] ?? "").trim();
-  const normalized = localPart
+/**
+ * Normalise any free-text name into a valid owner-node title.
+ * Same rules as email-derived titles so renames stay consistent.
+ */
+export function normalizeOwnerTitle(input: string): string {
+  const normalized = input
+    .trim()
     .toUpperCase()
-    .replace(/[._]/g, "-")
+    .replace(/[._\s]/g, "-")
     .replace(/[^A-Z0-9-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
   return normalized || "OWNER";
+}
+
+export function ownerTitleFromEmail(email: string): string {
+  const localPart = (email.split("@")[0] ?? "").trim();
+  return normalizeOwnerTitle(localPart);
 }
 
 /** The default markdown scaffold for a fresh owner node. */

@@ -155,6 +155,10 @@ export function App({ namespace }: { namespace: string }) {
   const [shareCtx, setShareCtx] = useState<GraphModalContext | null>(null);
   const [downloadCtx, setDownloadCtx] = useState<GraphModalContext | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [needsNickname, setNeedsNickname] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState("");
+  const [nicknameBusy, setNicknameBusy] = useState(false);
+  const [nicknameError, setNicknameError] = useState("");
   const [sharedShares, setSharedShares] = useState<SharedShare[]>([]);
   const [storagePct, setStoragePct] = useState<number | null>(null);
   const [storageLabel, setStorageLabel] = useState<string>("");
@@ -372,6 +376,11 @@ export function App({ namespace }: { namespace: string }) {
       const res = await fetch(`/api/index?ns=${encodeURIComponent(namespace)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`index fetch failed: ${res.status}`);
       const data: DocIndex = await res.json();
+      if (data.needsNickname) {
+        setNeedsNickname(true);
+        return;
+      }
+      setNeedsNickname(false);
       setIndex(data);
       setActivePath((current) => {
         if (preserveActive && current && data.docs.some((d) => d.path === current)) {
@@ -853,6 +862,29 @@ export function App({ namespace }: { namespace: string }) {
     await loadIndex(false);
     docLog.remove(entry.id);
   }, [namespace, loadIndex, docLog]);
+
+  const submitNickname = useCallback(async () => {
+    if (!nicknameInput.trim() || nicknameBusy) return;
+    setNicknameBusy(true);
+    setNicknameError("");
+    try {
+      const res = await fetch("/api/profile/nickname", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname: nicknameInput.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as Record<string, string>;
+        setNicknameError(err.error ?? "Something went wrong");
+        return;
+      }
+      setNeedsNickname(false);
+      setNicknameInput("");
+      await loadIndex(false);
+    } finally {
+      setNicknameBusy(false);
+    }
+  }, [nicknameInput, nicknameBusy, loadIndex]);
 
   async function submitImageUpload() {
     if (!imageUploadFile || imageUploadBusy) return;
@@ -1753,6 +1785,41 @@ export function App({ namespace }: { namespace: string }) {
               <button className="btn-ghost" onClick={() => setImageUploadFile(null)} type="button" disabled={imageUploadBusy}>Cancel</button>
               <button className="btn-primary" onClick={submitImageUpload} disabled={imageUploadBusy} type="button">
                 {imageUploadBusy ? "Uploading…" : "Upload"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nickname prompt — shown to new users before their vault is seeded */}
+      {needsNickname && (
+        <div className="modal-overlay">
+          <div className="modal" role="dialog" aria-modal="true">
+            <p className="modal-title">What should we call you?</p>
+            <p className="modal-subtitle">This becomes the name of your personal node in the vault — renameable any time.</p>
+            <div className="modal-field">
+              <label className="modal-label" htmlFor="nickname-input">Your name</label>
+              <input
+                id="nickname-input"
+                className="modal-input"
+                type="text"
+                placeholder="e.g. Edmund"
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitNickname()}
+                autoFocus
+                maxLength={64}
+              />
+              {nicknameError && <p className="modal-error">{nicknameError}</p>}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn-primary"
+                onClick={submitNickname}
+                disabled={!nicknameInput.trim() || nicknameBusy}
+                type="button"
+              >
+                {nicknameBusy ? "Setting up…" : "Get started"}
               </button>
             </div>
           </div>

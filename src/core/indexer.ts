@@ -45,6 +45,7 @@ export interface DocIndex {
   docs: DocNode[];
   edges: Edge[];
   entry: string | null;
+  needsNickname?: boolean;
 }
 
 const WIKI_LINK = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;

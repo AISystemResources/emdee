@@ -8,7 +8,7 @@ import { vaultListTag } from "@/src/lib/cache/bust";
 import { backfillNamespace } from "@/src/core/syncDocEdges";
 import { fetchSharesForGrantee } from "@/src/lib/share/grants";
 import { listTrashedPaths } from "@/src/lib/trash/state";
-import { ownerTitleFromEmail, ownerNodeScaffold } from "@/src/lib/owner/identity";
+import { ownerTitleFromEmail, normalizeOwnerTitle, ownerNodeScaffold } from "@/src/lib/owner/identity";
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import { SYSTEM_NODES, systemNodeContent } from "@/src/lib/system-nodes";
@@ -69,30 +69,44 @@ EMDEE is a local-first knowledge graph + MCP server. Plain markdown files, struc
 Click **Sign in** above to create your own vault.
 `;
 
+async function getNickname(ns: string): Promise<string | null> {
+  try {
+    const { data } = await adminClient()
+      .from("profiles")
+      .select("nickname")
+      .eq("clerk_id", ns)
+      .single();
+    return data?.nickname ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * SPRINT-058 (SIG-006): plant the user's owner node on first vault seed.
- * Looks up the user's primary email from Clerk, derives the default
- * owner title (e.g. ELZ-WORK from elz.work@gmail.com), and writes the
- * scaffold doc at `{ns}/<TITLE>.md`. Renameable later via rename_doc;
- * this just provides the default.
+ * Uses the pre-set nickname from profiles if available; falls back to
+ * deriving a title from the user's primary email from Clerk.
  *
  * Idempotent: skips the write if the file already exists in the namespace.
  * Network/Clerk failures don't block the seed — caller logs and proceeds.
  */
-async function ensureOwnerNode(storage: VaultStorage, ns: string): Promise<void> {
-  // Fetch user's primary email from Clerk. ns IS the clerk userId for
-  // personal namespaces (see auth gate above).
-  let email = "";
-  try {
-    const client = await clerkClient();
-    const user = await client.users.getUser(ns);
-    const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId);
-    email = primary?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? "";
-  } catch (e) {
-    console.error(`clerk user lookup failed for ${ns}:`, e);
+async function ensureOwnerNode(storage: VaultStorage, ns: string, nickname: string | null): Promise<void> {
+  let title: string;
+  if (nickname) {
+    title = normalizeOwnerTitle(nickname);
+  } else {
+    let email = "";
+    try {
+      const client = await clerkClient();
+      const user = await client.users.getUser(ns);
+      const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId);
+      email = primary?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? "";
+    } catch (e) {
+      console.error(`clerk user lookup failed for ${ns}:`, e);
+    }
+    title = ownerTitleFromEmail(email);
   }
 
-  const title = ownerTitleFromEmail(email);
   const ownerPath = `${ns}/${title}.md`;
   if (await storage.exists(ownerPath)) return;
   await storage.write(ownerPath, ownerNodeScaffold(title));
@@ -193,15 +207,16 @@ export async function GET(request: Request) {
   // writes go through storage.write which dual-updates the cache, so the
   // re-list after seeding hits the fast path.
   if (listed.length === 0 && canSeedIfEmpty) {
+    // Gate on nickname: new users must pick a display name before we seed
+    // their vault, so the owner node gets the right title from the start.
+    const nickname = await getNickname(ns);
+    if (!nickname) {
+      return Response.json({ docs: [], edges: [], entry: null, needsNickname: true }, NO_STORE);
+    }
     await seedFromPublic(storage, ns);
-    // SPRINT-058 (SIG-006): plant the user's owner node — the MINE tier
-    // of the canonical 4-node vault structure. Title defaults to the
-    // uppercased email local-part (ELZ-WORK from elz.work@...) and is
-    // renameable any time via rename_doc. Idempotent: only writes if
-    // the file is absent (it always is on first seed). Failures here
-    // shouldn't block the index render — log and continue.
+    // SPRINT-058 (SIG-006): plant the user's owner node using the nickname.
     try {
-      await ensureOwnerNode(storage, ns);
+      await ensureOwnerNode(storage, ns, nickname);
     } catch (e) {
       console.error(`owner-node seed failed for ${ns}:`, e);
     }
