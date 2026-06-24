@@ -147,7 +147,6 @@ export function App({ namespace }: { namespace: string }) {
   const [graphCollapsed, setGraphCollapsed] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("emdee_graph_collapsed") === "true"
   );
-  const [draggingSplit, setDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [addChildCtx, setAddChildCtx] = useState<GraphModalContext | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
@@ -265,40 +264,43 @@ export function App({ namespace }: { namespace: string }) {
   // graphWidth and graphCollapsed are initialized from localStorage via useState
   // lazy initializers above; no rehydration effect needed.
 
-  // Pointer-driven resize of the .main-split divider. Graph pane is on the right,
-  // so width = distance from divider to the right edge of the container.
-  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
+  // Graph rail is dual-purpose: drag to resize (graph is on the right, so
+  // width = distance from the rail to the right edge of the container),
+  // click (< 4px movement) to toggle collapse.
+  const onGraphRailPointerDown = useCallback((e: React.PointerEvent) => {
+    if (graphCollapsed) {
+      setGraphCollapsed(false);
+      localStorage.setItem("emdee_graph_collapsed", "false");
+      return;
+    }
     const container = splitContainerRef.current;
     if (!container) return;
     e.preventDefault();
-    setDraggingSplit(true);
-    document.body.dataset.resizingSplit = "true";
+    const startX = e.clientX;
     const rect = container.getBoundingClientRect();
+    let moved = false;
+
     const onMove = (ev: PointerEvent) => {
-      const w = Math.max(200, Math.min(800, rect.right - ev.clientX));
-      setGraphWidth(w);
+      if (!moved && Math.abs(ev.clientX - startX) > 4) moved = true;
+      if (!moved) return;
+      setGraphWidth(Math.max(200, Math.min(800, rect.right - ev.clientX)));
     };
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
-      delete document.body.dataset.resizingSplit;
-      setDraggingSplit(false);
-      setGraphWidth((w) => {
-        localStorage.setItem("emdee_graph_width", String(Math.round(w)));
-        return w;
-      });
+      if (!moved) {
+        setGraphCollapsed(true);
+        localStorage.setItem("emdee_graph_collapsed", "true");
+      } else {
+        setGraphWidth((w) => {
+          localStorage.setItem("emdee_graph_width", String(Math.round(w)));
+          return w;
+        });
+      }
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
-  }, []);
-
-  const toggleGraphCollapsed = useCallback(() => {
-    setGraphCollapsed((v) => {
-      const next = !v;
-      localStorage.setItem("emdee_graph_collapsed", String(next));
-      return next;
-    });
-  }, []);
+  }, [graphCollapsed]);
 
   // Sidebar rail is dual-purpose: drag to resize, click (no movement) to toggle.
   // Measured against the .app root so even a partially-collapsed sidebar gives correct coords.
@@ -1361,7 +1363,13 @@ export function App({ namespace }: { namespace: string }) {
             <div className="doc-pane" ref={docPaneRef}>
               <button
                 className="graph-collapse-toggle"
-                onClick={toggleGraphCollapsed}
+                onClick={() => {
+                  setGraphCollapsed((v) => {
+                    const next = !v;
+                    localStorage.setItem("emdee_graph_collapsed", String(next));
+                    return next;
+                  });
+                }}
                 type="button"
                 aria-expanded={!graphCollapsed}
               >
@@ -1482,17 +1490,9 @@ export function App({ namespace }: { namespace: string }) {
                 </div>
               )}
             </div>
-            <div
-              className="split-divider"
-              onPointerDown={onDividerPointerDown}
-              data-dragging={draggingSplit}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize panes"
-            />
             <button
               className="graph-rail"
-              onClick={toggleGraphCollapsed}
+              onPointerDown={onGraphRailPointerDown}
               aria-label={graphCollapsed ? "Open graph" : "Close graph"}
               type="button"
             >

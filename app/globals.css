@@ -354,38 +354,12 @@ body {
   flex-basis: 0 !important;
   overflow: hidden;
 }
-.main-split[data-graph-collapsed="true"] .split-divider {
-  opacity: 0;
-  pointer-events: none;
-}
-.split-divider {
-  flex: 0 0 8px;
-  cursor: col-resize;
-  background: var(--border);
-  position: relative;
-  transition: background 0.15s ease, opacity 0.25s ease;
-  user-select: none;
-  touch-action: none;
-}
-.split-divider:hover,
-.split-divider[data-dragging="true"] {
-  background: var(--accent);
-}
-.split-divider::after {
-  content: "";
-  position: absolute;
-  inset: 0 -4px;
-}
-body[data-resizing-split="true"] {
-  cursor: col-resize;
-  user-select: none;
-}
 .graph-rail {
   width: 16px;
   background: var(--panel);
   border: none;
   border-left: 1px solid var(--border);
-  cursor: pointer;
+  cursor: col-resize;
   color: var(--muted);
   font-size: 11px;
   display: flex;
@@ -1871,7 +1845,6 @@ a.sidebar-footer-btn { text-decoration: none; }
     position: relative;
     height: calc(100svh - 48px);
   }
-  .split-divider { display: none; }
   .graph-rail { display: none; }
   .graph-collapse-toggle { display: none !important; }
   .main-split .graph-pane {
@@ -2073,7 +2046,7 @@ a.sidebar-footer-btn { text-decoration: none; }
   body.printing-doc .sidebar-backdrop,
   body.printing-doc .mobile-header,
   body.printing-doc .graph-pane,
-  body.printing-doc .split-divider,
+  body.printing-doc .graph-rail,
   body.printing-doc .graph-collapse-toggle,
   body.printing-doc .toolbar,
   body.printing-doc .shared-banner,
