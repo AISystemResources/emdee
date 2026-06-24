@@ -1088,11 +1088,11 @@ export function GraphViewInner({ index, activePath, onSelect, onAddChild, onAddA
       setZoomPct(Math.round(cy.zoom() * 100));
     });
 
-    cy.zoom(1);
+    cy.zoom(0.65);
     cy.center();
 
     cyRef.current = cy;
-    setZoomPct(100);
+    setZoomPct(65);
 
     // Trackpad-friendly wheel handling. Mac trackpads emit `wheel` events
     // with `ctrlKey: true` during pinch gestures (browser convention,
