@@ -47,7 +47,7 @@ export default function OverviewPage() {
       <p className="docs-p">
         Connect your vault to Claude.ai or any MCP-compatible client via the
         cloud link at{" "}
-        <code className="docs-code">emdee.vercel.app/cloud-link</code>. Once
+        <code className="docs-code">emdee.tech/cloud-link</code>. Once
         connected, Claude can call tools like{" "}
         <code className="docs-code">get_doc</code>,{" "}
         <code className="docs-code">search</code>,{" "}
@@ -58,7 +58,7 @@ export default function OverviewPage() {
 
       <h3 className="docs-h3">From the web app</h3>
       <p className="docs-p">
-        Sign in at <code className="docs-code">emdee.vercel.app</code> to browse
+        Sign in at <code className="docs-code">emdee.tech</code> to browse
         your vault as a document tree or an interactive graph, create and edit
         docs, share public links, and manage your vault structure.
       </p>

@@ -17,7 +17,7 @@ export default function QuickstartPage() {
       <div className="docs-step">
         <div className="docs-step-num">1</div>
         <div className="docs-step-body">
-          <strong>Sign in at emdee.vercel.app</strong>
+          <strong>Sign in at emdee.tech</strong>
           <p>
             Click <em>Sign in</em> and create an account with Google or email. Your
             vault is provisioned automatically — you land straight in the graph view.
@@ -47,7 +47,7 @@ export default function QuickstartPage() {
         <div className="docs-step-body">
           <strong>Get your MCP connection link</strong>
           <p>
-            Go to <code className="docs-code">emdee.vercel.app/cloud-link</code>.
+            Go to <code className="docs-code">emdee.tech/cloud-link</code>.
             Click <em>Connect to Claude.ai</em>. This authorises Claude to read
             and write your vault via the MCP protocol.
           </p>

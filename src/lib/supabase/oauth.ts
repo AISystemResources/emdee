@@ -145,6 +145,10 @@ async function migrateClerkInstance(devId: string, prodId: string): Promise<void
     .update({ namespace: prodId, clerk_id: prodId })
     .eq("clerk_id", devId);
 
+  // user_activity_stats (clerk_id PK — delete prod row first, then remap dev row)
+  await admin.from("user_activity_stats").delete().eq("clerk_id", prodId);
+  await admin.from("user_activity_stats").update({ clerk_id: prodId }).eq("clerk_id", devId);
+
   // Remove the now-orphaned dev profile.
   await admin.from("profiles").delete().eq("clerk_id", devId);
 

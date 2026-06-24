@@ -15,7 +15,7 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
         <Link href="/" className="docs-logo">EMDEE</Link>
         <nav className="docs-header-nav">
           <Link href="/" className="docs-header-link">Home</Link>
-          <Link href="https://emdee.vercel.app" className="docs-header-cta">
+          <Link href="https://emdee.tech" className="docs-header-cta">
             Open app →
           </Link>
         </nav>
