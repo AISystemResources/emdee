@@ -213,7 +213,6 @@ export async function distillDoc(ctx: ToolContext, args: Record<string, unknown>
   // distillation semantics survive any future renames of those docs.
   const brain = findByTitle(index.docs, "BRAIN");
   const projectsPattern = findByTitle(index.docs, "PROJECTS — PATTERN");
-  const info = findByTitle(index.docs, "INFO");
 
   const brain_charter = brain
     ? `${extractPreambleSummary(brain.content)}\n\n${extractH2Section(brain.content, "context") ?? ""}`.trim()
@@ -223,10 +222,7 @@ export async function distillDoc(ctx: ToolContext, args: Record<string, unknown>
     ? `${extractPreambleSummary(projectsPattern.content)}\n\n${extractH2Section(projectsPattern.content, "context") ?? ""}`.trim()
     : "(PROJECTS — PATTERN doc not found — falling back: cross-project technical/business patterns observed in ≥2 projects.)";
 
-  const learnings_filter = info
-    ? extractH2Section(info.content, "writing conventions")?.match(/### LEARNINGS authoring format[\s\S]*?(?=###|$)/)?.[0]
-        ?.trim() ?? "(LEARNINGS section not found in INFO.md)"
-    : "(INFO.md not found — three-test filter: reusable, non-obvious in retrospect, has a directive.)";
+  const learnings_filter = "(three-test filter: reusable, non-obvious in retrospect, has a directive.)";
 
   // Branches that currently host a PATTERN.md — informs the calling LLM
   // about where else extracts could go beyond PROJECTS — PATTERN.
