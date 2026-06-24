@@ -129,13 +129,14 @@ export function App({ namespace }: { namespace: string }) {
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
-  // Desktop: draggable split ratio between graph (left) and doc (right), 0.15-0.85.
-  // Mobile/portrait: graph stacks above doc with a collapse toggle.
+  // Desktop: graph-pane is a fixed-width right rail (default 300px, draggable 200–600px).
+  // Collapsing hides it entirely; the graph-rail button on its left edge toggles collapse.
+  // Mobile/portrait: graph fills screen, doc slides up as a bottom drawer.
   // Both states persist to localStorage so the layout sticks across refreshes.
-  const [splitRatio, setSplitRatio] = useState(() => {
-    if (typeof window === "undefined") return 0.5;
-    const ratio = parseFloat(localStorage.getItem("emdee_split_ratio") ?? "");
-    return Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
+  const [graphWidth, setGraphWidth] = useState(() => {
+    if (typeof window === "undefined") return 300;
+    const w = parseInt(localStorage.getItem("emdee_graph_width") ?? "", 10);
+    return Number.isFinite(w) && w >= 200 && w <= 600 ? w : 300;
   });
   const [graphCollapsed, setGraphCollapsed] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("emdee_graph_collapsed") === "true"
@@ -255,11 +256,11 @@ export function App({ namespace }: { namespace: string }) {
     setCloudUserId(null);
   }, []);
 
-  // splitRatio and graphCollapsed are initialized from localStorage via useState
+  // graphWidth and graphCollapsed are initialized from localStorage via useState
   // lazy initializers above; no rehydration effect needed.
 
-  // Pointer-driven resize of the .main-split divider. Listens on document so
-  // dragging works even when the pointer leaves the divider's thin hit box.
+  // Pointer-driven resize of the .main-split divider. Graph pane is on the right,
+  // so width = distance from divider to the right edge of the container.
   const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
     const container = splitContainerRef.current;
     if (!container) return;
@@ -268,19 +269,17 @@ export function App({ namespace }: { namespace: string }) {
     document.body.dataset.resizingSplit = "true";
     const rect = container.getBoundingClientRect();
     const onMove = (ev: PointerEvent) => {
-      const x = ev.clientX - rect.left;
-      const ratio = Math.max(0.15, Math.min(0.85, x / rect.width));
-      setSplitRatio(ratio);
+      const w = Math.max(200, Math.min(600, rect.right - ev.clientX));
+      setGraphWidth(w);
     };
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       delete document.body.dataset.resizingSplit;
       setDraggingSplit(false);
-      // Persist whatever ratio we ended at.
-      setSplitRatio((r) => {
-        localStorage.setItem("emdee_split_ratio", r.toFixed(4));
-        return r;
+      setGraphWidth((w) => {
+        localStorage.setItem("emdee_graph_width", String(Math.round(w)));
+        return w;
       });
     };
     document.addEventListener("pointermove", onMove);
@@ -1305,36 +1304,8 @@ export function App({ namespace }: { namespace: string }) {
             ref={splitContainerRef}
             data-graph-collapsed={graphCollapsed}
             data-mobile-drawer={mobileDrawerState}
-            style={{ "--graph-ratio": splitRatio } as React.CSSProperties}
+            style={{ "--graph-width": graphWidth + "px" } as React.CSSProperties}
           >
-            <div className="graph-pane">
-              {index && (
-                <GraphView
-                  index={index}
-                  activePath={activePath}
-                  onSelect={onGraphSelect}
-                  onAddChild={isOwnNamespace ? openAddChild : undefined}
-                  onAddAssociation={isOwnNamespace ? openAddAssoc : undefined}
-                  onDeleteNode={isOwnNamespace ? openDeleteNode : undefined}
-                  onShareNode={isOwnNamespace ? openShareNode : undefined}
-                  onDownloadNode={isOwnNamespace ? openDownloadNode : undefined}
-                  onRenameNode={isOwnNamespace ? openRenameNode : undefined}
-                  prevSibling={prevSibling}
-                  nextSibling={nextSibling}
-                  // eslint-disable-next-line react-hooks/refs
-                  activityQueue={activityQueueRef.current}
-                  activityTick={activityTick}
-                />
-              )}
-            </div>
-            <div
-              className="split-divider"
-              onPointerDown={onDividerPointerDown}
-              data-dragging={draggingSplit}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize panes"
-            />
             <div className="doc-pane" ref={docPaneRef}>
               <button
                 className="graph-collapse-toggle"
@@ -1457,6 +1428,42 @@ export function App({ namespace }: { namespace: string }) {
                 <div className="empty">
                   <p>Select a doc from the sidebar or graph to view it here.</p>
                 </div>
+              )}
+            </div>
+            <div
+              className="split-divider"
+              onPointerDown={onDividerPointerDown}
+              data-dragging={draggingSplit}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize panes"
+            />
+            <button
+              className="graph-rail"
+              onClick={toggleGraphCollapsed}
+              aria-label={graphCollapsed ? "Open graph" : "Close graph"}
+              type="button"
+            >
+              {graphCollapsed ? "‹" : "›"}
+            </button>
+            <div className="graph-pane">
+              {index && (
+                <GraphView
+                  index={index}
+                  activePath={activePath}
+                  onSelect={onGraphSelect}
+                  onAddChild={isOwnNamespace ? openAddChild : undefined}
+                  onAddAssociation={isOwnNamespace ? openAddAssoc : undefined}
+                  onDeleteNode={isOwnNamespace ? openDeleteNode : undefined}
+                  onShareNode={isOwnNamespace ? openShareNode : undefined}
+                  onDownloadNode={isOwnNamespace ? openDownloadNode : undefined}
+                  onRenameNode={isOwnNamespace ? openRenameNode : undefined}
+                  prevSibling={prevSibling}
+                  nextSibling={nextSibling}
+                  // eslint-disable-next-line react-hooks/refs
+                  activityQueue={activityQueueRef.current}
+                  activityTick={activityTick}
+                />
               )}
             </div>
           </div>

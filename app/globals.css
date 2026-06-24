@@ -306,19 +306,12 @@ body {
   height: 100%;
 }
 
-/* Split layout: graph (left) + draggable divider + doc (right).
-   --graph-ratio is set inline by App.tsx (0.5 default, persisted to localStorage). */
+/* Split layout: doc (left, flex:1) + draggable divider + graph-rail + graph (right, fixed px).
+   --graph-width is set inline by App.tsx (300px default, persisted to localStorage). */
 .main-split {
   flex: 1;
   display: flex;
   min-height: 0;
-  overflow: hidden;
-}
-.main-split .graph-pane {
-  flex: 0 0 calc(var(--graph-ratio, 0.5) * 100% - 4px);
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 .main-split .doc-pane {
@@ -329,12 +322,28 @@ body {
   overflow: hidden;
   background: var(--panel);
 }
+.main-split .graph-pane {
+  flex: 0 0 var(--graph-width, 300px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: flex-basis 0.25s ease;
+}
+.main-split[data-graph-collapsed="true"] .graph-pane {
+  flex-basis: 0 !important;
+  overflow: hidden;
+}
+.main-split[data-graph-collapsed="true"] .split-divider {
+  opacity: 0;
+  pointer-events: none;
+}
 .split-divider {
   flex: 0 0 8px;
   cursor: col-resize;
   background: var(--border);
   position: relative;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, opacity 0.25s ease;
   user-select: none;
   touch-action: none;
 }
@@ -351,6 +360,22 @@ body[data-resizing-split="true"] {
   cursor: col-resize;
   user-select: none;
 }
+.graph-rail {
+  width: 16px;
+  background: var(--panel);
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 22px;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.graph-rail:hover { background: var(--accent-soft); color: var(--accent); }
 .graph-collapse-toggle { display: none; }
 
 .toolbar {
@@ -1827,6 +1852,7 @@ a.sidebar-footer-btn { text-decoration: none; }
     height: calc(100svh - 48px);
   }
   .split-divider { display: none; }
+  .graph-rail { display: none; }
   .graph-collapse-toggle { display: none !important; }
   .main-split .graph-pane {
     flex: 1 1 auto;
