@@ -49,8 +49,10 @@ export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLin
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const onChangeRef = useRef(onChange);
+  // eslint-disable-next-line react-hooks/refs
   onChangeRef.current = onChange;
   const onWikiLinkClickRef = useRef(onWikiLinkClick);
+  // eslint-disable-next-line react-hooks/refs
   onWikiLinkClickRef.current = onWikiLinkClick;
 
   useEffect(() => {
@@ -77,8 +79,8 @@ export function DocEditorInner({ path, initialContent, mode, onChange, onWikiLin
         ["table", "image", "link"],
         ["code", "codeblock"],
       ],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customHTMLRenderer: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         text(node: any) {
           const literal: string = node.literal ?? "";
           const escaped = literal

@@ -26,6 +26,7 @@ interface DocStamp {
  */
 export function useDocsChanged(namespace: string, onChanged: () => void) {
   const ref = useRef(onChanged);
+  // eslint-disable-next-line react-hooks/refs
   ref.current = onChanged;
 
   useEffect(() => {

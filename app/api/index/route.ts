@@ -11,6 +11,7 @@ import { listTrashedPaths } from "@/src/lib/trash/state";
 import { ownerTitleFromEmail, ownerNodeScaffold } from "@/src/lib/owner/identity";
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { SYSTEM_NODES, systemNodeContent } from "@/src/lib/system-nodes";
 
 const SHARED_PREFIX = "__shared:";
 const SHARED_ROOT_PATH = "SHARED.md";
@@ -258,6 +259,19 @@ export async function GET(request: Request) {
       // Don't fail the whole index if the trash sidecar is malformed —
       // surface to the server log and proceed with no filter.
       console.error(`[api/index] trash filter skipped for ${ns}:`, e);
+    }
+  }
+
+  // Inject system-default nodes for any not already in the user's storage.
+  // These are the OS layer of every vault — always present, never deletable,
+  // content managed here rather than per-user in Supabase. Users who have
+  // customised a node (written it via MCP) see their stored version instead.
+  if (!isLocal && ns !== "public") {
+    const presentPaths = new Set(files.map((f) => f.path));
+    for (const node of SYSTEM_NODES) {
+      if (!presentPaths.has(node.path)) {
+        files.push({ path: node.path, content: systemNodeContent(node) });
+      }
     }
   }
 
