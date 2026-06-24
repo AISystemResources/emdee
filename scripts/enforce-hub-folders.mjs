@@ -62,14 +62,15 @@ const supabase = createClient(
   { auth: { persistSession: false } },
 );
 
-// These nodes are pinned at root and are never moved, regardless of what
-// doc_edges says about their parent/child relationships.
+// EMDEE.md and SHARED.md are pinned exceptions: EMDEE.md is the meta-root
+// (its children are the tier-1 hubs — they stay flat at root, not inside emdee/),
+// and SHARED.md is a cross-user connector with no subfolder.
+// VAULT.md, GRAVEYARD.md, IMAGES.md are NOT listed here — they stay at root
+// because they are children of EMDEE.md (a system node shields its children),
+// but their own children DO get enforced into vault/, graveyard/, images/.
 const SYSTEM_NODE_FILES = new Set([
   "EMDEE.md",
-  "VAULT.md",
   "SHARED.md",
-  "GRAVEYARD.md",
-  "IMAGES.md",
 ]);
 
 function isSystemNode(filePath) {
@@ -185,6 +186,13 @@ function computeMoves(edges) {
     const effectiveHubPath = pathRemapping.get(hub) ?? hub;
     const expectedFolder = expectedChildFolder(effectiveHubPath);
 
+    // Old stem folder of this hub (original, pre-remap path) — used to
+    // preserve relative subfolder structure for children already inside it.
+    // e.g. hub=OPERATIONS.md → oldStemFolder="operations/" so that
+    // operations/briefings/DATE.md and operations/linkedin/DATE.md don't
+    // collide when moved into edmund/operations/.
+    const oldStemFolder = `${path.dirname(hub) === "." ? "" : path.dirname(hub) + "/"}${stemToFolder(hub)}/`;
+
     for (const child of children.get(hub)) {
       if (isSystemNode(child)) continue;
 
@@ -198,7 +206,12 @@ function computeMoves(edges) {
         continue;
       }
 
-      const newChildPath = `${expectedFolder}${path.basename(effectiveChildPath)}`;
+      // Preserve relative subfolder structure if the child already lives
+      // inside the hub's old stem folder (avoids basename collisions).
+      const newChildPath = effectiveChildPath.startsWith(oldStemFolder)
+        ? `${expectedFolder}${effectiveChildPath.slice(oldStemFolder.length)}`
+        : `${expectedFolder}${path.basename(effectiveChildPath)}`;
+
       moves.push({ oldPath: effectiveChildPath, newPath: newChildPath });
       pathRemapping.set(child, newChildPath);
 
