@@ -280,6 +280,12 @@ export async function GET(request: Request) {
     }
   }
 
+  // Public namespace shows only LANDING.md — strips any leftover demo/sample
+  // files that were added during development and should never be public-facing.
+  if (!isLocal && ns === "public") {
+    files = files.filter((f) => f.path === "LANDING.md");
+  }
+
   // Inject system-default nodes for any not already in the user's storage.
   // These are the OS layer of every vault — always present, never deletable,
   // content managed here rather than per-user in Supabase. Users who have

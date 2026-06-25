@@ -40,13 +40,9 @@ test.describe("smoke (anonymous)", () => {
     };
     expect(Array.isArray(body.docs), "docs array shape").toBe(true);
     const paths = (body.docs ?? []).map((d) => d.path);
-    // The seed plants at minimum INFO.md plus the three node-type fixtures,
-    // and SPRINT-052 added LANDING.md as the canonical public-root doc.
+    // SPRINT-075 filters the public index to LANDING.md only — fixture files
+    // (hubs, templates, skills) are seeded but not surfaced via /api/index.
     expect(paths).toContain("LANDING.md");
-    expect(paths).toContain("INFO.md");
-    expect(paths).toContain("hubs/test-hub.md");
-    expect(paths).toContain("templates/PERSON.md");
-    expect(paths).toContain("skills/test-skill.md");
   });
 
   test("sign-in route renders the Clerk identifier field", async ({ page }) => {
