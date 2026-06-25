@@ -40,10 +40,9 @@ test.describe("smoke (anonymous)", () => {
     };
     expect(Array.isArray(body.docs), "docs array shape").toBe(true);
     const paths = (body.docs ?? []).map((d) => d.path);
-    // The seed plants at minimum INFO.md plus the three node-type fixtures,
-    // and SPRINT-052 added LANDING.md as the canonical public-root doc.
+    // SPRINT-076 removed INFO.md from the public seed (system nodes handle
+    // EMDEE/VAULT/SHARED/etc). The fixture files below remain.
     expect(paths).toContain("LANDING.md");
-    expect(paths).toContain("INFO.md");
     expect(paths).toContain("hubs/test-hub.md");
     expect(paths).toContain("templates/PERSON.md");
     expect(paths).toContain("skills/test-skill.md");
