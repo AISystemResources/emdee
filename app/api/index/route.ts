@@ -257,7 +257,10 @@ export async function GET(request: Request) {
   // (the backfill + write hooks apply them at insert time), but no
   // markdown re-parse cost here. Local dev keeps the indexer's edges so
   // EMDEE_DOCS workflows don't need a database round-trip.
-  if (!isLocal) {
+  // Public namespace is skipped — its docs are entirely virtual system
+  // nodes that never write to doc_edges, so the indexer's parsed edges
+  // from systemNodeContent() are always correct and authoritative.
+  if (!isLocal && ns !== "public") {
     // Supabase enforces a server-side `db-max-rows: 1000` cap that
     // overrides client `.range()`. For vaults with > 1000 edges (which
     // the user crossed at ~600 docs), the first attempt at lifting the
