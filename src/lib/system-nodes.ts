@@ -43,5 +43,7 @@ export const SYSTEM_NODES: readonly SystemNode[] = [
 export const SYSTEM_NODE_PATHS = new Set(SYSTEM_NODES.map((n) => n.path));
 
 export function systemNodeContent(node: SystemNode): string {
-  return `# ${node.title}\n\n> ${node.summary}\n`;
+  // EMDEE is the root — no parent. All other system nodes are children of EMDEE.
+  const childOf = node.path !== "EMDEE.md" ? "\n## Child of\n\n* [[EMDEE]]\n" : "";
+  return `# ${node.title}\n\n> ${node.summary}\n${childOf}`;
 }

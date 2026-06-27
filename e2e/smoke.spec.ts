@@ -29,20 +29,19 @@ test.describe("smoke (anonymous)", () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test("/api/index returns the seeded fixture vault for the public namespace", async ({ request, baseURL }) => {
-    // Content-asserting smoke: hits the data plane directly and verifies
-    // the seed actually landed in EMDEE-test. If this fails, either the
-    // seed script broke or the test Supabase project isn't wired up.
+  test("/api/index returns the public namespace with EMDEE as root", async ({ request, baseURL }) => {
+    // SPRINT-077: LANDING.md removed. Public namespace shows only the virtual
+    // EMDEE system node — no stored files required.
     const res = await request.get(`${baseURL ?? ""}/api/index?ns=public`);
     expect(res.status(), "/api/index is up").toBe(200);
     const body = (await res.json()) as {
       docs?: Array<{ path?: string }>;
+      entry?: string | null;
     };
     expect(Array.isArray(body.docs), "docs array shape").toBe(true);
+    expect(body.entry, "entry is EMDEE.md").toBe("EMDEE.md");
     const paths = (body.docs ?? []).map((d) => d.path);
-    // SPRINT-075 filters the public index to LANDING.md only — fixture files
-    // (hubs, templates, skills) are seeded but not surfaced via /api/index.
-    expect(paths).toContain("LANDING.md");
+    expect(paths).toContain("EMDEE.md");
   });
 
   test("sign-in route renders the Clerk identifier field", async ({ page }) => {

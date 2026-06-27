@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEdges } from "../src/core/parseEdges";
 import { pickByLocality, filenameSlug } from "../src/core/resolveLink";
+import { SYSTEM_NODES, systemNodeContent } from "../src/lib/system-nodes";
 
 const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local");
 for (const line of readFileSync(envPath, "utf8").split("\n")) {
@@ -82,8 +83,18 @@ for (const r of allRows) {
 }
 
 let totalEdges = 0;
-for (const [ns, docs] of byNs) {
-  console.log(`\nNamespace ${ns}: ${docs.length} docs`);
+for (const [ns, rawDocs] of byNs) {
+  // Inject virtual system nodes so [[EMDEE]] / [[VAULT]] etc. resolve even
+  // when those nodes have no stored file in vault_files.
+  const presentPaths = new Set(rawDocs.map((d) => d.path));
+  const docs = [...rawDocs];
+  for (const node of SYSTEM_NODES) {
+    if (!presentPaths.has(node.path)) {
+      docs.push({ path: node.path, content: systemNodeContent(node) });
+    }
+  }
+
+  console.log(`\nNamespace ${ns}: ${rawDocs.length} stored docs (+${docs.length - rawDocs.length} virtual)`);
 
   // Title-or-slug map; same precedence as the indexer.
   const titleMap = new Map<string, string[]>();

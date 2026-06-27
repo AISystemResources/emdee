@@ -48,26 +48,6 @@ export const runtime = "nodejs";
 const EMPTY = { docs: [], edges: [], entry: null };
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
-// SPRINT-052 (SIG-009): public landing seed. Written into the public namespace
-// on first request if absent. Editable post-seed via MCP — this constant is
-// only the bootstrap content; the source of truth becomes the file once
-// written.
-const PUBLIC_LANDING_INITIAL = `# EMDEE
-
-> Your knowledge graph, in markdown, for you and Claude.
-
-EMDEE is a local-first knowledge graph + MCP server. Plain markdown files, structured edges between them, rendered as a navigable graph and read by Claude as context. Yours stays yours — write notes once, query them everywhere.
-
-## What you get
-
-- A live graph of your own ideas, projects, people, and notes — all backed by markdown files you own
-- Claude as your default agent over those files — read, write, search, summarize, distill
-- Cross-session memory — Claude remembers what's in your vault even when chat history doesn't
-
-## Get started
-
-Click **Sign in** above to create your own vault.
-`;
 
 async function getNickname(ns: string): Promise<string | null> {
   try {
@@ -112,16 +92,6 @@ async function ensureOwnerNode(storage: VaultStorage, ns: string, nickname: stri
   await storage.write(ownerPath, ownerNodeScaffold(title));
 }
 
-async function ensurePublicLanding(
-  storage: VaultStorage,
-  prefix: string,
-  listed: Awaited<ReturnType<typeof storage.listWithContent>>,
-): Promise<boolean> {
-  const path = `${prefix}LANDING.md`;
-  if (listed.some((f) => f.path === path)) return false;
-  await storage.write(path, PUBLIC_LANDING_INITIAL);
-  return true;
-}
 
 function publicCacheHeaders(ns: string): Record<string, string> {
   return {
@@ -145,7 +115,9 @@ async function seedFromPublic(storage: VaultStorage, ns: string): Promise<void> 
       const relative = f.path.slice("public/".length);
       // Never overwrite system-node paths — they get injected with current
       // content at index-build time and a seed copy would lock in stale content.
-      if (SYSTEM_NODE_PATHS.has(relative)) return;
+      // Skip system-node paths and LANDING.md — system nodes are injected
+      // virtually at index-build time; LANDING.md is a public homepage doc.
+      if (SYSTEM_NODE_PATHS.has(relative) || relative === "LANDING.md") return;
       await storage.write(`${ns}/${relative}`, f.content);
     })
   );
@@ -230,26 +202,9 @@ export async function GET(request: Request) {
     }
   }
 
-  // SPRINT-052 (SIG-009): ensure LANDING.md exists in the public namespace.
-  // Self-heals after deploys + does not depend on a separate seed script.
-  // Idempotent — only writes if missing. Once written, subsequent edits via
-  // MCP become the source of truth.
-  if (!isLocal && ns === "public" && listed.length > 0) {
-    try {
-      const wrote = await ensurePublicLanding(storage, prefix || "", listed);
-      if (wrote) {
-        try {
-          listed = await storage.listWithContent(prefix || undefined);
-        } catch {
-          /* keep previous listed; LANDING write succeeded server-side. */
-        }
-      }
-    } catch (e) {
-      console.error("ensurePublicLanding failed:", e);
-    }
-  }
-
-  if (listed.length === 0) {
+  // Public namespace may be empty in storage — system nodes are injected
+  // below so this is fine; don't short-circuit on empty listed.
+  if (listed.length === 0 && ns !== "public") {
     return Response.json(EMPTY, NO_STORE);
   }
 
@@ -280,17 +235,12 @@ export async function GET(request: Request) {
     }
   }
 
-  // Public namespace shows only LANDING.md — strips any leftover demo/sample
-  // files that were added during development and should never be public-facing.
-  if (!isLocal && ns === "public") {
-    files = files.filter((f) => f.path === "LANDING.md");
-  }
-
   // Inject system-default nodes for any not already in the user's storage.
   // These are the OS layer of every vault — always present, never deletable,
   // content managed here rather than per-user in Supabase. Users who have
   // customised a node (written it via MCP) see their stored version instead.
-  if (!isLocal && ns !== "public") {
+  // Public namespace gets EMDEE injected so visitors see the vault root.
+  if (!isLocal) {
     const presentPaths = new Set(files.map((f) => f.path));
     for (const node of SYSTEM_NODES) {
       if (!presentPaths.has(node.path)) {
@@ -299,13 +249,17 @@ export async function GET(request: Request) {
     }
   }
 
+  // Strip leftover fixture/demo files from the public namespace so visitors
+  // only see the EMDEE root, not internal test content.
+  if (!isLocal && ns === "public") {
+    files = files.filter((f) => SYSTEM_NODE_PATHS.has(f.path));
+  }
+
   const index = buildIndexFromContents(files);
 
-  // SPRINT-052 (SIG-009): the public namespace always lands on LANDING.md.
-  // Override the indexer's natural entry-picking — operator's INFO must
-  // never be the public entry (graph-topology leak + wrong audience).
-  if (ns === "public" && index.docs.some((d) => d.path === "LANDING.md")) {
-    index.entry = "LANDING.md";
+  // Public namespace always lands on EMDEE — the canonical vault root.
+  if (ns === "public") {
+    index.entry = "EMDEE.md";
   }
 
   // SPRINT-018 Phase 3: in cloud mode, override the indexer's parsed
