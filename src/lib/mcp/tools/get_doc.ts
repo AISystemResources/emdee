@@ -3,6 +3,7 @@ import { extractPreamble } from "./patch_preamble";
 import { parseSections, extractBody, hashBody, sectionId } from "./sections";
 import { deriveTitle, deriveSummary } from "@/src/core/indexer";
 import type { ToolContext } from "./types";
+import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "@/src/lib/system-nodes";
 
 // Re-export sectionId so historic call sites (`import { sectionId } from "./get_doc"`)
 // keep compiling without an audit-the-world rename.
@@ -33,8 +34,17 @@ function json(value: unknown) {
 export async function getDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const rel = String(args.path);
   validatePath(rel);
-  const content = await readVaultFile(ctx, rel);
-  if (content === null) throw new Error(`no such doc: ${rel}`);
+  let content = await readVaultFile(ctx, rel);
+  if (content === null) {
+    // Virtual system nodes are never stored per-user — serve their canonical
+    // content so MCP callers can read EMDEE/VAULT/SHARED/GRAVEYARD/IMAGES.
+    if (SYSTEM_NODE_PATHS.has(rel)) {
+      const node = SYSTEM_NODES.find((n) => n.path === rel)!;
+      content = systemNodeContent(node);
+    } else {
+      throw new Error(`no such doc: ${rel}`);
+    }
+  }
 
   const docHash = hashBody(content);
 

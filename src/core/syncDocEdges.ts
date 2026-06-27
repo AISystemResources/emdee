@@ -12,6 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseEdges } from "./parseEdges";
 import { pickByLocality, filenameSlug } from "./resolveLink";
+import { SYSTEM_NODES, systemNodeContent } from "@/src/lib/system-nodes";
 
 interface EdgeRow {
   namespace: string;
@@ -26,6 +27,20 @@ interface DocMeta {
   path: string;
   title: string;
   content: string;
+}
+
+// Append virtual system nodes to a doc set so [[EMDEE]] / [[VAULT]] etc.
+// resolve in the edge resolver even when those nodes have no stored file.
+function injectSystemNodes(docs: DocMeta[]): DocMeta[] {
+  const present = new Set(docs.map((d) => d.path));
+  const extras: DocMeta[] = [];
+  for (const node of SYSTEM_NODES) {
+    if (!present.has(node.path)) {
+      const content = systemNodeContent(node);
+      extras.push({ path: node.path, title: node.title, content });
+    }
+  }
+  return extras.length > 0 ? [...docs, ...extras] : docs;
 }
 
 function deriveTitle(rel: string, content: string): string {
@@ -263,7 +278,7 @@ export async function syncDocEdges(
     }
   }
 
-  const desired = computeDesired(namespace, filteredDocs, docPath);
+  const desired = computeDesired(namespace, injectSystemNodes(filteredDocs), docPath);
   const desiredRows: EdgeRow[] = [...desired.hierMap.values(), ...desired.assocMap.values()];
 
   // Load current rows that touch docPath (outgoing + inbound).
@@ -367,7 +382,7 @@ export async function backfillNamespace(
     pageStart += PAGE;
   }
 
-  const all = computeAllEdges(namespace, docs);
+  const all = computeAllEdges(namespace, injectSystemNodes(docs));
   const edgeRows: EdgeRow[] = [...all.hierMap.values(), ...all.assocMap.values()];
 
   // Wipe + replace. Clearing first avoids stale rows surviving the upsert

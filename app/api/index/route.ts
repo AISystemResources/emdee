@@ -122,23 +122,6 @@ async function seedFromPublic(storage: VaultStorage, ns: string): Promise<void> 
     })
   );
 
-  // Per-file syncDocEdges fires inside storage.write, but Promise.all
-  // races them against each other — when sync for file A runs, sibling
-  // files may not yet exist in vault_files, so cross-doc wiki-links
-  // from A fail to resolve and the corresponding edges never land.
-  // Result: a freshly-seeded namespace has docs but a partial/empty
-  // doc_edges table → flat sidebar, isolated graph nodes.
-  //
-  // Re-derive the entire namespace's edges once after the seed settles.
-  // Throws propagate so the caller (GET handler) can decide whether to
-  // proceed; the indexer's parsed edges (kept by the empty-edge guard
-  // below) cover the renderer for this single request even if backfill
-  // fails.
-  try {
-    await backfillNamespace(adminClient(), ns);
-  } catch (e) {
-    console.error(`seed backfill failed for ${ns}:`, e);
-  }
 }
 
 export async function GET(request: Request) {
@@ -194,6 +177,13 @@ export async function GET(request: Request) {
       await ensureOwnerNode(storage, ns, nickname);
     } catch (e) {
       console.error(`owner-node seed failed for ${ns}:`, e);
+    }
+    // Rebuild all edges after seed + owner node are both written, so
+    // EMDEE→<owner> and EMDEE→system-node edges all resolve in one pass.
+    try {
+      await backfillNamespace(adminClient(), ns);
+    } catch (e) {
+      console.error(`post-seed backfill failed for ${ns}:`, e);
     }
     try {
       listed = await storage.listWithContent(prefix);
