@@ -240,9 +240,14 @@ export async function GET(request: Request) {
   }
 
   // Strip leftover fixture/demo files from the public namespace so visitors
-  // only see the EMDEE root, not internal test content.
+  // only see the EMDEE root, not internal test content. Then inject a USER
+  // placeholder so visitors see the personal-node slot in the graph.
   if (!isLocal && ns === "public") {
     files = files.filter((f) => SYSTEM_NODE_PATHS.has(f.path));
+    files.push({
+      path: "USER.md",
+      content: "# USER\n\n> Your personal node — sign in to create your own vault.\n\n## Child of\n\n* [[EMDEE]]\n",
+    });
   }
 
   const index = buildIndexFromContents(files);
