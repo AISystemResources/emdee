@@ -199,8 +199,30 @@ for (const [ns, rawDocs] of byNs) {
     }
   }
 
+  // Enforce the one-parent constraint before inserting: when two different
+  // parent_of declarations claim the same child, pick the closer parent by
+  // directory locality. Logs a warning so the content can be cleaned up later.
+  const byChild = new Map<string, EdgeRow[]>();
+  for (const r of hierMap.values()) {
+    const arr = byChild.get(r.to_path) ?? [];
+    arr.push(r);
+    byChild.set(r.to_path, arr);
+  }
+  const dedupedHier = new Map<string, EdgeRow>();
+  for (const [toPath, candidates] of byChild) {
+    if (candidates.length === 1) {
+      dedupedHier.set(`${candidates[0].from_path}::${toPath}`, candidates[0]);
+    } else {
+      const winner = pickByLocality(candidates.map((r) => ({ path: r.from_path })), toPath);
+      const chosen = candidates.find((r) => r.from_path === winner.path)!;
+      const dropped = candidates.filter((r) => r.from_path !== winner.path).map((r) => r.from_path);
+      console.warn(`  ⚠ duplicate parents for ${toPath}: kept ${winner.path}, dropped [${dropped.join(", ")}]`);
+      dedupedHier.set(`${chosen.from_path}::${toPath}`, chosen);
+    }
+  }
+
   const edgeRows: EdgeRow[] = [];
-  for (const r of hierMap.values()) edgeRows.push(r);
+  for (const r of dedupedHier.values()) edgeRows.push(r);
   for (const { a, b, label, position } of assocPairs.values()) {
     edgeRows.push({ namespace: ns, from_path: a, to_path: b, kind: "assoc", label, position });
     edgeRows.push({ namespace: ns, from_path: b, to_path: a, kind: "assoc", label, position });
