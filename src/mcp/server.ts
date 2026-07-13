@@ -8,6 +8,7 @@ import {
 import path from "node:path";
 import {
   listDocs,
+  listSummaryDrift,
   getSummary,
   getNeighbors,
   getContext,
@@ -65,6 +66,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: "object",
         properties: {
           format: { type: "string", enum: ["json", "text"], description: "Response shape. Default `json`. `text` = newline-delimited paths, no envelope." },
+        },
+      },
+    },
+    {
+      name: "list_summary_drift",
+      description:
+        "SPRINT-081: return paths whose body has drifted since the summary was last authored. Cloud mode reads persisted hashes from vault_files; local mode returns every doc as candidate. Response is minimal — path + current summary + reason. Pass `format: \"text\"` for newline-delimited paths only. Use this as the entry point to the summariser workflow — feed the returned paths into get_doc + propose new summaries.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prefix: { type: "string", description: "Optional path prefix filter." },
+          limit: { type: "number", description: "Max candidates to return. Default 20." },
+          offset: { type: "number", description: "Skip the first N candidates. Default 0." },
+          format: { type: "string", enum: ["json", "text"], description: "Response shape. Default `json`." },
         },
       },
     },
@@ -339,6 +354,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
 
   switch (name) {
     case "list_docs":         return await listDocs(ctx, a) as CallToolResult;
+    case "list_summary_drift": return await listSummaryDrift(ctx, a) as CallToolResult;
     case "get_summary":       return await getSummary(ctx, a) as CallToolResult;
     case "get_neighbors":     return await getNeighbors(ctx, a) as CallToolResult;
     case "get_context":       return await getContext(ctx, a) as CallToolResult;
