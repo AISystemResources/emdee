@@ -94,4 +94,46 @@ program
     child.on("exit", (code) => process.exit(code ?? 0));
   });
 
+program
+  .command("list")
+  .description("Print one doc path per line (token-cheap; local docs/ only)")
+  .option("-d, --docs <dir>", "docs directory", "docs")
+  .option("--prefix <prefix>", "filter to paths starting with this prefix")
+  .action((opts) => {
+    const docs = path.resolve(process.cwd(), opts.docs);
+    const args = ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), "list"];
+    if (opts.prefix) args.push("--prefix", opts.prefix);
+    const child = spawn("npx", args, {
+      cwd: pkgRoot,
+      stdio: "inherit",
+      env: { ...process.env, EMDEE_DOCS: docs },
+    });
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
+program
+  .command("drift-batch")
+  .description("Print a batch of docs (path + summary + body) for offline summariser workflows")
+  .option("-d, --docs <dir>", "docs directory", "docs")
+  .option("--limit <n>", "docs per batch", "10")
+  .option("--offset <k>", "skip the first K docs", "0")
+  .option("--prefix <prefix>", "filter to paths starting with this prefix")
+  .action((opts) => {
+    const docs = path.resolve(process.cwd(), opts.docs);
+    const args = [
+      "tsx",
+      path.join(pkgRoot, "src/cli/read-commands.ts"),
+      "drift-batch",
+      "--limit", opts.limit,
+      "--offset", opts.offset,
+    ];
+    if (opts.prefix) args.push("--prefix", opts.prefix);
+    const child = spawn("npx", args, {
+      cwd: pkgRoot,
+      stdio: "inherit",
+      env: { ...process.env, EMDEE_DOCS: docs },
+    });
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
 program.parseAsync();
