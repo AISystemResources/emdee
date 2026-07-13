@@ -13,6 +13,10 @@ function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
+function text(value: string) {
+  return { content: [{ type: "text" as const, text: value }] };
+}
+
 /**
  * Return doc metadata. SPRINT-018 Phase 5: the body is opt-in via
  * `full=true`. The default response is light — title + summary +
@@ -54,6 +58,20 @@ export async function getDoc(ctx: ToolContext, args: Record<string, unknown>): P
   }
 
   const full = Boolean(args.full);
+
+  // Plaintext mode short-circuit: bare markdown, no envelope.
+  // full=true → raw file. full=false → H1 + summary + section headings.
+  if (args.format === "text") {
+    if (full) return text(content);
+    const title = deriveTitle(rel, content);
+    const summary = deriveSummary(content);
+    const headings = parseSections(content).map((s) => `## ${s.heading}`);
+    const parts = [`# ${title}`];
+    if (summary) parts.push(`> ${summary}`);
+    if (headings.length) parts.push(headings.join("\n"));
+    return text(parts.join("\n\n"));
+  }
+
   const sections = parseSections(content).map((s, idx) => ({
     id: sectionId(s.heading, idx),
     heading: s.heading,

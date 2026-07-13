@@ -60,16 +60,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_docs",
       description:
-        "Enumerate every doc in the vault as {path, title, summary}. Cheap entry point — call this first when starting cold to see what exists.",
-      inputSchema: { type: "object", properties: {} },
+        "Enumerate every doc in the vault as {path, title, summary}. Cheap entry point — call this first when starting cold to see what exists. Pass `format: \"text\"` to receive one path per line instead of the JSON envelope (~5× cheaper in tokens).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          format: { type: "string", enum: ["json", "text"], description: "Response shape. Default `json`. `text` = newline-delimited paths, no envelope." },
+        },
+      },
     },
     {
       name: "get_summary",
       description:
-        "Return {path, title, summary} for one doc. Use this when you know which doc to look at but don't want to spend tokens on the full body yet.",
+        "Return {path, title, summary} for one doc. Use this when you know which doc to look at but don't want to spend tokens on the full body yet. Pass `format: \"text\"` to receive just the blockquote summary text (no path/title wrapper).",
       inputSchema: {
         type: "object",
-        properties: { path: { type: "string", description: "Relative path of the doc, e.g. people/KIRAN.md" } },
+        properties: {
+          path: { type: "string", description: "Relative path of the doc, e.g. people/KIRAN.md" },
+          format: { type: "string", enum: ["json", "text"], description: "Response shape. Default `json`. `text` = bare summary line only." },
+        },
         required: ["path"],
       },
     },
@@ -103,13 +111,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_doc",
       description:
-        "Returns title + summary + preamble + section headings + `doc_content_hash` (sha256 of raw content, first 16 hex). Each section in `sections` carries `{ id, heading, content_hash }` — `id` is a stable short string for patch_section / append_section lookup (preferred over `heading` when the heading text is fuzzy or may collide), `content_hash` is the version guard for patch_section. Pass `full=true` for the body. Pass `expected_content_hash` from a prior get_doc response to short-circuit: when matching, returns `{ unchanged: true, path, doc_content_hash }` and skips section parsing entirely. Use `get_context` instead when you need the focal + its neighbourhood.",
+        "Returns title + summary + preamble + section headings + `doc_content_hash` (sha256 of raw content, first 16 hex). Each section in `sections` carries `{ id, heading, content_hash }` — `id` is a stable short string for patch_section / append_section lookup (preferred over `heading` when the heading text is fuzzy or may collide), `content_hash` is the version guard for patch_section. Pass `full=true` for the body. Pass `expected_content_hash` from a prior get_doc response to short-circuit: when matching, returns `{ unchanged: true, path, doc_content_hash }` and skips section parsing entirely. Use `get_context` instead when you need the focal + its neighbourhood. Pass `format: \"text\"` for bare markdown (raw file when full=true, else H1 + summary + `##` headings), no JSON envelope — ~3× cheaper for body-heavy reads.",
       inputSchema: {
         type: "object",
         properties: {
           path: { type: "string" },
           full: { type: "boolean", description: "Include the full markdown content. Default false — light envelope only." },
           expected_content_hash: { type: "string", description: "Hash from a prior get_doc response. If matches current doc, returns { unchanged: true }." },
+          format: { type: "string", enum: ["json", "text"], description: "Response shape. Default `json`. `text` = bare markdown, no envelope; skips hashes + section IDs so version-guarded writes still require the JSON path." },
         },
         required: ["path"],
       },
