@@ -41,23 +41,32 @@ async function candidatesLocal(ctx: Extract<ToolContext, { mode: "local" }>): Pr
 }
 
 async function candidatesCloud(ctx: Extract<ToolContext, { mode: "cloud" }>): Promise<DriftCandidate[]> {
+  // HARD RULE 6: PostgREST caps `.select()` at 1000 rows server-side, so
+  // any vault > 1000 docs would silently truncate without pagination.
+  // Explicit .range() loop until a short page comes back.
   const admin = adminClient();
-  const { data, error } = await admin
-    .from(CACHE_TABLE)
-    .select("file_path, content, content_hash_at_summary_write")
-    .eq("namespace", ctx.userId);
-  if (error) throw new Error(`list_summary_drift query failed: ${error.message}`);
-
+  const PAGE = 1000;
   const out: DriftCandidate[] = [];
-  for (const row of data ?? []) {
-    const content = (row.content as string) ?? "";
-    const stored = (row.content_hash_at_summary_write as string | null) ?? null;
-    const now = hashBody(content);
-    if (stored === null) {
-      out.push({ path: row.file_path as string, current_summary: deriveSummary(content), reason: "never_baselined" });
-    } else if (stored !== now) {
-      out.push({ path: row.file_path as string, current_summary: deriveSummary(content), reason: "body_drifted" });
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await admin
+      .from(CACHE_TABLE)
+      .select("file_path, content, content_hash_at_summary_write")
+      .eq("namespace", ctx.userId)
+      .order("file_path", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`list_summary_drift query failed: ${error.message}`);
+    const rows = data ?? [];
+    for (const row of rows) {
+      const content = (row.content as string) ?? "";
+      const stored = (row.content_hash_at_summary_write as string | null) ?? null;
+      const now = hashBody(content);
+      if (stored === null) {
+        out.push({ path: row.file_path as string, current_summary: deriveSummary(content), reason: "never_baselined" });
+      } else if (stored !== now) {
+        out.push({ path: row.file_path as string, current_summary: deriveSummary(content), reason: "body_drifted" });
+      }
     }
+    if (rows.length < PAGE) break;
   }
   return out;
 }
