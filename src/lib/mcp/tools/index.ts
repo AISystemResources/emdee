@@ -1,4 +1,5 @@
 export { listDocs } from "./list_docs";
+export { listSummaryDrift } from "./list_summary_drift";
 export { getSummary } from "./get_summary";
 export { getNeighbors } from "./get_neighbors";
 export { getContext } from "./get_context";

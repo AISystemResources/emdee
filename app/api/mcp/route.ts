@@ -5,7 +5,7 @@ import { clerkIdFromOAuthToken } from "@/src/lib/supabase/oauth";
 import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import {
-  listDocs, getSummary, getNeighbors, getContext, getDoc, readDocSection, search,
+  listDocs, listSummaryDrift, getSummary, getNeighbors, getContext, getDoc, readDocSection, search,
   appendSection, patchSection, writeDocPreview, writeDoc, deleteDoc, splitDoc, renameDoc, patchPreamble, appendDoc,
   lintDoc, distillDoc, materializeSubgroup, createChild, addAssociation, getImage, moveDoc, trashDoc, restoreDoc,
 } from "@/src/lib/mcp/tools/index";
@@ -81,6 +81,7 @@ Shared docs:
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       { name: "list_docs", description: "Enumerate every doc in the vault as {path, title, summary}. Pass `format: \"text\"` for newline-delimited paths (~5× cheaper in tokens).", inputSchema: { type: "object", properties: { format: { type: "string", enum: ["json", "text"] } } } },
+      { name: "list_summary_drift", description: "SPRINT-081: return paths whose body has drifted since the summary was last authored. Cloud mode reads persisted hashes; local mode returns every doc. Response is minimal — path + current summary + reason. Entry point to the summariser workflow. Pass `format: \"text\"` for newline-delimited paths only.", inputSchema: { type: "object", properties: { prefix: { type: "string" }, limit: { type: "number", description: "Max candidates. Default 20." }, offset: { type: "number", description: "Skip N. Default 0." }, format: { type: "string", enum: ["json", "text"] } } } },
       { name: "get_summary", description: "Return {path, title, summary} for one doc. Pass `format: \"text\"` for the bare summary line only.", inputSchema: { type: "object", properties: { path: { type: "string" }, format: { type: "string", enum: ["json", "text"] } }, required: ["path"] } },
       { name: "get_neighbors", description: "Return the doc plus its 1-hop neighborhood.", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
       { name: "get_context", description: "Return the focal doc plus its multi-hop neighbourhood within a token budget. Focal + 1-hop neighbours get full bodies (when include_full); deeper hops get summary only. Response includes `doc_content_hash` of the focal. Pass `expected_content_hash` from a prior call to short-circuit when the focal hasn't changed (returns `{ unchanged: true, path, doc_content_hash }`). Note: neighbourhood-only changes don't bust this; refetch unconditionally when chasing structural drift.", inputSchema: { type: "object", properties: { path: { type: "string" }, hops: { type: "number", description: "Max BFS depth, 1–3. Default 2." }, budget_tokens: { type: "number", description: "Rough token cap (chars÷4). Default 8000." }, include_full: { type: "boolean", description: "Inline focal + hop-1 bodies. Default true." }, include_associates: { type: "boolean", description: "Include assoc edges in the walk. Default true." }, expected_content_hash: { type: "string", description: "Hash from a prior get_context. If matches focal doc, returns { unchanged: true }." } }, required: ["path"] } },
@@ -119,6 +120,7 @@ Shared docs:
     }
     switch (name) {
       case "list_docs":         return await listDocs(ctx, a) as CallToolResult;
+      case "list_summary_drift": return await listSummaryDrift(ctx, a) as CallToolResult;
       case "get_summary":       return await getSummary(ctx, a) as CallToolResult;
       case "get_neighbors":     return await getNeighbors(ctx, a) as CallToolResult;
       case "get_context":       return await getContext(ctx, a) as CallToolResult;

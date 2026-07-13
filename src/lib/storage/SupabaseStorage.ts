@@ -5,6 +5,8 @@ import {
   publishNamespaceInvalidate,
   subscribeNamespaceInvalidate,
 } from "@/src/lib/cache/invalidation";
+import { hashBody } from "@/src/lib/mcp/tools/sections";
+import { deriveSummary } from "@/src/core/indexer";
 import type { VaultFile, VaultStorage } from "./VaultStorage";
 
 const BUCKET = "vaults";
@@ -269,12 +271,36 @@ export class SupabaseStorage implements VaultStorage {
     const split = splitNs(filePath);
     if (!split) return;
     try {
-      const { error: cacheErr } = await adminClient()
+      const admin = adminClient();
+
+      // SPRINT-081: record summary drift hashes. Snapshot the current
+      // content hash into `content_hash_at_summary_write` only when the
+      // summary itself changed — that's how drift accretes (body edits
+      // shift the live content hash without shifting the snapshot).
+      const summary = deriveSummary(content);
+      const summaryHash = summary ? hashBody(summary) : "";
+      const contentHash = hashBody(content);
+
+      const { data: existing } = await admin
         .from(CACHE_TABLE)
-        .upsert(
-          { namespace: split.namespace, file_path: split.file_path, content, updated_at: new Date().toISOString() },
-          { onConflict: "namespace,file_path" }
-        );
+        .select("summary_hash")
+        .match({ namespace: split.namespace, file_path: split.file_path })
+        .maybeSingle();
+      const oldSummaryHash = (existing?.summary_hash as string | null) ?? null;
+      const summaryChanged = oldSummaryHash !== summaryHash;
+
+      const row: Record<string, unknown> = {
+        namespace: split.namespace,
+        file_path: split.file_path,
+        content,
+        updated_at: new Date().toISOString(),
+        summary_hash: summaryHash,
+      };
+      if (summaryChanged) row.content_hash_at_summary_write = contentHash;
+
+      const { error: cacheErr } = await admin
+        .from(CACHE_TABLE)
+        .upsert(row, { onConflict: "namespace,file_path" });
       if (cacheErr) console.error(`vault_files cache write failed for ${filePath}:`, cacheErr.message);
     } catch (e) {
       console.error(`vault_files cache write threw for ${filePath}:`, e);
