@@ -3,12 +3,18 @@ import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./v
 import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
   "asymmetric_child_edge",
   "sibling_assoc_redundant",
 ]);
+
+const ARG_SPEC = {
+  allowed: ["path", "body", "gate_on_warnings"],
+  required: ["path", "body"],
+} as const;
 
 function parseGateCodes(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -34,6 +40,8 @@ function hashBody(body: string): string {
  * new sections at the end.
  */
 export async function appendDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
   const body = String(args.body ?? "");

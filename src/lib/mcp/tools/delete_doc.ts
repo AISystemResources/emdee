@@ -1,5 +1,12 @@
 import { deleteVaultFile, loadVaultIndex, readVaultFile, validatePath } from "./vault";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = { allowed: ["path"], required: ["path"] } as const;
+
+function json(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+}
 
 /**
  * Permanently remove a doc from the vault. DESTRUCTIVE — there is no undo.
@@ -13,6 +20,8 @@ import type { ToolContext } from "./types";
  * afterwards if inbound_edges is non-empty.
  */
 export async function deleteDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
 

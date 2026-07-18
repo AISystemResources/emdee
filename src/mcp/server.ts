@@ -172,7 +172,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Append markdown content to the end of an existing H2 section. Section-scoped — safer than write_doc for incremental edits. Either `heading` or `section_id` (from get_doc.sections[].id) must be provided — `section_id` is the preferred exact-match lookup. Pass create_if_missing=true (with `heading`) to add a new H2 at the end of the file if not found (default false, returns section_not_found). Returns the new section_id + content_hash for follow-up patches. Pass `gate_on_warnings: [\"code\", ...]` to hard-block the write when any of those lint codes would fire on the proposed content. Edge convention: `## Associated with` is for cross-tree links only (e.g. project↔person, sprint↔learning). Do NOT add an associate that's already a parent/child OR a sibling (shares a parent) of this doc — the hierarchy already conveys that relationship and duplicate edges get suppressed in the graph.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string" },
           heading: { type: "string", description: "H2 heading text without the `## ` prefix" },
           section_id: { type: "string", description: "Preferred lookup key from get_doc.sections[].id." },
@@ -195,7 +195,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Replace the body of an existing H2 section. Version-guarded: pass expected_content_hash from a prior get_doc, append_section, or patch_section response. Either `heading` or `section_id` (from get_doc.sections[].id) must be provided — `section_id` is the preferred exact-match lookup. If both are provided and resolve to different sections, returns `section_id_heading_mismatch`. Mismatch on the hash returns a structured version_conflict error with the actual hash so you can re-read and reconcile. Pass `gate_on_warnings: [\"code\", ...]` to hard-block the write when any of those lint codes would fire on the proposed content. This is the ONLY safe path for destructive section edits — never use write_doc for incremental edits, it replaces the entire file and silently loses content. Edge convention: `## Associated with` is for cross-tree links only. Do NOT add an associate that's already a parent/child OR a sibling (shares a parent) — the hierarchy already conveys that relationship and duplicate edges get suppressed in the graph.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string" },
           heading: { type: "string", description: "H2 heading text without the `## ` prefix" },
           section_id: { type: "string", description: "Preferred lookup key from get_doc.sections[].id." },
@@ -218,7 +218,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Preview the diff that write_doc would produce. ALWAYS call this before write_doc — write_doc replaces the entire file and silently destroys sections not present in the new payload. If the change is section-scoped, prefer append_section or patch_section instead.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string" },
           content: { type: "string", description: "Proposed new content for the entire file" },
         },
@@ -231,7 +231,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Create or overwrite a markdown doc at the given relative path. DESTRUCTIVE — full-file replacement, silently deletes any content not in the new payload. Use append_section or patch_section for incremental edits. Always run write_doc_preview first to see what would be lost. Pass `gate_on_warnings: [\"code\", ...]` to hard-block the write when any of those lint codes would fire on the proposed content. Edge convention: `## Associated with` is for cross-tree links only. Do NOT add an associate that's already a parent/child OR a sibling (shares a parent) — the hierarchy already conveys that relationship and duplicate edges get suppressed in the graph.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string" },
           content: { type: "string" },
           gate_on_warnings: {
@@ -248,7 +248,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Atomic create-and-link: writes a new doc with the canonical scaffold (H1 + summary placeholder + Child of / Parent of / Associated with / Notes) AND patches the parent's `## Parent of` to add the new bullet. Collapses the 5-round-trip add-child flow into one call. Use this instead of write_doc + patch_section for adding child nodes. `child_path` defaults to `<parent dir>/<sanitized title>.md`. Pass `gate_on_warnings` to hard-block on lint codes; multiple_child_of is always hard-gated internally.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           parent_path: { type: "string" },
           title: { type: "string" },
           body: { type: "string", description: "Optional body content appended after ## Notes." },
@@ -268,7 +268,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Atomic two-sided assoc: patches both docs' `## Associated with` to include the other (with optional shared label, identical on both bullets). Hard-refuses if the pair is already linked hierarchically OR if they share a parent (siblings) — returns `would_duplicate_hierarchy` with the existing edge info. Idempotent: if both sides already declare the assoc, returns ok with `a_updated: false, b_updated: false`. Use this instead of two patch_section calls for cross-tree links.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           a_path: { type: "string" },
           b_path: { type: "string" },
           label: { type: "string", description: "Optional shared label appended as ` — <label>` to both bullets." },
@@ -298,7 +298,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Atomic reparenting. Removes the child's bullet from old parent's `## Parent of`, adds it to new parent's, and rewrites the child's `## Child of` to declare the new parent — all in one call. Replaces the 3-write hash-guarded patch_section dance that drops asymmetric edges if any step fails. If the child has more than one Child of bullet, `old_parent_path` MUST disambiguate; otherwise refuses with `ambiguous_parent`. Idempotent.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string", description: "Child doc path to reparent." },
           new_parent_path: { type: "string", description: "Path of the new parent doc." },
           old_parent_path: {
@@ -323,7 +323,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Flag a doc as trashed without reparenting or rewriting its markdown. The doc's `## Child of` and `## Parent of` stay intact so restore is lossless. State persists in `.emdee/trashed.json` keyed by doc path. Idempotent.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string", description: "Path of the doc to trash." },
           original_parent_path: {
             type: "string",
@@ -339,7 +339,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Reverse a previous `trash_doc`. Clears the doc's entry in `.emdee/trashed.json` so the renderer surfaces it again under its original parent.",
       inputSchema: {
         type: "object",
-        properties: {
+        additionalProperties: false,        properties: {
           path: { type: "string", description: "Path of the trashed doc to restore." },
         },
         required: ["path"],

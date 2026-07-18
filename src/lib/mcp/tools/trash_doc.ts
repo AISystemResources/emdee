@@ -2,6 +2,12 @@ import { validatePath, readVaultFile, loadVaultIndex } from "./vault";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["path", "original_parent_path"],
+  required: ["path"],
+} as const;
 
 // SPRINT-057 (SIG-008): trash a doc by flagging it in the .emdee/trashed.json
 // sidecar. The markdown is untouched; original Child of / Parent of edges
@@ -46,6 +52,8 @@ export async function trashDoc(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const docPath = String(args.path ?? "");
   const explicitParent =
     args.original_parent_path !== undefined ? String(args.original_parent_path) : "";

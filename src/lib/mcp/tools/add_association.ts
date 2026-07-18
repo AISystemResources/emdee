@@ -7,6 +7,12 @@ import { evaluateLintGate, type LintFix } from "./lint_gate";
 import type { LintWarning, LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["a_path", "b_path", "label", "gate_on_warnings"],
+  required: ["a_path", "b_path"],
+} as const;
 
 const H1_RE = /^#\s+(.+?)\s*$/m;
 const H2_RE = /^##\s+(.+?)\s*$/;
@@ -141,6 +147,8 @@ function json(value: unknown) {
  * label edits.
  */
 export async function addAssociation(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const aPath = String(args.a_path ?? "");
   const bPath = String(args.b_path ?? "");
   const label = args.label !== undefined ? String(args.label).trim() : "";

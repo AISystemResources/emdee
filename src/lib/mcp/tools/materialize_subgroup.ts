@@ -2,6 +2,12 @@ import path from "node:path";
 import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["source_path", "subgroup_heading", "new_doc_title", "new_doc_path", "summary"],
+  required: ["source_path", "subgroup_heading"],
+} as const;
 
 const H1_RE = /^#\s+(.+?)\s*$/m;
 const H2_RE = /^##\s+(.+?)\s*$/;
@@ -176,6 +182,8 @@ function buildIntermediateDoc(title: string, summary: string, sourceTitle: strin
  * (`subgroup_materialization_candidate`).
  */
 export async function materializeSubgroup(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const sourcePath = String(args.source_path ?? "");
   const subgroupHeading = String(args.subgroup_heading ?? "");
   const summary = args.summary !== undefined ? String(args.summary) : "";

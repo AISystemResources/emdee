@@ -1,6 +1,12 @@
 import path from "node:path";
 import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["source_path", "rewrite_source_content", "extracts"],
+  required: ["source_path", "rewrite_source_content", "extracts"],
+} as const;
 
 interface ExtractInput {
   path: string;
@@ -33,6 +39,8 @@ function deriveTitle(rel: string, content: string): string {
  * existence check, which is the desired safety).
  */
 export async function splitDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const sourcePath = String(args.source_path ?? "");
   const rewriteContent = String(args.rewrite_source_content ?? "");
   const extracts = Array.isArray(args.extracts) ? (args.extracts as ExtractInput[]) : [];
