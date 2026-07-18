@@ -1,6 +1,9 @@
 import { validatePath } from "./vault";
 import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = { allowed: ["path"], required: ["path"] } as const;
 
 // SPRINT-057 (SIG-008): restore a previously-trashed doc by clearing its
 // entry in `.emdee/trashed.json`. The doc's markdown is untouched
@@ -14,6 +17,8 @@ export async function restoreDoc(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const docPath = String(args.path ?? "");
   if (!docPath) return json({ error: "path required" });
   validatePath(docPath);

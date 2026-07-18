@@ -7,6 +7,12 @@ import { evaluateLintGate, type LintFix } from "./lint_gate";
 import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { LintWarning } from "./lint";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["parent_path", "title", "body", "summary", "child_path", "gate_on_warnings"],
+  required: ["parent_path", "title"],
+} as const;
 
 const H1_RE = /^#\s+(.+?)\s*$/m;
 const H2_RE = /^##\s+(.+?)\s*$/;
@@ -161,6 +167,8 @@ function json(value: unknown) {
  * already-present parent bullet and converges to the same state.
  */
 export async function createChild(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const parentPath = String(args.parent_path ?? "");
   const titleRaw = String(args.title ?? "").trim();
   const body = args.body !== undefined ? String(args.body) : "";

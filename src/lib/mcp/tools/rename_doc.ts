@@ -2,6 +2,12 @@ import path from "node:path";
 import { validatePath, readVaultFile, writeVaultFile, deleteVaultFile, loadVaultIndex } from "./vault";
 import { adminClient } from "../../supabase/admin";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["old_path", "new_title", "new_path"],
+  required: ["old_path", "new_title"],
+} as const;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -71,6 +77,8 @@ function rewriteWikiLinks(content: string, oldTitle: string, newTitle: string): 
  * old-title links won't be present in already-rewritten docs.
  */
 export async function renameDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const oldPath = String(args.old_path ?? "");
   const newTitle = String(args.new_title ?? "").trim();
   const newPath = args.new_path ? String(args.new_path) : defaultNewPath(oldPath, newTitle);

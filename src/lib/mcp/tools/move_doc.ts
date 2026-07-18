@@ -6,6 +6,12 @@ import { evaluateLintGate } from "./lint_gate";
 import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["path", "new_parent_path", "old_parent_path", "position", "gate_on_warnings"],
+  required: ["path", "new_parent_path"],
+} as const;
 
 // SPRINT-054 (SIG-003): atomic reparenting. Replaces the 3-write manual dance
 // (old parent's Parent of, new parent's Parent of, child's Child of) with
@@ -257,6 +263,8 @@ export async function moveDoc(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const childPath = String(args.path ?? "");
   const newParentPath = String(args.new_parent_path ?? "");
   const oldParentPathArg =

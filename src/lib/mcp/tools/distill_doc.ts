@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { validatePath, loadVaultIndex } from "./vault";
 import type { ToolContext } from "./types";
 import type { DocNode } from "../../../core/indexer";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = { allowed: ["path"], required: ["path"] } as const;
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -199,6 +202,8 @@ const SCHEMA_HINT = JSON.stringify(
  * the plan in its response. The user reviews. Then split_doc executes.
  */
 export async function distillDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
 

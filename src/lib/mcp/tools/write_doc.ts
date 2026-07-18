@@ -4,6 +4,12 @@ import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
 import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { ToolContext } from "./types";
+import { validateArgs } from "./validate_args";
+
+const ARG_SPEC = {
+  allowed: ["path", "content", "gate_on_warnings"],
+  required: ["path", "content"],
+} as const;
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -36,6 +42,8 @@ function parseGateCodes(raw: unknown): string[] {
  * `[]` preserves the legacy signal-not-gate behaviour.
  */
 export async function writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  const argErr = validateArgs(args, ARG_SPEC);
+  if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
 
