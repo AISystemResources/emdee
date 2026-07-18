@@ -4,7 +4,7 @@
   "description": "Local-first document management with markdown rendering, knowledge graph, and MCP server.",
   "type": "module",
   "bin": {
-    "emdee": "./bin/emdee.js"
+    "emdee": "bin/emdee.js"
   },
   "publishConfig": {
     "access": "public"
