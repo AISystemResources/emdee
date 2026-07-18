@@ -3,6 +3,7 @@ import path from "node:path";
 import { buildIndex, buildIndexFromContents, type DocIndex } from "../../../core/indexer";
 import { adminClient } from "../../supabase/admin";
 import { subscribeNamespaceInvalidate } from "../../cache/invalidation";
+import { missingSystemNodeFiles } from "../../system-nodes";
 import type { ToolContext } from "./types";
 
 /**
@@ -299,7 +300,11 @@ async function buildVaultIndex(ctx: ToolContext): Promise<DocIndex> {
     path: f.path.slice(ownPrefix.length),
     content: f.content,
   }));
-  const ownIndex = buildIndexFromContents(ownWithContent);
+  // SPRINT-093: inject the 5 canonical system nodes when the user hasn't
+  // written a stored version. Matches the /api/index injection so MCP
+  // readers see the same starter set the web renderer does.
+  const virtuals = missingSystemNodeFiles(ownWithContent.map((f) => f.path));
+  const ownIndex = buildIndexFromContents([...ownWithContent, ...virtuals]);
 
   const shared = await listSharedDocsForGrantee(ctx.userId);
   if (shared.length === 0) return ownIndex;

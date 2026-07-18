@@ -12,7 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseEdges } from "./parseEdges";
 import { pickByLocality, filenameSlug } from "./resolveLink";
-import { SYSTEM_NODES, systemNodeContent } from "@/src/lib/system-nodes";
+import { SYSTEM_NODES, missingSystemNodeFiles } from "@/src/lib/system-nodes";
 
 interface EdgeRow {
   namespace: string;
@@ -31,15 +31,13 @@ interface DocMeta {
 
 // Append virtual system nodes to a doc set so [[EMDEE]] / [[VAULT]] etc.
 // resolve in the edge resolver even when those nodes have no stored file.
+// Uses the shared `missingSystemNodeFiles` helper for the file-shape payload,
+// then wraps each result as a DocMeta with the canonical title.
 function injectSystemNodes(docs: DocMeta[]): DocMeta[] {
-  const present = new Set(docs.map((d) => d.path));
-  const extras: DocMeta[] = [];
-  for (const node of SYSTEM_NODES) {
-    if (!present.has(node.path)) {
-      const content = systemNodeContent(node);
-      extras.push({ path: node.path, title: node.title, content });
-    }
-  }
+  const extras: DocMeta[] = missingSystemNodeFiles(docs.map((d) => d.path)).map((f) => {
+    const node = SYSTEM_NODES.find((n) => n.path === f.path)!;
+    return { path: f.path, title: node.title, content: f.content };
+  });
   return extras.length > 0 ? [...docs, ...extras] : docs;
 }
 

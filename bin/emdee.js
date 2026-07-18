@@ -1,52 +1,90 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { spawn } from "node:child_process";
-import { mkdir, copyFile, access } from "node:fs/promises";
+import { mkdir, writeFile, access } from "node:fs/promises";
+import readline from "node:readline/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
 
+// SPRINT-093: keep owner-title derivation logic in lockstep with
+// src/lib/owner/identity.ts. The published tarball is plain JS (no tsx),
+// so this duplicates the 15-line function rather than pull in a runtime
+// compilation step. `e2e/cli/init.spec.ts` pins the two copies together —
+// if they ever diverge, the consistency test fails.
+function normalizeOwnerTitle(input) {
+  const normalized = input
+    .trim()
+    .toUpperCase()
+    .replace(/[._\s]/g, "-")
+    .replace(/[^A-Z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || "OWNER";
+}
+
+function ownerNodeScaffold(title) {
+  return `# ${title}
+
+> Your personal subtree. Top-level content (projects, people, notes, etc.) lives here. Renameable any time via \`rename_doc\` — inbound wiki-link references update atomically across the vault.
+
+## Child of
+
+* [[EMDEE]]
+
+## Parent of
+
+## Associated with
+
+## Notes
+`;
+}
+
 const program = new Command();
-program.name("emdee").description("Emdee — local docs + knowledge graph + MCP").version("0.0.1");
+program.name("emdee").description("Emdee — local docs + knowledge graph + MCP").version("0.1.0");
 
 program
   .command("init")
-  .description("Create a docs/ folder seeded with EMDEE.md and supporting templates")
-  .action(async () => {
+  .description("Create a docs/ folder with your owner node. The 5 system nodes (EMDEE, VAULT, SHARED, GRAVEYARD, IMAGES) are virtual — never written to disk.")
+  .option("--nickname <name>", "Display name for the owner node (required non-interactively)")
+  .action(async (opts) => {
     const cwd = process.cwd();
     const docsDir = path.join(cwd, "docs");
     await mkdir(docsDir, { recursive: true });
-    const seeds = [
-      "EMDEE.md",
-      "VAULT.md",
-      "INFO.md",
-      "INSTRUCTIONS.md",
-      "BRAIN.md",
-      "WORKFLOWS.md",
-      "SAMPLE.md",
-      "EDUCATION.md",
-      "CAREER.md",
-      "sample/TEMPLATE.md",
-      "sample/ACME-WORKSPACE.md",
-      "sample/ATLAS-SEARCH.md",
-      "sample/QUERY-ROUTER.md",
-      "sample/MAYA-CHEN.md",
-    ];
-    for (const name of seeds) {
-      const target = path.join(docsDir, name);
-      try {
-        await access(target);
-        console.log(`docs/${name} already exists — leaving it alone.`);
-      } catch {
-        await mkdir(path.dirname(target), { recursive: true });
-        await copyFile(path.join(pkgRoot, "templates", name), target);
-        console.log(`Created docs/${name}`);
+
+    let nickname = (opts.nickname ?? "").trim();
+    if (!nickname) {
+      if (!process.stdin.isTTY) {
+        console.error("emdee init needs --nickname when running non-interactively.");
+        process.exit(1);
+      }
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      nickname = (await rl.question("Your name (owner node title): ")).trim();
+      rl.close();
+      if (!nickname) {
+        console.error("emdee init: nickname cannot be empty.");
+        process.exit(1);
       }
     }
+
+    const title = normalizeOwnerTitle(nickname);
+    if (title === "OWNER") {
+      console.error(`emdee init: "${nickname}" normalised to the fallback OWNER — pick a name with ASCII letters.`);
+      process.exit(1);
+    }
+
+    const target = path.join(docsDir, `${title}.md`);
+    try {
+      await access(target);
+      console.log(`Already initialised at docs/${title}.md — leaving it alone.`);
+    } catch {
+      await writeFile(target, ownerNodeScaffold(title), "utf8");
+      console.log(`Created docs/${title}.md — your owner node.`);
+    }
     console.log(
-      `\nDelete the sample branch once you've read it: rm -rf docs/sample/`
+      `\nThe 5 system nodes (EMDEE, VAULT, SHARED, GRAVEYARD, IMAGES) are virtual — they appear in \`emdee list\` and \`get_doc\` without being written to disk.`
     );
   });
 

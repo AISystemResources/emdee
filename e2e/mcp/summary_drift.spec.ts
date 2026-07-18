@@ -49,9 +49,19 @@ test.describe("list_summary_drift (SPRINT-081)", () => {
       returned: number;
       candidates: Array<{ path: string; current_summary: string; reason: string }>;
     };
-    expect(parsed.returned).toBe(3);
+    // SPRINT-093: 3 seeded docs + 5 virtual system nodes.
+    expect(parsed.returned).toBe(8);
     const paths = parsed.candidates.map((c) => c.path).sort();
-    expect(paths).toEqual(["ALPHA.md", "BETA.md", "GAMMA.md"]);
+    expect(paths).toEqual([
+      "ALPHA.md",
+      "BETA.md",
+      "EMDEE.md",
+      "GAMMA.md",
+      "GRAVEYARD.md",
+      "IMAGES.md",
+      "SHARED.md",
+      "VAULT.md",
+    ]);
     expect(parsed.candidates.every((c) => c.reason === "never_baselined")).toBe(true);
     const alpha = parsed.candidates.find((c) => c.path === "ALPHA.md")!;
     expect(alpha.current_summary).toBe("First doc.");
@@ -60,14 +70,25 @@ test.describe("list_summary_drift (SPRINT-081)", () => {
   test("format:'text' returns newline-delimited paths", async () => {
     const out = rawText(await listSummaryDrift(ctx, { format: "text" }));
     const paths = out.split("\n").sort();
-    expect(paths).toEqual(["ALPHA.md", "BETA.md", "GAMMA.md"]);
+    expect(paths).toEqual([
+      "ALPHA.md",
+      "BETA.md",
+      "EMDEE.md",
+      "GAMMA.md",
+      "GRAVEYARD.md",
+      "IMAGES.md",
+      "SHARED.md",
+      "VAULT.md",
+    ]);
   });
 
   test("limit + offset slice deterministically (sorted by path)", async () => {
+    // SPRINT-093 sort order (alphabetical, system nodes interleaved):
+    // ALPHA, BETA, EMDEE, GAMMA, GRAVEYARD, IMAGES, SHARED, VAULT.
     const first = JSON.parse(rawText(await listSummaryDrift(ctx, { limit: 2, offset: 0 })));
     const second = JSON.parse(rawText(await listSummaryDrift(ctx, { limit: 2, offset: 2 })));
     expect(first.candidates.map((c: { path: string }) => c.path)).toEqual(["ALPHA.md", "BETA.md"]);
-    expect(second.candidates.map((c: { path: string }) => c.path)).toEqual(["GAMMA.md"]);
+    expect(second.candidates.map((c: { path: string }) => c.path)).toEqual(["EMDEE.md", "GAMMA.md"]);
   });
 
   test("prefix filter narrows the working set", async () => {
