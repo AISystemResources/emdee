@@ -16,7 +16,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { adminClient } from "@/src/lib/supabase/admin";
+import { adminClient } from "../supabase/admin";
 import type { ToolContext } from "../mcp/tools/types";
 
 const VAULT_BUCKET = "vaults";
