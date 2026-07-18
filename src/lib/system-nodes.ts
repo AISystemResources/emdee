@@ -47,3 +47,22 @@ export function systemNodeContent(node: SystemNode): string {
   const childOf = node.path !== "EMDEE.md" ? "\n## Child of\n\n* [[EMDEE]]\n" : "";
   return `# ${node.title}\n\n> ${node.summary}\n${childOf}`;
 }
+
+/**
+ * Return `{path, content}` entries for any system node NOT already present
+ * in `existingPaths`. Cloud + local index builders append these before the
+ * indexer runs so wiki-link resolution + doc listing sees the canonical
+ * 5-node OS layer without ever writing them to disk.
+ */
+export function missingSystemNodeFiles(
+  existingPaths: Iterable<string>,
+): { path: string; content: string }[] {
+  const present = new Set(existingPaths);
+  const out: { path: string; content: string }[] = [];
+  for (const node of SYSTEM_NODES) {
+    if (!present.has(node.path)) {
+      out.push({ path: node.path, content: systemNodeContent(node) });
+    }
+  }
+  return out;
+}

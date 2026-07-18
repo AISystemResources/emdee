@@ -11,7 +11,7 @@ import { listTrashedPaths } from "@/src/lib/trash/state";
 import { ownerTitleFromEmail, normalizeOwnerTitle, ownerNodeScaffold } from "@/src/lib/owner/identity";
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
-import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "@/src/lib/system-nodes";
+import { SYSTEM_NODE_PATHS, missingSystemNodeFiles } from "@/src/lib/system-nodes";
 
 const SHARED_PREFIX = "__shared:";
 const SHARED_ROOT_PATH = "SHARED.md";
@@ -231,12 +231,7 @@ export async function GET(request: Request) {
   // customised a node (written it via MCP) see their stored version instead.
   // Public namespace gets EMDEE injected so visitors see the vault root.
   if (!isLocal) {
-    const presentPaths = new Set(files.map((f) => f.path));
-    for (const node of SYSTEM_NODES) {
-      if (!presentPaths.has(node.path)) {
-        files.push({ path: node.path, content: systemNodeContent(node) });
-      }
-    }
+    files.push(...missingSystemNodeFiles(files.map((f) => f.path)));
   }
 
   // Strip leftover fixture/demo files from the public namespace so visitors

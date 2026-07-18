@@ -102,13 +102,23 @@ test.describe("plaintext format opt-in (SPRINT-080)", () => {
   test("list_docs format:'text' returns newline-delimited paths", async () => {
     const out = rawText(await listDocs(ctx, { format: "text" }));
     const paths = out.split("\n").sort();
-    expect(paths).toEqual(["CHILD.md", "ROOT.md"]);
+    // SPRINT-093: 5 virtual system nodes appear in every vault alongside user docs.
+    expect(paths).toEqual([
+      "CHILD.md",
+      "EMDEE.md",
+      "GRAVEYARD.md",
+      "IMAGES.md",
+      "ROOT.md",
+      "SHARED.md",
+      "VAULT.md",
+    ]);
   });
 
   test("list_docs default (no format) returns JSON array of {path,title,summary}", async () => {
     const out = rawText(await listDocs(ctx, {}));
     const parsed = JSON.parse(out) as Array<{ path: string; title: string; summary: string }>;
-    expect(parsed.length).toBe(2);
+    // SPRINT-093: 2 user docs + 5 virtual system nodes.
+    expect(parsed.length).toBe(7);
     const child = parsed.find((d) => d.path === "CHILD.md")!;
     expect(child.title).toBe("CHILD");
     expect(child.summary).toBe("A leaf doc for shape assertions.");

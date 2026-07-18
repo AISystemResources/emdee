@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pickByLocality, filenameSlug } from "./resolveLink";
+import { missingSystemNodeFiles } from "../lib/system-nodes";
 
 export type RelationKind = "hierarchy" | "assoc";
 export type Role = "parent" | "child" | "assoc";
@@ -314,19 +315,22 @@ export function buildIndexFromContents(files: { path: string; content: string }[
 }
 
 export async function buildIndex(docsDir: string): Promise<DocIndex> {
+  let onDiskFiles: { path: string; content: string }[] = [];
   try {
     await stat(docsDir);
+    const filePaths = await walk(docsDir, docsDir);
+    onDiskFiles = await Promise.all(
+      filePaths.map(async (rel) => ({
+        path: rel,
+        content: await readFile(path.join(docsDir, rel), "utf8"),
+      }))
+    );
   } catch {
-    return { docs: [], edges: [], entry: null };
+    // docsDir missing → treat as empty, still inject virtuals below so the
+    // 5 canonical OS-layer nodes surface even in a completely fresh vault.
   }
-  const filePaths = await walk(docsDir, docsDir);
-  const files = await Promise.all(
-    filePaths.map(async (rel) => ({
-      path: rel,
-      content: await readFile(path.join(docsDir, rel), "utf8"),
-    }))
-  );
-  return buildIndexFromContents(files);
+  const virtuals = missingSystemNodeFiles(onDiskFiles.map((f) => f.path));
+  return buildIndexFromContents([...onDiskFiles, ...virtuals]);
 }
 
 function dedupeLinks(links: Link[]): Link[] {
