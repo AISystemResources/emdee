@@ -10,6 +10,7 @@ import {
   lintDoc, distillDoc, materializeSubgroup, createChild, addAssociation, getImage, moveDoc, trashDoc, restoreDoc,
 } from "@/src/lib/mcp/tools/index";
 import { logMcpActivity } from "@/src/lib/mcp/activity";
+import pkg from "@/package.json";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ function bearerChallenge(origin: string): Response {
 
 function buildMcpServer(ctx: ToolContext): Server {
   const server = new Server(
-    { name: "emdee", version: "0.0.1" },
+    { name: "emdee", version: pkg.version },
     {
       capabilities: { tools: {} },
       instructions: `You are working inside an Emdee vault — a plain-markdown knowledge graph.

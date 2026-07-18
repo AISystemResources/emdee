@@ -7,6 +7,7 @@
 // OAuth 2.1 access token system as the MCP server).
 
 import { withCors, corsPreflight } from "@/src/lib/rest/responses";
+import pkg from "@/package.json";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ const SPEC = {
   openapi: "3.1.0",
   info: {
     title: "Emdee REST API",
-    version: "0.1.0",
+    version: pkg.version,
     description:
       "REST surface over the Emdee vault. Reuses the same OAuth token system as the MCP server — a token minted via the claude.ai OAuth flow works here too. Email-based access control (doc_shares) governs cross-namespace access.",
   },
