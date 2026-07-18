@@ -12,7 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseEdges } from "./parseEdges";
 import { pickByLocality, filenameSlug } from "./resolveLink";
-import { SYSTEM_NODES, missingSystemNodeFiles } from "@/src/lib/system-nodes";
+import { SYSTEM_NODES, missingSystemNodeFiles } from "../lib/system-nodes";
 
 interface EdgeRow {
   namespace: string;

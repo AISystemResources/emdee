@@ -1,9 +1,9 @@
 import { validatePath, readVaultFile } from "./vault";
 import { extractPreamble } from "./patch_preamble";
 import { parseSections, extractBody, hashBody, sectionId } from "./sections";
-import { deriveTitle, deriveSummary } from "@/src/core/indexer";
+import { deriveTitle, deriveSummary } from "../../../core/indexer";
 import type { ToolContext } from "./types";
-import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "@/src/lib/system-nodes";
+import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "../../system-nodes";
 
 // Re-export sectionId so historic call sites (`import { sectionId } from "./get_doc"`)
 // keep compiling without an audit-the-world rename.

@@ -69,3 +69,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # SPRINT-090: assert the published tarball ships only the allowlisted
+      # prefixes and stays under the size cap. Cheap safety against a stray
+      # `files` glob leaking .env / app/ / e2e/ or blowing tarball size.
+      - run: npm run ci-package

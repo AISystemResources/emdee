@@ -11,8 +11,8 @@
 
 import { loadVaultIndex } from "./vault";
 import { hashBody } from "./sections";
-import { adminClient } from "@/src/lib/supabase/admin";
-import { deriveSummary } from "@/src/core/indexer";
+import { adminClient } from "../../supabase/admin";
+import { deriveSummary } from "../../../core/indexer";
 import type { ToolContext } from "./types";
 
 const CACHE_TABLE = "vault_files";

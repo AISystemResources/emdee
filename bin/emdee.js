@@ -9,6 +9,23 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
 
+// SPRINT-090: `start` and `serve-next` shell out to Vite / Next.js against
+// the full repo. Those files (app/, next.config.*, etc.) aren't in the
+// published tarball, so when the CLI is installed via `npm install -g`
+// those commands need to bail loudly rather than crash with a confusing
+// Vite / Next stack.
+async function ensureRepoCheckout(commandName) {
+  try {
+    await access(path.join(pkgRoot, "app"));
+  } catch {
+    console.error(
+      `emdee ${commandName} requires a repo checkout — clone https://github.com/AISystemResources/emdee\n` +
+        `The published npm package ships the CLI + MCP server only, not the web viewer.`
+    );
+    process.exit(1);
+  }
+}
+
 // SPRINT-093: keep owner-title derivation logic in lockstep with
 // src/lib/owner/identity.ts. The published tarball is plain JS (no tsx),
 // so this duplicates the 15-line function rather than pull in a runtime
@@ -90,10 +107,11 @@ program
 
 program
   .command("start")
-  .description("Start the Emdee viewer against ./docs")
+  .description("Start the Emdee viewer against ./docs — requires a repo checkout")
   .option("-p, --port <port>", "port", "5173")
   .option("-d, --docs <dir>", "docs directory", "docs")
-  .action((opts) => {
+  .action(async (opts) => {
+    await ensureRepoCheckout("start");
     const docs = path.resolve(process.cwd(), opts.docs);
     const child = spawn("npx", ["vite", "--port", opts.port], {
       cwd: pkgRoot,
@@ -105,10 +123,11 @@ program
 
 program
   .command("serve-next")
-  .description("Start the Emdee viewer using Next.js (App Router)")
+  .description("Start the Emdee viewer using Next.js (App Router) — requires a repo checkout")
   .option("-p, --port <port>", "port", "3000")
   .option("-d, --docs <dir>", "docs directory", "docs")
-  .action((opts) => {
+  .action(async (opts) => {
+    await ensureRepoCheckout("serve-next");
     const docs = path.resolve(process.cwd(), opts.docs);
     const child = spawn("npx", ["next", "dev", "--port", opts.port], {
       cwd: pkgRoot,

@@ -1,7 +1,7 @@
 import { validatePath, readVaultFile, loadVaultIndex } from "./vault";
 import { lintDocContent, type LintVaultContext, type LintDocInfo } from "./lint";
-import { resolveWikiLink } from "@/src/core/resolveLink";
-import type { DocIndex } from "@/src/core/indexer";
+import { resolveWikiLink } from "../../../core/resolveLink";
+import type { DocIndex } from "../../../core/indexer";
 import type { ToolContext } from "./types";
 
 // Re-exported for callsites in other tools that need the same context

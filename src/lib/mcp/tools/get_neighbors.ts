@@ -1,7 +1,7 @@
 import { loadVaultIndex } from "./vault";
 import type { DocIndex, DocNode, Link, ToolContext } from "./types";
-import { getPrevNextSiblings } from "@/src/core/siblings";
-import { resolveWikiLink } from "@/src/core/resolveLink";
+import { getPrevNextSiblings } from "../../../core/siblings";
+import { resolveWikiLink } from "../../../core/resolveLink";
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };

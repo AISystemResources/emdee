@@ -1,12 +1,12 @@
-import { adminClient } from "@/src/lib/supabase/admin";
-import { syncDocEdges, deleteDocEdges } from "@/src/core/syncDocEdges";
-import { bustVaultCache } from "@/src/lib/cache/bust";
+import { adminClient } from "../supabase/admin";
+import { syncDocEdges, deleteDocEdges } from "../../core/syncDocEdges";
+import { bustVaultCache } from "../cache/bust";
 import {
   publishNamespaceInvalidate,
   subscribeNamespaceInvalidate,
-} from "@/src/lib/cache/invalidation";
-import { hashBody } from "@/src/lib/mcp/tools/sections";
-import { deriveSummary } from "@/src/core/indexer";
+} from "../cache/invalidation";
+import { hashBody } from "../mcp/tools/sections";
+import { deriveSummary } from "../../core/indexer";
 import type { VaultFile, VaultStorage } from "./VaultStorage";
 
 const BUCKET = "vaults";
