@@ -1,85 +1,134 @@
-# Silent Mane
+# Emdee
 
-Local-first knowledge graph backed by plain markdown. Humans browse it through a React renderer; agents (Claude, Cursor, Codex) read and write the same files through an MCP server. The vault is the source of truth — anything an LLM says traces back to a file you wrote.
+Local-first knowledge graph backed by plain markdown. Humans browse it through a Next.js renderer; agents (Claude Code, Claude.ai, Cursor, Codex) read and write the same files through an MCP server. The vault is the source of truth — anything an LLM says traces back to a file you wrote.
 
 ## Why
 
-LLM agents need a stable, human-readable substrate to read and write their own context over time. Most knowledge-graph tools are either built for humans (Obsidian) or built for agents (vector stores). Silent Mane is a single substrate for both: the markdown a human edits is the exact bytes an agent reads, with no hidden index, no parallel summaries, no schema gymnastics. Build up a working journal that survives across sessions.
+LLM agents need a stable, human-readable substrate to read and write their own context over time. Most knowledge-graph tools are either built for humans (Obsidian) or built for agents (vector stores). Emdee is a single substrate for both: the markdown a human edits is the exact bytes an agent reads, with no hidden index, no parallel summaries, no schema gymnastics. Build up a working journal that survives across sessions.
 
-## Status
-
-Published on npm as `@aisystemresources/emdee`. The CLI (`emdee init`, `emdee mcp`, `emdee list`, `emdee drift-batch`) is globally installable; `emdee start` / `emdee serve-next` still require a repo checkout because they run the full Vite / Next viewer.
-
-## Install (consumer)
+## Install
 
 ```bash
 npm install -g @aisystemresources/emdee
 cd ~/my-vault
-emdee init --nickname "Your Name"      # writes ./docs/YOUR-NAME.md as the owner node
-emdee list                              # your owner + 5 virtual system nodes
-emdee mcp                               # stdio MCP server — point Claude Code / claude.ai at it
+emdee init --nickname "Your Name"    # writes ./docs/YOUR-NAME.md as your owner node
+emdee list                           # your owner + 5 virtual system nodes
+emdee mcp                            # stdio MCP server — point Claude Code at it
 ```
 
-## Quick start (developer)
+## The 5-node OS layer
+
+Every Emdee vault has exactly 5 canonical top-level nodes, plus your owner node:
+
+| Node | Purpose |
+|---|---|
+| `EMDEE` | Vault root — the anchor everything hangs off. |
+| `VAULT` | Your private notes, projects, and knowledge. |
+| `SHARED` | Content shared with you by others (cloud only). |
+| `GRAVEYARD` | Archived and retired documents. |
+| `IMAGES` | Images and visual assets. |
+| `<YOUR-NAME>` | Your personal subtree, seeded by `emdee init --nickname`. |
+
+The 5 system nodes are **virtual** — they appear in every read (`emdee list`, `get_doc`, MCP responses) without being written to disk. Edit any of them via MCP and your version wins. Only the owner node (`<YOUR-NAME>.md`) actually lives on disk after `emdee init`.
+
+## Quick start (developer / from source)
 
 ```bash
-git clone https://github.com/elz-ming/silent-mane.git
-cd silent-mane
+git clone https://github.com/AISystemResources/emdee.git
+cd emdee
 npm install
-./bin/mane.js init      # seeds docs/ with the entry doc, conventions, and sample branch
-npm run dev             # Vite dev server with hot reload at http://localhost:5173
-npm run mcp             # MCP server over stdio (point Claude.ai / Cursor / Codex at it)
+./bin/emdee.js init --nickname "You"   # seeds ./docs/ with your owner node
+npm run dev                            # Next.js viewer at http://localhost:3000
+npm run mcp                            # stdio MCP server
 ```
 
-`mane init` lays down:
-
-- `docs/MANE.md` — vault entry point
-- `docs/VAULT.md` — meta-pillar grouping the system docs below
-- `docs/INFO.md` — conventions (filenames, relationships, writing format)
-- `docs/INSTRUCTIONS.md` — CEO operating protocol for cross-project agents
-- `docs/BRAIN.md` — cross-project distilled wisdom (always-loaded prior)
-- `docs/WORKFLOWS.md` — concrete procedures the vault runs
-- `docs/SAMPLE.md` + `docs/sample/` — pedagogical examples; delete with `rm -rf docs/sample/` once you've read them
-
-Set `SILENT_MANE_ENTRY=your-file.md` to override the default entry name.
-
+The web viewer (`emdee start`, `emdee serve-next`) is repo-only — it needs the Next.js `app/` tree that isn't in the published tarball. `init`, `list`, `drift-batch`, `mcp` all work from the global install.
 
 ## MCP tools
 
-The MCP server (`mane mcp`) exposes:
+The stdio server (`emdee mcp`) exposes 18 tools.
 
-- `list_docs` — every doc as `{path, title, summary}`. Cold-start enumeration.
+**Reads:**
+- `list_docs` — every doc as `{path, title, summary}`. `format: "text"` returns paths only.
+- `get_doc(path)` — full markdown, per-section `content_hash` for version-guarded patches.
 - `get_summary(path)` — one doc's `{path, title, summary}`. Cheap.
-- `get_neighbors(path)` — focal doc + 1-hop neighbors, categorized as `parents / children / associated`. Each neighbor carries the prose note attached to its wiki-link.
-- `get_doc(path)` — full markdown plus per-section `content_hash` for safe patches.
-- `search(query, limit?)` — substring match over titles, summaries, content.
-- `append_section(path, heading, body, create_if_missing?)` — section-scoped append. Safer than `write_doc` for incremental edits.
-- `patch_section(path, heading, body, expected_content_hash)` — version-guarded section replacement. Mismatched hash returns a structured `version_conflict`.
-- `write_doc_preview(path, content)` — diff and list of removed sections before any full-file write.
-- `write_doc(path, content)` — full-file replace (destructive; prefer the section-scoped tools).
+- `get_neighbors(path)` — focal doc + 1-hop neighbourhood, categorised as parents / children / associated, each with the prose note attached to its wiki-link.
+- `get_context(path, hops?, budget_tokens?)` — multi-hop neighbourhood within a token budget.
+- `read_doc_section(path, section_id)` — one section without paying for the whole doc.
+- `search(query, limit?)` — case-insensitive substring over titles, summaries, content.
+- `list_summary_drift` — paths whose body has drifted since their summary was last authored.
+
+**Writes (version-guarded where destructive):**
+- `patch_section(path, section_id, body, expected_content_hash)` — replace one section; mismatched hash returns structured `version_conflict`.
+- `append_section(path, section_id, body)` — safer than write_doc for incremental edits.
+- `append_doc(path, body)` — append to end of doc (chronological notes, LOGS entries).
+- `patch_preamble(path, body, expected_content_hash)` — replace the region between H1 and first H2.
+- `write_doc(path, content)` — full-file replace (destructive; prefer section-scoped tools).
+- `write_doc_preview(path, content)` — diff + list of sections that would be removed. Always call before `write_doc`.
+
+**Atomic multi-side writes (keep the graph consistent):**
+- `create_child(parent_path, title, body?, summary?)` — writes new doc with canonical scaffold AND patches parent's `## Parent of`. Collapses the 5-round-trip add-child flow into one call.
+- `add_association(a_path, b_path, label?)` — patches both docs' `## Associated with` in one call. Hard-refuses hierarchy or sibling duplicates.
+- `move_doc(path, new_parent_path)` — atomic reparent, three-side edge update.
+- `rename_doc(old_path, new_title, new_path?)` — rewrites H1, moves the file, updates every `[[old_title]]` across the vault.
+- `materialize_subgroup(source_path, subgroup_heading)` — promote an H3 subgroup inside `## Parent of` into a real intermediate parent doc.
+- `split_doc(source_path, rewrite_source_content, extracts)` — atomically refactor a doc into concept nodes.
+
+**Lifecycle:**
+- `trash_doc(path)` / `restore_doc(path)` — sidecar-based soft delete, edges preserved for lossless restore.
+- `delete_doc(path)` — permanent, no undo. Returns inbound edges + title conflicts.
 
 ## Design principles
 
 1. **Markdown is the only source of truth.** No persisted index, no derived database, no parallel summaries.
 2. **Same substrate, different lenses.** Renderer and MCP read the same files via the same indexer. Nothing the LLM sees is invisible to the human.
-3. **Convention over schema.** Light structure — H1 + `> blockquote` summary + three relationship sections (`## Parent of`, `## Child of`, `## Associated with`). The LLM parses English natively; rigid schemas only add authoring friction.
+3. **Convention over schema.** Light structure — H1 + `> blockquote` summary + three relationship sections (`## Parent of`, `## Child of`, `## Associated with`). Rigid schemas add authoring friction; the LLM parses English natively.
 4. **Single summary per doc.** The blockquote under the H1 is the routing decision for both humans and LLMs.
+5. **Version-guarded writes.** Every destructive edit takes an `expected_content_hash`. Concurrent edits fail loudly with `version_conflict` instead of silent overwrites.
 
-## What's in here
+## What's in the repo
 
-- `bin/mane.js` — the `mane` CLI (`init`, `start`, `mcp`)
+- `bin/emdee.js` — the `emdee` CLI (`init`, `list`, `drift-batch`, `mcp`, `start`, `serve-next`)
 - `src/core/indexer.ts` — walks `docs/`, parses wiki-links and relationship sections, derives summaries, skips fenced code blocks
-- `src/mcp/server.ts` — MCP server with the tool surface above
-- `src/web/` — React + TypeScript renderer (Toast UI Editor + Cytoscape egocentric graph, category-colored nodes)
-- `src/server/dev-plugin.ts` — Vite middleware that serves the index in dev
-- `api/index.ts` — Vercel serverless function that serves the index in prod
-- `templates/` — vault seeds plus typed templates for `PROJECT`, `NOVEL`, `PERSON`, `HACKATHON`, `CONCEPT`. The engineering layer is type-agnostic — types are conventions plus templates, not schema. Adding a new type is one new file.
+- `src/core/syncDocEdges.ts` — incremental edge sync backed by Supabase
+- `src/mcp/server.ts` — stdio MCP server
+- `src/lib/mcp/tools/` — the 18 tools listed above
+- `src/lib/system-nodes.ts` — canonical content for the 5 virtual system nodes
+- `src/lib/storage/` — `FilesystemStorage` (local mode) + `SupabaseStorage` (cloud mode) behind a single `VaultStorage` interface
+- `app/` — Next.js App Router: renderer, `/api/index`, `/api/mcp`, OAuth pages for the claude.ai connector
+- `supabase/migrations/` — schema (new files only, never edited in place)
+- `templates/types/` — archetype scaffolds (`PROJECT`, `NOVEL`, `PERSON`, `HACKATHON`, `CONCEPT`) for future `emdee new <type>` commands
+- `e2e/` — Playwright suite (MCP tools, auth, share RBAC, upload, CLI init)
 
-## Conventions for the vault
+## Conventions
 
-The seeded `docs/INFO.md` is the full conventions reference: filename rules, the relationship grammar (first wiki-link on each bullet is the declared edge, inline links are context-only), the LEARNINGS authoring format, attribution lines for provenance. Read it once when you start a vault, refer back when you forget how something works.
+Every doc follows the same shape:
 
-## Deploying to Vercel
+```md
+# TITLE
 
-Vercel auto-detects Vite. Set `SILENT_MANE_DOCS` (or commit a `docs/` for a public vault) and it will serve the SPA plus the `/api/index` endpoint. The default `.gitignore` excludes `docs/` so your vault stays private; remove that line if you want the vault public.
+> One-line blockquote summary — this is what routing sees.
 
+## Child of
+
+* [[PARENT]]
+
+## Parent of
+
+* [[CHILD1]]
+* [[CHILD2]]
+
+## Associated with
+
+* [[CROSS-TREE-NODE]] — optional prose about the link
+
+## Notes
+
+Freeform content.
+```
+
+Rules the lint enforces: one parent per doc; no self-loops; no associates that duplicate a hierarchy edge or sibling relationship; UPPERCASE filenames; lowercase folder names. `lint_doc(path)` surfaces violations; write tools accept `gate_on_warnings: ["code"]` to hard-block on specific ones.
+
+## Cloud deployment
+
+The repo also runs as a full Next.js web viewer at [emdee.tech](https://emdee.tech). Vercel auto-detects Next.js — set the standard Supabase + Clerk env vars, push to `main`, done. The `/api/mcp` endpoint speaks the HTTP MCP transport for claude.ai connectors; `/oauth/authorize` runs the PKCE flow for the "Connect to Claude.ai" panel.
