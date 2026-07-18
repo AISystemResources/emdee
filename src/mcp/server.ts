@@ -27,6 +27,7 @@ import {
   restoreDoc,
 } from "../lib/mcp/tools/index.js";
 import type { ToolContext } from "../lib/mcp/tools/types.js";
+import pkg from "../../package.json";
 // SPRINT-021: this stdio entrypoint is hardcoded to local mode (no
 // clerk_id, no namespace), so mcp_activity logging is intentionally
 // skipped here. Cloud-mode logging lives in app/api/mcp/route.ts.
@@ -37,7 +38,7 @@ const ctx: ToolContext = { mode: "local", docsDir };
 const server = new Server(
   {
     name: "emdee",
-    version: "0.0.1",
+    version: pkg.version,
   },
   {
     capabilities: { tools: {} },

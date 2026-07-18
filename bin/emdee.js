@@ -2,12 +2,18 @@
 import { Command } from "commander";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile, access } from "node:fs/promises";
+import { createRequire } from "node:module";
 import readline from "node:readline/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
+// Version comes from package.json — `npm version <bump>` is the one
+// place the string ever needs to change. createRequire works on any
+// Node >= 14 without depending on the newer `import ... with { type: "json" }`
+// attribute syntax (stable only in Node 20.10+).
+const pkg = createRequire(import.meta.url)("../package.json");
 
 // SPRINT-090: `start` and `serve-next` shell out to Vite / Next.js against
 // the full repo. Those files (app/, next.config.*, etc.) aren't in the
@@ -60,7 +66,7 @@ function ownerNodeScaffold(title) {
 }
 
 const program = new Command();
-program.name("emdee").description("Emdee — local docs + knowledge graph + MCP").version("0.1.0");
+program.name("emdee").description("Emdee — local docs + knowledge graph + MCP").version(pkg.version);
 
 program
   .command("init")

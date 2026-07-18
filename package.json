@@ -1,6 +1,6 @@
 {
   "name": "@aisystemresources/emdee",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first document management with markdown rendering, knowledge graph, and MCP server.",
   "type": "module",
   "bin": {
