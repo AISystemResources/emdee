@@ -1,10 +1,10 @@
 # Emdee
 
-Local-first knowledge graph backed by plain markdown. Humans browse it through a Next.js renderer; agents (Claude Code, Claude.ai, Cursor, Codex) read and write the same files through an MCP server. The vault is the source of truth — anything an LLM says traces back to a file you wrote.
+A markdown knowledge graph shared by humans and their AI agents. Files you can edit like Obsidian, a vault you can share like Google Drive, and a live MCP endpoint every agent (Claude Code, Claude.ai, Cursor, Codex) reads and writes to natively. One vault, three surfaces — with the plain markdown you wrote as the only source of truth.
 
 ## Why
 
-LLM agents need a stable, human-readable substrate to read and write their own context over time. Most knowledge-graph tools are either built for humans (Obsidian) or built for agents (vector stores). Emdee is a single substrate for both: the markdown a human edits is the exact bytes an agent reads, with no hidden index, no parallel summaries, no schema gymnastics. Build up a working journal that survives across sessions.
+Every knowledge tool picks two of three: human-friendly, team-shareable, agent-native. Notion is human-friendly and shareable, but its blocks aren't markdown and agents can't natively touch them. Obsidian is human-friendly and agent-touchable (they're just markdown files), but private-by-default — sharing is a paid add-on or a git repo. Google Drive is shareable but not markdown-native. Emdee is all three: the markdown a human edits is the exact bytes an agent reads through MCP and a teammate reads through a share link — no hidden index, no parallel summaries, no schema gymnastics. Build up a working journal that survives across sessions and travels with the people you invite in.
 
 ## Install
 
