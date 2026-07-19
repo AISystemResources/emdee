@@ -159,13 +159,15 @@ program
 
 program
   .command("list")
-  .description("Print one doc path per line (token-cheap; local docs/ only)")
-  .option("-d, --docs <dir>", "docs directory", "docs")
+  .description("Print one doc path per line. Local by default; --remote reads your live vault via emdee.tech.")
+  .option("-d, --docs <dir>", "docs directory (local mode)", "docs")
   .option("--prefix <prefix>", "filter to paths starting with this prefix")
+  .option("--remote", "route through emdee.tech (requires `emdee login`)")
   .action((opts) => {
     const docs = path.resolve(process.cwd(), opts.docs);
     const args = ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), "list"];
     if (opts.prefix) args.push("--prefix", opts.prefix);
+    if (opts.remote) args.push("--remote");
     const child = spawn("npx", args, {
       cwd: pkgRoot,
       stdio: "inherit",
@@ -177,10 +179,11 @@ program
 program
   .command("drift-batch")
   .description("Print a batch of docs (path + summary + body) for offline summariser workflows")
-  .option("-d, --docs <dir>", "docs directory", "docs")
+  .option("-d, --docs <dir>", "docs directory (local mode)", "docs")
   .option("--limit <n>", "docs per batch", "10")
   .option("--offset <k>", "skip the first K docs", "0")
   .option("--prefix <prefix>", "filter to paths starting with this prefix")
+  .option("--remote", "route through emdee.tech (requires `emdee login`)")
   .action((opts) => {
     const docs = path.resolve(process.cwd(), opts.docs);
     const args = [
@@ -191,6 +194,7 @@ program
       "--offset", opts.offset,
     ];
     if (opts.prefix) args.push("--prefix", opts.prefix);
+    if (opts.remote) args.push("--remote");
     const child = spawn("npx", args, {
       cwd: pkgRoot,
       stdio: "inherit",
@@ -198,5 +202,35 @@ program
     });
     child.on("exit", (code) => process.exit(code ?? 0));
   });
+
+// SPRINT-091: PKCE login against emdee.tech. Credentials stashed in
+// ~/.config/emdee/credentials.json for `--remote` calls to pick up.
+function shellAuth(sub, extra = []) {
+  const child = spawn(
+    "npx",
+    ["tsx", path.join(pkgRoot, "src/cli/auth-commands.ts"), sub, ...extra],
+    { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
+  );
+  child.on("exit", (code) => process.exit(code ?? 0));
+}
+
+program
+  .command("login")
+  .description("Sign in to emdee.tech via browser (PKCE). Stashes tokens in ~/.config/emdee/.")
+  .option("--host <url>", "override the cloud host (defaults to $EMDEE_CLOUD_URL or https://emdee.tech)")
+  .action((opts) => {
+    const extra = opts.host ? ["--host", opts.host] : [];
+    shellAuth("login", extra);
+  });
+
+program
+  .command("logout")
+  .description("Remove stored credentials.")
+  .action(() => shellAuth("logout"));
+
+program
+  .command("whoami")
+  .description("Print the currently logged-in email + namespace.")
+  .action(() => shellAuth("whoami"));
 
 program.parseAsync();
