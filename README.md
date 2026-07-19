@@ -8,6 +8,23 @@ LLM agents need a stable, human-readable substrate to read and write their own c
 
 ## Install
 
+**Claude Code plugin (recommended — MCP + CLI + skills in one shot):**
+
+```bash
+claude plugin install @aisystemresources/emdee
+```
+
+This installs the CLI, wires up the emdee.tech MCP server, and drops in 4 auto-loading skills. Then:
+
+```bash
+emdee login                          # PKCE flow, opens browser
+emdee whoami                         # confirms your namespace
+```
+
+Slash commands available after install: `/vault-status`, `/describe-image <path>`, `/summarise [prefix]`.
+
+**CLI-only (no plugin, for scripting or non-Claude-Code use):**
+
 ```bash
 npm install -g @aisystemresources/emdee
 cd ~/my-vault
@@ -15,6 +32,8 @@ emdee init --nickname "Your Name"    # writes ./docs/YOUR-NAME.md as your owner 
 emdee list                           # your owner + 5 virtual system nodes
 emdee mcp                            # stdio MCP server — point Claude Code at it
 ```
+
+**claude.ai users:** the plugin doesn't apply (different install model). Use the connect panel on emdee.tech to add the HTTP MCP server directly.
 
 ## The 5-node OS layer
 

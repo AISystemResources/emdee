@@ -45,8 +45,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Claude Code agent workspaces
-.claude/
+# Claude Code agent workspaces — ignore local settings, keep shared config
+.claude/*
+!.claude/commands/
+!.claude/commands/**
 
 # Supabase CLI temp files (version snapshots, pooler URL, etc.)
 supabase/.temp/
