@@ -34,6 +34,7 @@
     "src/lib/owner/",
     "src/lib/system-nodes.ts",
     "src/mcp/",
+    "skills/",
     "templates/",
     "README.md"
   ],
