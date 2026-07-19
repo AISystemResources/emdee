@@ -1,0 +1,21 @@
+{
+  "name": "emdee",
+  "displayName": "Emdee — Local-first knowledge graph",
+  "description": "Local-first knowledge graph backed by plain markdown. Bundles the emdee.tech MCP server, the emdee CLI, and 4 Claude Code skills that teach vault conventions + workflows.",
+  "version": "0.2.2",
+  "author": {
+    "name": "AI System Resources",
+    "url": "https://emdee.tech"
+  },
+  "homepage": "https://emdee.tech",
+  "repository": "https://github.com/AISystemResources/emdee",
+  "license": "MIT",
+  "keywords": ["knowledge-graph", "markdown", "vault", "mcp", "claude"],
+  "mcpServers": {
+    "emdee": {
+      "type": "http",
+      "url": "https://emdee.tech/api/mcp"
+    }
+  },
+  "skills": "./skills"
+}

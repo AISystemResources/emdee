@@ -28,6 +28,8 @@ const ALLOWED_PREFIXES = [
   "src/mcp/",
   "skills/",
   "templates/",
+  ".claude-plugin/",
+  ".claude/commands/",
 ];
 
 // Explicit denylist for the paranoid case where a `files` entry accidentally
