@@ -8,7 +8,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const IMAGE_BUCKET = "vault-images";
-const IMAGES_HUB = "images/IMAGES.md";
+// SPRINT-093 canonical: IMAGES.md is the tier-0 virtual system node at the
+// vault root, not `images/IMAGES.md` inside the folder. The old path predates
+// the 5-node OS layer refresh and caused createChild to fail with
+// parent_not_found — upload succeeded (Storage got the bytes) but the child
+// doc was never registered, so the tree looked empty afterwards.
+const IMAGES_HUB = "IMAGES.md";
 
 const SUPPORTED_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
