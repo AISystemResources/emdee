@@ -47,9 +47,13 @@ npm run check:migrations  # node scripts/check-migration-drift.mjs — fails if 
 Public endpoints (no auth):
 - `GET /api/health` — liveness probe; returns `{ status: "ok", deployed_at: <ISO> }`. Added in SPRINT-053. Poll target for UptimeRobot / Vercel monitoring.
 
-One-off scripts live in `scripts/` (run with `npx tsx scripts/<name>.ts` or `node scripts/<name>.mjs`). Repair examples:
-- `npx tsx scripts/backfill-doc-edges.ts --namespace=<ns>` — rebuild `doc_edges` for one user
-- `node scripts/backfill-vault-files.mjs` — repopulate the `vault_files` cache from Storage
+Live scripts in `scripts/` (referenced by npm scripts / CI):
+- `scripts/check-migration-drift.mjs` — `npm run check:migrations`; fails if a repo migration isn't applied to the cloud DB
+- `scripts/verify-package.mjs` — `npm run ci-package`; asserts tarball contents match the `files` allowlist
+
+Historical one-off scripts (migrations, seeds, per-user repairs — kept for provenance, most have already run) live in `scripts/archive/`. Run with `npx tsx scripts/archive/<name>.ts` or `node scripts/archive/<name>.mjs`. Examples:
+- `scripts/archive/backfill-doc-edges.ts --namespace=<ns>` — rebuild `doc_edges` for one user
+- `scripts/archive/backfill-vault-files.mjs` — repopulate the `vault_files` cache from Storage
 
 ## 🚨 HARD RULES
 

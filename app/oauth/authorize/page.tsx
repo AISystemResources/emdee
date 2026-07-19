@@ -10,7 +10,7 @@ interface Props {
 
 export default async function AuthorizePage({ searchParams }: Props) {
   const params = await searchParams;
-  const { response_type, client_id, redirect_uri, code_challenge, code_challenge_method, state, scope } = params;
+  const { response_type, client_id, redirect_uri, code_challenge, code_challenge_method, scope } = params;
 
   // Basic param validation
   if (response_type !== "code" || !client_id || !redirect_uri || !code_challenge) {
