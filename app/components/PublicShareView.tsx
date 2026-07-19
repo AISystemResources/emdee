@@ -99,12 +99,6 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
     for (const d of index.docs) m.set(d.path, d);
     return m;
   }, [index]);
-  const byTitle = useMemo(() => {
-    const m = new Map<string, DocNode>();
-    for (const d of index.docs) m.set(d.title.toLowerCase(), d);
-    return m;
-  }, [index]);
-
   const activeDoc = byPath.get(activePath) ?? null;
 
   const logEvent = useCallback(

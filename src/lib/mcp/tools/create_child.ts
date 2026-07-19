@@ -291,11 +291,9 @@ export async function createChild(ctx: ToolContext, args: Record<string, unknown
     }
   }
 
-  let parentWritten = alreadyPresent;
   if (!alreadyPresent) {
     try {
       await writeVaultFile(ctx, parentPath, newParentContent);
-      parentWritten = true;
     } catch (err) {
       return json({
         error: "partial_write",

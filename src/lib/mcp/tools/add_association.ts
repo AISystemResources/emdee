@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import { lintDocContent } from "./lint";
 import { buildLintVaultContext } from "./lint_doc";
-import { evaluateLintGate, type LintFix } from "./lint_gate";
-import type { LintWarning, LintVaultContext } from "./lint";
+import { evaluateLintGate } from "./lint_gate";
+import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
@@ -111,16 +111,6 @@ function patchAssociatedWith(content: string, otherTitle: string, label?: string
     alreadyPresent: false,
     assocBody: newAssoc ? extractBody(newContent, newAssoc) : "",
   };
-}
-
-function fixesFromWarnings(warnings: LintWarning[], codes: string[]): LintFix[] {
-  const codeSet = new Set(codes);
-  return warnings.filter((w) => codeSet.has(w.code)).map((w) => ({
-    code: w.code,
-    line: w.line ?? null,
-    fix_suggestion: w.suggestion,
-    original_message: w.message,
-  }));
 }
 
 function json(value: unknown) {
@@ -282,11 +272,9 @@ export async function addAssociation(ctx: ToolContext, args: Record<string, unkn
     }
   }
 
-  let bWritten = bPatch.alreadyPresent;
   if (!bPatch.alreadyPresent) {
     try {
       await writeVaultFile(ctx, bPath, bPatch.newContent);
-      bWritten = true;
     } catch (err) {
       return json({
         error: "partial_write",

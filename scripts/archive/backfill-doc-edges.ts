@@ -14,11 +14,11 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseEdges } from "../src/core/parseEdges";
-import { pickByLocality, filenameSlug } from "../src/core/resolveLink";
-import { SYSTEM_NODES, systemNodeContent } from "../src/lib/system-nodes";
+import { parseEdges } from "../../src/core/parseEdges";
+import { pickByLocality, filenameSlug } from "../../src/core/resolveLink";
+import { SYSTEM_NODES, systemNodeContent } from "../../src/lib/system-nodes";
 
-const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local");
+const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".env.local");
 for (const line of readFileSync(envPath, "utf8").split("\n")) {
   const m = line.match(/^([A-Z_]+)=(.*)$/);
   if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
