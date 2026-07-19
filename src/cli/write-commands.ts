@@ -20,6 +20,11 @@ import { createChild } from "../lib/mcp/tools/create_child";
 import { addAssociation } from "../lib/mcp/tools/add_association";
 import { moveDoc } from "../lib/mcp/tools/move_doc";
 import { renameDoc } from "../lib/mcp/tools/rename_doc";
+import { writeDoc } from "../lib/mcp/tools/write_doc";
+import { writeDocPreview } from "../lib/mcp/tools/write_doc_preview";
+import { trashDoc } from "../lib/mcp/tools/trash_doc";
+import { restoreDoc } from "../lib/mcp/tools/restore_doc";
+import { deleteDoc } from "../lib/mcp/tools/delete_doc";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
 
@@ -222,6 +227,64 @@ const VERBS: Record<string, VerbSpec> = {
       if (newPath) args.new_path = newPath;
       return args;
     },
+  },
+  "write-doc": {
+    toolName: "write_doc",
+    toolFn: writeDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      content: { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        path: asString(v.path),
+        content: asString(v.content),
+      };
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "write-doc-preview": {
+    toolName: "write_doc_preview",
+    toolFn: writeDocPreview as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      content: { type: "string" },
+    },
+    buildArgs: (v) => ({
+      path: asString(v.path),
+      content: asString(v.content),
+    }),
+  },
+  "trash-doc": {
+    toolName: "trash_doc",
+    toolFn: trashDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      "original-parent-path": { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = { path: asString(v.path) };
+      const op = optionalString(v["original-parent-path"]);
+      if (op) args.original_parent_path = op;
+      return args;
+    },
+  },
+  "restore-doc": {
+    toolName: "restore_doc",
+    toolFn: restoreDoc as unknown as ToolFn,
+    parse: { ...COMMON, path: { type: "string" } },
+    buildArgs: (v) => ({ path: asString(v.path) }),
+  },
+  "delete-doc": {
+    toolName: "delete_doc",
+    toolFn: deleteDoc as unknown as ToolFn,
+    parse: { ...COMMON, path: { type: "string" } },
+    buildArgs: (v) => ({ path: asString(v.path) }),
   },
 };
 

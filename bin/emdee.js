@@ -225,6 +225,17 @@ function shellWrite(verb, opts, extra = []) {
   child.on("exit", (code) => process.exit(code ?? 0));
 }
 
+// SPRINT-091 chunk 3: structured read verbs share read-commands.ts dispatcher.
+function shellRead(verb, opts, extra = []) {
+  const docs = opts.docs ? path.resolve(process.cwd(), opts.docs) : path.join(process.cwd(), "docs");
+  const child = spawn(
+    "npx",
+    ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), verb, ...extra],
+    { cwd: pkgRoot, stdio: "inherit", env: { ...process.env, EMDEE_DOCS: docs } },
+  );
+  child.on("exit", (code) => process.exit(code ?? 0));
+}
+
 // Every write verb takes the same core flag surface; a small helper builds
 // the extra-args array from commander's parsed opts + a spec of which flags
 // map to which write-commands.ts flag names.
@@ -419,6 +430,219 @@ program
       remote: "--remote", json: "--json",
     });
     shellWrite("rename-doc", opts, extra);
+  });
+
+// -----------------------------------------------------------------------
+// SPRINT-091 chunk 3: full-file writes + lifecycle.
+// -----------------------------------------------------------------------
+
+program
+  .command("write-doc")
+  .description("Create or overwrite an entire doc. DESTRUCTIVE — always run write-doc-preview first.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--content <text>", "Full markdown content")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", content: "--content", gateOn: "--gate-on",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("write-doc", opts, extra);
+  });
+
+program
+  .command("write-doc-preview")
+  .description("Diff + list of sections that would be removed by write-doc. Always call before write-doc.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--content <text>", "Proposed full markdown content")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", content: "--content",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("write-doc-preview", opts, extra);
+  });
+
+program
+  .command("trash-doc")
+  .description("Sidecar-based soft delete. Restore is lossless (edges preserved).")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("--original-parent-path <path>", "Override the auto-derived restore target")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", originalParentPath: "--original-parent-path",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("trash-doc", opts, extra);
+  });
+
+program
+  .command("restore-doc")
+  .description("Reverse a previous trash-doc. Edges were never touched.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, { path: "--path", remote: "--remote", json: "--json" });
+    shellWrite("restore-doc", opts, extra);
+  });
+
+program
+  .command("delete-doc")
+  .description("Permanently remove a doc. NO UNDO. Returns inbound_edges + title_conflicts.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, { path: "--path", remote: "--remote", json: "--json" });
+    shellWrite("delete-doc", opts, extra);
+  });
+
+// -----------------------------------------------------------------------
+// SPRINT-091 chunk 3: structured reads (get-doc, get-summary, get-neighbors,
+// get-context, search, read-doc-section, list-docs, list-summary-drift).
+// -----------------------------------------------------------------------
+
+program
+  .command("get-doc")
+  .description("Fetch a doc's envelope (title + summary + preamble + section headings). Pass --full for the body.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("--full", "Include the full markdown body")
+  .option("--format <fmt>", "text | json (default text for --full)")
+  .option("--expected-hash <hash>", "Short-circuit if focal unchanged")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", full: "--full", format: "--format",
+      expectedHash: "--expected-hash", remote: "--remote", json: "--json",
+    });
+    shellRead("get-doc", opts, extra);
+  });
+
+program
+  .command("get-summary")
+  .description("Return {path, title, summary} for one doc — cheapest way to preview.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("--format <fmt>", "text | json")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", format: "--format", remote: "--remote", json: "--json",
+    });
+    shellRead("get-summary", opts, extra);
+  });
+
+program
+  .command("get-neighbors")
+  .description("Return the doc + 1-hop neighbours categorised by relationship type.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, { path: "--path", remote: "--remote", json: "--json" });
+    shellRead("get-neighbors", opts, extra);
+  });
+
+program
+  .command("get-context")
+  .description("Return the focal doc + multi-hop neighbourhood within a token budget.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("--hops <n>", "Max BFS depth (1-3, default 2)")
+  .option("--budget-tokens <n>", "Rough token cap (default 8000)")
+  .option("--include-full", "Inline focal + hop-1 bodies")
+  .option("--include-associates", "Include assoc edges in the walk")
+  .option("--expected-hash <hash>", "Short-circuit if focal unchanged")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", hops: "--hops", budgetTokens: "--budget-tokens",
+      includeFull: "--include-full", includeAssociates: "--include-associates",
+      expectedHash: "--expected-hash", remote: "--remote", json: "--json",
+    });
+    shellRead("get-context", opts, extra);
+  });
+
+program
+  .command("search")
+  .description("Case-insensitive substring match over titles, summaries, content.")
+  .requiredOption("--query <text>", "Search query")
+  .option("--limit <n>", "Max results (default 10)")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      query: "--query", limit: "--limit", remote: "--remote", json: "--json",
+    });
+    shellRead("search", opts, extra);
+  });
+
+program
+  .command("read-doc-section")
+  .description("Read one H2 section's body without paying for the whole doc.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("--section-id <id>", "Section id (preferred over --heading)")
+  .option("--heading <heading>", "H2 heading text (without ##)")
+  .option("--expected-hash <hash>", "Short-circuit if unchanged")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", sectionId: "--section-id", heading: "--heading",
+      expectedHash: "--expected-hash", remote: "--remote", json: "--json",
+    });
+    shellRead("read-doc-section", opts, extra);
+  });
+
+program
+  .command("list-docs")
+  .description("Enumerate every doc in the vault. Structured (vs `list` which is bytes-only).")
+  .option("--format <fmt>", "text | json (default text)")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      format: "--format", remote: "--remote", json: "--json",
+    });
+    shellRead("list-docs", opts, extra);
+  });
+
+program
+  .command("list-summary-drift")
+  .description("Return paths whose body has drifted since their summary was last authored.")
+  .option("--prefix <p>", "Path prefix filter")
+  .option("--limit <n>", "Max candidates (default 20)")
+  .option("--offset <k>", "Skip first N candidates")
+  .option("--format <fmt>", "text | json (default text)")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      prefix: "--prefix", limit: "--limit", offset: "--offset",
+      format: "--format", remote: "--remote", json: "--json",
+    });
+    shellRead("list-summary-drift", opts, extra);
   });
 
 program.parseAsync();
