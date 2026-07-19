@@ -37,7 +37,10 @@ export async function callTool(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      // MCP streamable-HTTP transport requires BOTH content types in Accept
+      // or it 406s with "Client must accept both application/json and
+      // text/event-stream". We handle whichever shape the server picks below.
+      "Accept": "application/json, text/event-stream",
       Authorization: `Bearer ${creds.access_token}`,
     },
     body: JSON.stringify({
@@ -54,10 +57,31 @@ export async function callTool(
     throw new Error(`remote call failed: ${res.status} ${body}`);
   }
 
-  const body = (await res.json()) as JsonRpcResponse;
+  const body = await parseJsonRpc(res);
   if (body.error) throw new Error(`remote tool error: ${body.error.message}`);
   if (!body.result) throw new Error("remote call returned no result");
   return body.result;
+}
+
+// The MCP streamable-HTTP transport content-negotiates on the request Accept:
+// when the client offers both JSON and SSE (as required — see 406 above),
+// the server may reply with either. JSON we parse directly; SSE arrives as
+// one or more `event: message\ndata: <json>\n\n` frames — for a single
+// tools/call response we take the first `data:` payload.
+async function parseJsonRpc(res: Response): Promise<JsonRpcResponse> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.includes("text/event-stream")) {
+    const text = await res.text();
+    const dataLine = text.split(/\r?\n/).find((l) => l.startsWith("data:"));
+    if (!dataLine) throw new Error(`remote call returned SSE with no data frame: ${text.slice(0, 200)}`);
+    const payload = dataLine.slice("data:".length).trim();
+    try {
+      return JSON.parse(payload) as JsonRpcResponse;
+    } catch (e) {
+      throw new Error(`remote call SSE data frame is not valid JSON: ${(e as Error).message}`);
+    }
+  }
+  return (await res.json()) as JsonRpcResponse;
 }
 
 /**
