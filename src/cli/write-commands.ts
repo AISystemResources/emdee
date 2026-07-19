@@ -25,6 +25,10 @@ import { writeDocPreview } from "../lib/mcp/tools/write_doc_preview";
 import { trashDoc } from "../lib/mcp/tools/trash_doc";
 import { restoreDoc } from "../lib/mcp/tools/restore_doc";
 import { deleteDoc } from "../lib/mcp/tools/delete_doc";
+import { distillDoc } from "../lib/mcp/tools/distill_doc";
+import { materializeSubgroup } from "../lib/mcp/tools/materialize_subgroup";
+import { splitDoc } from "../lib/mcp/tools/split_doc";
+import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
 
@@ -285,6 +289,63 @@ const VERBS: Record<string, VerbSpec> = {
     toolFn: deleteDoc as unknown as ToolFn,
     parse: { ...COMMON, path: { type: "string" } },
     buildArgs: (v) => ({ path: asString(v.path) }),
+  },
+  "distill-doc": {
+    // READ-ONLY intake for split planning — lives under write commands
+    // alongside its executor split_doc so users find them together.
+    toolName: "distill_doc",
+    toolFn: distillDoc as unknown as ToolFn,
+    parse: { ...COMMON, path: { type: "string" } },
+    buildArgs: (v) => ({ path: asString(v.path) }),
+  },
+  "materialize-subgroup": {
+    toolName: "materialize_subgroup",
+    toolFn: materializeSubgroup as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "source-path": { type: "string" },
+      "subgroup-heading": { type: "string" },
+      "new-doc-title": { type: "string" },
+      "new-doc-path": { type: "string" },
+      summary: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        source_path: asString(v["source-path"]),
+        subgroup_heading: asString(v["subgroup-heading"]),
+      };
+      const t = optionalString(v["new-doc-title"]);
+      if (t) args.new_doc_title = t;
+      const p = optionalString(v["new-doc-path"]);
+      if (p) args.new_doc_path = p;
+      const s = optionalString(v.summary);
+      if (s) args.summary = s;
+      return args;
+    },
+  },
+  "split-doc": {
+    toolName: "split_doc",
+    toolFn: splitDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "source-path": { type: "string" },
+      "rewrite-source-content": { type: "string" },
+      // Extracts is a complex array-of-objects; take it via --extracts-file
+      // pointing at a JSON document rather than shoehorn it into a flag.
+      "extracts-file": { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        source_path: asString(v["source-path"]),
+        rewrite_source_content: asString(v["rewrite-source-content"]),
+      };
+      const extractsFile = optionalString(v["extracts-file"]);
+      if (extractsFile) {
+        const parsed = JSON.parse(readFileSync(extractsFile, "utf8"));
+        args.extracts = parsed;
+      }
+      return args;
+    },
   },
 };
 
