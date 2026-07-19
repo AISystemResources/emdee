@@ -26,6 +26,7 @@ const ALLOWED_PREFIXES = [
   "src/lib/system-nodes.ts",
   "src/lib/trash/",
   "src/mcp/",
+  "skills/",
   "templates/",
 ];
 

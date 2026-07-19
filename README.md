@@ -44,6 +44,38 @@ npm run mcp                            # stdio MCP server
 
 The web viewer (`emdee start`, `emdee serve-next`) is repo-only — it needs the Next.js `app/` tree that isn't in the published tarball. `init`, `list`, `drift-batch`, `mcp` all work from the global install.
 
+## Claude Code skills
+
+The package ships a set of `.md` skill files under `skills/` that teach Claude Code the vault conventions + workflows. Install them into your Claude Code skills directory:
+
+```bash
+emdee skills-install
+```
+
+This copies:
+
+- **emdee-conventions** — always-loaded; teaches Claude the 5-node OS layer, doc shape, edge discipline, tool selection (CLI vs MCP), path conventions. Loading this once means Claude writes correctly to the vault the first time in every session.
+- **emdee-describe-image** — auto-triggers on IMAGES/ docs with `_description pending_` summary. Runs the 4-step get-image → rename-doc → patch-preamble workflow.
+- **emdee-summariser** — batch-refresh drifting doc summaries via `list-summary-drift`.
+- **emdee-onboarder** — walks a new user from `emdee init` through their first project doc + connecting to Claude.
+
+Re-run `emdee skills-install` after upgrading the package to pick up updated skill content.
+
+## CLI
+
+Every MCP tool has a matching `emdee <verb>` CLI command. Same guards, same errors, same semantics — 3–40× cheaper in tokens because the JSON-RPC envelope is skipped. Everything supports `--remote` (routes through emdee.tech via `POST /api/mcp`) or defaults local.
+
+```bash
+emdee login                                     # PKCE flow, saves creds to ~/.config/emdee/
+emdee whoami
+emdee list --remote                             # your live vault paths
+emdee get-doc --path VAULT.md --full --remote   # full markdown
+emdee create-child --parent-path VAULT.md --title "MY-PROJECT" --remote
+emdee patch-section --path X --heading Notes --body "..." --expected-hash <hash> --remote
+```
+
+Full verb list via `emdee --help`. Auth commands: `login`, `logout`, `whoami`. Reads: `get-doc`, `get-summary`, `get-neighbors`, `get-context`, `search`, `read-doc-section`, `list-docs`, `list-summary-drift`, `list`, `drift-batch`. Writes: `patch-section`, `append-section`, `append-doc`, `patch-preamble`, `write-doc`, `write-doc-preview`, `create-child`, `add-association`, `move-doc`, `rename-doc`, `trash-doc`, `restore-doc`, `delete-doc`.
+
 ## MCP tools
 
 The stdio server (`emdee mcp`) exposes 18 tools.

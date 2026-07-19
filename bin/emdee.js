@@ -273,6 +273,25 @@ program
   .description("Print the currently logged-in email + namespace.")
   .action(() => shellAuth("whoami"));
 
+// SPRINT-094: install the EMDEE Claude Code skills into ~/.claude/skills/
+program
+  .command("skills-install")
+  .description("Copy packaged skills/*.md into a Claude Code skills directory (default ~/.claude/skills/).")
+  .option("--dir <path>", "Target directory")
+  .action((opts) => {
+    // Resolve --dir against the user's original cwd (not pkgRoot). We resolve
+    // here in the shell so the child process sees an absolute path regardless
+    // of where tsx runs from.
+    const resolvedDir = opts.dir ? path.resolve(process.cwd(), opts.dir) : "";
+    const extra = resolvedDir ? ["--dir", resolvedDir] : [];
+    const child = spawn(
+      "npx",
+      ["tsx", path.join(pkgRoot, "src/cli/skills-install.ts"), ...extra],
+      { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
+    );
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
 // -----------------------------------------------------------------------
 // SPRINT-091 chunk 2: write-side CLI verbs.
 // Each mirrors the corresponding MCP tool. --remote routes through cloud;
