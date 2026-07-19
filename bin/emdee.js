@@ -664,4 +664,78 @@ program
     shellRead("list-summary-drift", opts, extra);
   });
 
+// -----------------------------------------------------------------------
+// Deferred parity gap closers (post-SPRINT-091): 4 remaining tool verbs.
+// -----------------------------------------------------------------------
+
+program
+  .command("get-image")
+  .description("Fetch an image doc's binary. Default output prints metadata JSON; --out writes decoded bytes to file.")
+  .requiredOption("--doc-path <path>", "Path to the image doc (e.g. images/PHOTO-...md)")
+  .option("--out <path>", "Write the decoded image bytes to this file")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Pretty-print metadata")
+  .action((opts) => {
+    const outResolved = opts.out ? path.resolve(process.cwd(), opts.out) : "";
+    const extra = ["--doc-path", opts.docPath];
+    if (outResolved) extra.push("--out", outResolved);
+    if (opts.remote) extra.push("--remote");
+    if (opts.json) extra.push("--json");
+    shellRead("get-image", opts, extra);
+  });
+
+program
+  .command("distill-doc")
+  .description("Read-only intake for split planning: returns section boundaries + rubric-quoted vault context.")
+  .requiredOption("--path <path>", "Doc to distill")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", remote: "--remote", json: "--json",
+    });
+    shellWrite("distill-doc", opts, extra);
+  });
+
+program
+  .command("materialize-subgroup")
+  .description("Promote an H3 subgroup inside a doc's Parent of into a real intermediate parent doc.")
+  .requiredOption("--source-path <path>", "Source doc holding the subgroup")
+  .requiredOption("--subgroup-heading <heading>", "H3 heading text (without ###)")
+  .option("--new-doc-title <title>", "Override the derived new doc title")
+  .option("--new-doc-path <path>", "Override the derived new doc path")
+  .option("--summary <text>", "Blockquote summary for the new intermediate")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      sourcePath: "--source-path", subgroupHeading: "--subgroup-heading",
+      newDocTitle: "--new-doc-title", newDocPath: "--new-doc-path",
+      summary: "--summary", remote: "--remote", json: "--json",
+    });
+    shellWrite("materialize-subgroup", opts, extra);
+  });
+
+program
+  .command("split-doc")
+  .description("Atomically refactor a doc into concept nodes. Extracts array read from a JSON file.")
+  .requiredOption("--source-path <path>", "Source doc being split")
+  .requiredOption("--rewrite-source-content <text>", "New markdown for the source (with wiki-links to extracts)")
+  .requiredOption("--extracts-file <path>", 'JSON file: [{"path":"<new>.md","content":"<md>"}, ...]')
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extractsResolved = path.resolve(process.cwd(), opts.extractsFile);
+    const extra = argsFromOpts(opts, {
+      sourcePath: "--source-path",
+      rewriteSourceContent: "--rewrite-source-content",
+      remote: "--remote", json: "--json",
+    });
+    extra.push("--extracts-file", extractsResolved);
+    shellWrite("split-doc", opts, extra);
+  });
+
 program.parseAsync();

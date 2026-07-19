@@ -25,6 +25,8 @@ import { search } from "../lib/mcp/tools/search";
 import { readDocSection } from "../lib/mcp/tools/read_doc_section";
 import { listDocs } from "../lib/mcp/tools/list_docs";
 import { listSummaryDrift } from "../lib/mcp/tools/list_summary_drift";
+import { getImage } from "../lib/mcp/tools/get_image";
+import { writeFileSync } from "node:fs";
 
 const docsDir = path.resolve(process.env.EMDEE_DOCS ?? path.join(process.cwd(), "docs"));
 
@@ -273,14 +275,59 @@ async function cmdDriftBatch(argv: string[]): Promise<void> {
   }
 }
 
+// get-image needs a bespoke handler: the tool returns a two-part content
+// block (text metadata + image data). Default output is the metadata JSON;
+// with --out, decode the base64 and write the binary to a file.
+async function cmdGetImage(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      "doc-path": { type: "string" },
+      out: { type: "string" },
+      remote: { type: "boolean" },
+      json: { type: "boolean" },
+    },
+    strict: true,
+  });
+  const docPath = asString(values["doc-path"]);
+  if (!docPath) {
+    process.stderr.write("get-image: --doc-path required\n");
+    process.exit(1);
+  }
+  const args = { doc_path: docPath };
+  const result = values.remote
+    ? await callTool("get_image", args)
+    : await (getImage as unknown as ToolFn)({ mode: "local", docsDir }, args);
+
+  const content = (result as { content?: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }).content ?? [];
+  const meta = content.find((c) => c.type === "text");
+  const image = content.find((c) => c.type === "image");
+  const metaParsed = meta?.text ? JSON.parse(meta.text) : {};
+
+  if (image?.data && values.out) {
+    const outPath = path.resolve(values.out);
+    writeFileSync(outPath, Buffer.from(image.data, "base64"));
+    process.stdout.write(`Saved ${image.data.length} base64 bytes (${image.mimeType}) to ${outPath}\n`);
+    return;
+  }
+
+  const payload = {
+    ...metaParsed,
+    mime_type: image?.mimeType,
+    size_bytes: image?.data ? Buffer.from(image.data, "base64").byteLength : 0,
+  };
+  process.stdout.write(JSON.stringify(payload, null, values.json ? 2 : 0) + "\n");
+}
+
 const [, , sub, ...rest] = process.argv;
 
 async function main(): Promise<void> {
   if (sub === "list") return cmdList(rest);
   if (sub === "drift-batch") return cmdDriftBatch(rest);
+  if (sub === "get-image") return cmdGetImage(rest);
   if (sub && READ_VERBS[sub]) return runStructuredRead(sub, rest);
   process.stderr.write(`unknown read subcommand: ${sub ?? "(none)"}\n`);
-  process.stderr.write(`verbs: list, drift-batch, ${Object.keys(READ_VERBS).join(", ")}\n`);
+  process.stderr.write(`verbs: list, drift-batch, get-image, ${Object.keys(READ_VERBS).join(", ")}\n`);
   process.exit(1);
 }
 
