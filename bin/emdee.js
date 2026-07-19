@@ -214,6 +214,35 @@ function shellAuth(sub, extra = []) {
   child.on("exit", (code) => process.exit(code ?? 0));
 }
 
+// SPRINT-091 chunk 2: write verbs shell through the dispatcher.
+function shellWrite(verb, opts, extra = []) {
+  const docs = opts.docs ? path.resolve(process.cwd(), opts.docs) : path.join(process.cwd(), "docs");
+  const child = spawn(
+    "npx",
+    ["tsx", path.join(pkgRoot, "src/cli/write-commands.ts"), verb, ...extra],
+    { cwd: pkgRoot, stdio: "inherit", env: { ...process.env, EMDEE_DOCS: docs } },
+  );
+  child.on("exit", (code) => process.exit(code ?? 0));
+}
+
+// Every write verb takes the same core flag surface; a small helper builds
+// the extra-args array from commander's parsed opts + a spec of which flags
+// map to which write-commands.ts flag names.
+function argsFromOpts(opts, mapping) {
+  const extra = [];
+  for (const [optKey, cliFlag] of Object.entries(mapping)) {
+    const v = opts[optKey];
+    if (Array.isArray(v)) {
+      for (const item of v) extra.push(cliFlag, item);
+    } else if (typeof v === "string" && v.length > 0) {
+      extra.push(cliFlag, v);
+    } else if (v === true) {
+      extra.push(cliFlag);
+    }
+  }
+  return extra;
+}
+
 program
   .command("login")
   .description("Sign in to emdee.tech via browser (PKCE). Stashes tokens in ~/.config/emdee/.")
@@ -232,5 +261,164 @@ program
   .command("whoami")
   .description("Print the currently logged-in email + namespace.")
   .action(() => shellAuth("whoami"));
+
+// -----------------------------------------------------------------------
+// SPRINT-091 chunk 2: write-side CLI verbs.
+// Each mirrors the corresponding MCP tool. --remote routes through cloud;
+// --json returns the raw MCP envelope for machine consumption.
+// -----------------------------------------------------------------------
+
+program
+  .command("patch-section")
+  .description("Replace an H2 section's body — version-guarded. Same shape as the patch_section MCP tool.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--body <text>", "New section body")
+  .requiredOption("--expected-hash <hash>", "Prior content_hash from get_doc")
+  .option("--section-id <id>", "Section id (preferred over --heading)")
+  .option("--heading <heading>", "H2 heading text (without ##)")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", body: "--body", expectedHash: "--expected-hash",
+      sectionId: "--section-id", heading: "--heading", gateOn: "--gate-on",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("patch-section", opts, extra);
+  });
+
+program
+  .command("append-section")
+  .description("Append markdown to the end of an existing H2 section. --create-if-missing adds it at end of file.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--body <text>", "Content to append")
+  .option("--section-id <id>", "Section id (preferred over --heading)")
+  .option("--heading <heading>", "H2 heading text (without ##)")
+  .option("--create-if-missing", "Create the section at end of file if not found")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", body: "--body", sectionId: "--section-id",
+      heading: "--heading", createIfMissing: "--create-if-missing",
+      gateOn: "--gate-on", remote: "--remote", json: "--json",
+    });
+    shellWrite("append-section", opts, extra);
+  });
+
+program
+  .command("append-doc")
+  .description("Append to the end of a doc (after every section). Ideal for LOGS, daily notes.")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--body <text>", "Content to append")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", body: "--body", gateOn: "--gate-on",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("append-doc", opts, extra);
+  });
+
+program
+  .command("patch-preamble")
+  .description("Replace the region between H1 and first H2 (blockquote summary + intro paragraphs).")
+  .requiredOption("--path <path>", "Vault doc path")
+  .requiredOption("--body <text>", "New preamble body")
+  .requiredOption("--expected-hash <hash>", "Prior preamble content_hash from get_doc")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", body: "--body", expectedHash: "--expected-hash",
+      gateOn: "--gate-on", remote: "--remote", json: "--json",
+    });
+    shellWrite("patch-preamble", opts, extra);
+  });
+
+program
+  .command("create-child")
+  .description("Atomic write + parent-of patch: create a new doc as child of an existing one.")
+  .requiredOption("--parent-path <path>", "Parent doc path")
+  .requiredOption("--title <title>", "New doc's H1 title")
+  .option("--body <text>", "Optional body appended after ## Notes")
+  .option("--summary <text>", "Optional blockquote summary (placeholder if omitted)")
+  .option("--child-path <path>", "Override the derived child path")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      parentPath: "--parent-path", title: "--title", body: "--body",
+      summary: "--summary", childPath: "--child-path", gateOn: "--gate-on",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("create-child", opts, extra);
+  });
+
+program
+  .command("add-association")
+  .description("Atomic two-sided assoc patch. Hard-refuses hierarchy or sibling duplicates.")
+  .requiredOption("--a-path <path>", "First doc path")
+  .requiredOption("--b-path <path>", "Second doc path")
+  .option("--label <text>", "Shared label on both bullets")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      aPath: "--a-path", bPath: "--b-path", label: "--label",
+      gateOn: "--gate-on", remote: "--remote", json: "--json",
+    });
+    shellWrite("add-association", opts, extra);
+  });
+
+program
+  .command("move-doc")
+  .description("Atomic reparent: three-side edge update (child's Child of + both parents' Parent of).")
+  .requiredOption("--path <path>", "Child doc to reparent")
+  .requiredOption("--new-parent-path <path>", "New parent doc")
+  .option("--old-parent-path <path>", "Old parent (required if child has multiple Child of bullets)")
+  .option("--position <n>", "0-indexed position in new parent's Parent of")
+  .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path", newParentPath: "--new-parent-path",
+      oldParentPath: "--old-parent-path", position: "--position",
+      gateOn: "--gate-on", remote: "--remote", json: "--json",
+    });
+    shellWrite("move-doc", opts, extra);
+  });
+
+program
+  .command("rename-doc")
+  .description("Rewrite H1, move file, update every [[old_title]] wiki-link across the vault. DESTRUCTIVE.")
+  .requiredOption("--old-path <path>", "Existing doc path")
+  .requiredOption("--new-title <title>", "New H1 title")
+  .option("--new-path <path>", "Override the derived new path")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      oldPath: "--old-path", newTitle: "--new-title", newPath: "--new-path",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("rename-doc", opts, extra);
+  });
 
 program.parseAsync();
