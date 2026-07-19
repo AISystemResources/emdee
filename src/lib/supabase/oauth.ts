@@ -14,10 +14,10 @@ export async function registerClient(clientName: string | null, redirectUris: st
   return data.client_id;
 }
 
-export async function getClient(clientId: string): Promise<{ client_id: string; redirect_uris: string[] } | null> {
+export async function getClient(clientId: string): Promise<{ client_id: string; client_name: string | null; redirect_uris: string[] } | null> {
   const { data } = await adminClient()
     .from("oauth_clients")
-    .select("client_id, redirect_uris")
+    .select("client_id, client_name, redirect_uris")
     .eq("client_id", clientId)
     .maybeSingle();
   return data ?? null;

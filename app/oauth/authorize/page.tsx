@@ -71,7 +71,7 @@ export default async function AuthorizePage({ searchParams }: Props) {
           <div style={{ width: 48, height: 1, background: "#e5e7eb", margin: "0 auto 24px" }} />
           <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px", color: "#111" }}>Authorize access</h1>
           <p style={{ fontSize: 14, color: "#6b7280", margin: 0 }}>
-            <strong style={{ color: "#111" }}>{client_id}</strong> is requesting access to your vault.
+            <strong style={{ color: "#111" }}>{client.client_name || client_id}</strong> is requesting access to your vault.
           </p>
         </div>
 
