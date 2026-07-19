@@ -1,0 +1,286 @@
+// SPRINT-091 chunk 2: write-side CLI verbs.
+//
+// Dispatcher that fronts the 8 most-common write tools as CLI commands.
+// Every verb accepts --remote (routes through cloud) and --json (returns
+// the raw MCP envelope for machine consumption). Local mode calls the tool
+// function directly with the same ToolContext shape MCP uses — same code,
+// same guards, same errors.
+//
+// One dispatcher rather than one file per verb keeps the wire-up compact.
+// bin/emdee.js just shells `write-commands.ts <verb> <args>` for each.
+
+import path from "node:path";
+import { parseArgs, type ParseArgsConfig } from "node:util";
+import type { ToolContext } from "../lib/mcp/tools/types";
+import { patchSection } from "../lib/mcp/tools/patch_section";
+import { appendSection } from "../lib/mcp/tools/append_section";
+import { appendDoc } from "../lib/mcp/tools/append_doc";
+import { patchPreamble } from "../lib/mcp/tools/patch_preamble";
+import { createChild } from "../lib/mcp/tools/create_child";
+import { addAssociation } from "../lib/mcp/tools/add_association";
+import { moveDoc } from "../lib/mcp/tools/move_doc";
+import { renameDoc } from "../lib/mcp/tools/rename_doc";
+import { callTool, unwrapText } from "./remote-client";
+import { NeedsLoginError } from "./auth";
+
+const docsDir = path.resolve(process.env.EMDEE_DOCS ?? path.join(process.cwd(), "docs"));
+
+type ToolFn = (ctx: ToolContext, args: Record<string, unknown>) => Promise<unknown>;
+
+interface VerbSpec {
+  toolName: string;
+  toolFn: ToolFn;
+  parse: ParseArgsConfig["options"];
+  buildArgs: (values: Record<string, string | boolean | undefined>) => Record<string, unknown>;
+}
+
+// Shared flags. Every write verb accepts these.
+const COMMON = {
+  remote: { type: "boolean" },
+  json: { type: "boolean" },
+} as const;
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function optionalString(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v : undefined;
+}
+
+const VERBS: Record<string, VerbSpec> = {
+  "patch-section": {
+    toolName: "patch_section",
+    toolFn: patchSection as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      "section-id": { type: "string" },
+      heading: { type: "string" },
+      body: { type: "string" },
+      "expected-hash": { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        path: asString(v.path),
+        body: asString(v.body),
+        expected_content_hash: asString(v["expected-hash"]),
+      };
+      if (v["section-id"]) args.section_id = v["section-id"];
+      if (v.heading) args.heading = v.heading;
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "append-section": {
+    toolName: "append_section",
+    toolFn: appendSection as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      "section-id": { type: "string" },
+      heading: { type: "string" },
+      body: { type: "string" },
+      "create-if-missing": { type: "boolean" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        path: asString(v.path),
+        body: asString(v.body),
+      };
+      if (v["section-id"]) args.section_id = v["section-id"];
+      if (v.heading) args.heading = v.heading;
+      if (v["create-if-missing"]) args.create_if_missing = true;
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "append-doc": {
+    toolName: "append_doc",
+    toolFn: appendDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      body: { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = { path: asString(v.path), body: asString(v.body) };
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "patch-preamble": {
+    toolName: "patch_preamble",
+    toolFn: patchPreamble as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      body: { type: "string" },
+      "expected-hash": { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        path: asString(v.path),
+        body: asString(v.body),
+        expected_content_hash: asString(v["expected-hash"]),
+      };
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "create-child": {
+    toolName: "create_child",
+    toolFn: createChild as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "parent-path": { type: "string" },
+      title: { type: "string" },
+      body: { type: "string" },
+      summary: { type: "string" },
+      "child-path": { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        parent_path: asString(v["parent-path"]),
+        title: asString(v.title),
+      };
+      const body = optionalString(v.body);
+      if (body) args.body = body;
+      const summary = optionalString(v.summary);
+      if (summary) args.summary = summary;
+      const childPath = optionalString(v["child-path"]);
+      if (childPath) args.child_path = childPath;
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "add-association": {
+    toolName: "add_association",
+    toolFn: addAssociation as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "a-path": { type: "string" },
+      "b-path": { type: "string" },
+      label: { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        a_path: asString(v["a-path"]),
+        b_path: asString(v["b-path"]),
+      };
+      const label = optionalString(v.label);
+      if (label) args.label = label;
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "move-doc": {
+    toolName: "move_doc",
+    toolFn: moveDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      "new-parent-path": { type: "string" },
+      "old-parent-path": { type: "string" },
+      position: { type: "string" },
+      "gate-on": { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        path: asString(v.path),
+        new_parent_path: asString(v["new-parent-path"]),
+      };
+      const oldParent = optionalString(v["old-parent-path"]);
+      if (oldParent) args.old_parent_path = oldParent;
+      const pos = optionalString(v.position);
+      if (pos) args.position = Number(pos);
+      if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      return args;
+    },
+  },
+  "rename-doc": {
+    toolName: "rename_doc",
+    toolFn: renameDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "old-path": { type: "string" },
+      "new-title": { type: "string" },
+      "new-path": { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        old_path: asString(v["old-path"]),
+        new_title: asString(v["new-title"]),
+      };
+      const newPath = optionalString(v["new-path"]);
+      if (newPath) args.new_path = newPath;
+      return args;
+    },
+  },
+};
+
+function formatOutput(result: unknown, wantJson: boolean): string {
+  // MCP tools return { content: [{type: "text", text: "..."}] }. The text
+  // is JSON. For human-friendly output we pull the parsed JSON out and
+  // pretty-print. For --json we return the parsed JSON as-is.
+  let payload: unknown = result;
+  const withContent = result as { content?: Array<{ type: string; text?: string }> };
+  if (withContent.content?.[0]?.type === "text" && typeof withContent.content[0].text === "string") {
+    try {
+      payload = JSON.parse(withContent.content[0].text);
+    } catch {
+      payload = withContent.content[0].text;
+    }
+  }
+  if (wantJson) return JSON.stringify(payload, null, 2);
+  if (typeof payload === "string") return payload;
+  return JSON.stringify(payload, null, 2);
+}
+
+async function runVerb(verbName: string, argv: string[]): Promise<void> {
+  const spec = VERBS[verbName];
+  if (!spec) {
+    process.stderr.write(`unknown write verb: ${verbName}\navailable: ${Object.keys(VERBS).join(", ")}\n`);
+    process.exit(1);
+  }
+  const { values: rawValues } = parseArgs({ args: argv, options: spec.parse, strict: true });
+  const values = rawValues as unknown as Record<string, string | boolean | undefined>;
+  const args = spec.buildArgs(values);
+  const wantJson = Boolean(values.json);
+  const remote = Boolean(values.remote);
+
+  const result = remote
+    ? await callTool(spec.toolName, args).then((r) => r as unknown)
+    : await spec.toolFn({ mode: "local", docsDir }, args);
+
+  const output = remote
+    ? formatOutput({ content: [{ type: "text", text: unwrapText(result as { content?: Array<{ type: string; text?: string }> }) }] }, wantJson)
+    : formatOutput(result, wantJson);
+
+  process.stdout.write(output + "\n");
+}
+
+const [, , verb, ...rest] = process.argv;
+
+async function main(): Promise<void> {
+  if (!verb) {
+    process.stderr.write(`usage: emdee <verb> [options]\nverbs: ${Object.keys(VERBS).join(", ")}\n`);
+    process.exit(1);
+  }
+  await runVerb(verb, rest);
+}
+
+main().catch((err) => {
+  if (err instanceof NeedsLoginError) {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(1);
+  }
+  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+});
