@@ -106,6 +106,25 @@ test.describe("filename uppercase enforcement (local-mode)", () => {
     expect(body.child_path).toMatch(/MY-NEW-CHILD-NODE\.md$/);
   });
 
+  test("create_child accepts em-dash in titles — the validator's hint promises this", async () => {
+    // Regression for the 2026-07-20 bug: SLUG_SAFE rejected em-dash (—)
+    // even though `title_not_slug_safe` error's own hint listed em-dash
+    // as allowed. Downstream sanitizeFilename normalizes em-dash → hyphen
+    // for the filesystem path, so the H1 keeps the em-dash while the
+    // filename is Storage-key-safe.
+    const body = parseToolResult(
+      await createChild(ctx, {
+        parent_path: "PARENT.md",
+        title: "Product Map — DOUBLELEAD EMDEE WHATELZ",
+      }),
+    );
+    expect(body.ok).toBe(true);
+    expect(body.child_path).toMatch(/PRODUCT-MAP-DOUBLELEAD-EMDEE-WHATELZ\.md$/);
+    const content = await readFile(path.join(docsDir, body.child_path as string), "utf8");
+    // H1 preserves the em-dash even though the filename doesn't.
+    expect(content).toContain("# Product Map — DOUBLELEAD EMDEE WHATELZ");
+  });
+
   test("create_child refuses explicit lowercase child_path with a suggested fix", async () => {
     // Mirrors write_doc's refusal. Caller can re-run with the suggested
     // uppercase path, or omit child_path so the title-derived path is

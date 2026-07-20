@@ -17,7 +17,13 @@ const ARG_SPEC = {
 const H1_RE = /^#\s+(.+?)\s*$/m;
 const H2_RE = /^##\s+(.+?)\s*$/;
 const FENCE_RE = /^\s*(?:```|~~~)/;
-const SLUG_SAFE = /^[\p{L}\p{N}\s\-_.]+$/u;
+// Em-dash (—, U+2014) is a legit title character — many existing shipped
+// docs use it (e.g. "PROJECTS — PATTERN"). The validator used to reject
+// it despite the error's own `hint` listing em-dash as allowed. The
+// downstream sanitizeFilename() below normalizes em-dash → hyphen for the
+// filesystem path, so the H1 keeps the em-dash while the filename stays
+// Storage-key-safe.
+const SLUG_SAFE = /^[\p{L}\p{N}\s\-_.—]+$/u;
 
 function deriveTitle(content: string, fallbackPath: string): string {
   const m = content.match(H1_RE);
