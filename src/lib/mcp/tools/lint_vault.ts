@@ -1,6 +1,6 @@
 import { loadVaultIndex } from "./vault";
-import { lintDocContent, type LintWarning } from "./lint";
-import { buildLintVaultContext } from "./lint_doc";
+import { lintDocContent, type LintWarning, type LintDocInfo, type LintVaultContext } from "./lint";
+import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 
 // SPRINT-101: batch lint the caller's entire vault in one shot.
@@ -28,6 +28,26 @@ export async function lintVault(ctx: ToolContext, args: Record<string, unknown>)
 
   const index = await loadVaultIndex(ctx);
 
+  // Build the cross-doc info map ONCE up front. The per-doc analog in
+  // lint_doc.ts rebuilds this on every call, which is fine for one doc
+  // but O(N²) when we're linting the whole vault. Hoisting drops a
+  // 1500-doc vault from ~2.25M inner iterations to ~1500.
+  const docInfoByPath = new Map<string, LintDocInfo>();
+  for (const d of index.docs) {
+    const declaredParents = d.parents
+      .map((l) => resolveWikiLink(index, l.title, d.path)?.path)
+      .filter((p): p is string => !!p);
+    const declaredChildren = d.children
+      .map((l) => resolveWikiLink(index, l.title, d.path)?.path)
+      .filter((p): p is string => !!p);
+    docInfoByPath.set(d.path, {
+      path: d.path,
+      title: d.title,
+      declaredParents,
+      declaredChildren,
+    });
+  }
+
   const perDoc: Array<{ path: string; warnings: LintWarning[] }> = [];
   const byCode: Record<string, number> = {};
   let scanned = 0;
@@ -35,7 +55,17 @@ export async function lintVault(ctx: ToolContext, args: Record<string, unknown>)
   for (const doc of index.docs) {
     if (prefix && !doc.path.startsWith(prefix)) continue;
     scanned++;
-    const lintCtx = buildLintVaultContext(index, doc.path);
+    const selfInfo = docInfoByPath.get(doc.path);
+    const selfDeclaredParents = selfInfo?.declaredParents ?? [];
+    const lintCtx: LintVaultContext = {
+      selfPath: doc.path,
+      selfDeclaredParents,
+      resolveTarget: (target: string) => {
+        const resolved = resolveWikiLink(index, target, doc.path);
+        if (!resolved) return null;
+        return docInfoByPath.get(resolved.path) ?? null;
+      },
+    };
     const result = lintDocContent(doc.content, lintCtx);
     if (result.warnings.length === 0) continue;
     perDoc.push({ path: doc.path, warnings: result.warnings });
