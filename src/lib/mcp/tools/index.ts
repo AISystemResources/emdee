@@ -18,6 +18,7 @@ export { patchPreamble } from "./patch_preamble";
 export { appendDoc } from "./append_doc";
 export { lintDoc } from "./lint_doc";
 export { lintVault } from "./lint_vault";
+export { lintVaultAutofix } from "./lint_vault_autofix";
 export { distillDoc } from "./distill_doc";
 export { createChild } from "./create_child";
 export { addAssociation } from "./add_association";

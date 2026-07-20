@@ -678,13 +678,21 @@ program
 
 program
   .command("lint-vault")
-  .description("Batch-lint every doc in the vault. Returns aggregated warnings by code + per-doc punch list.")
+  .description("Batch-lint every doc in the vault. Returns aggregated warnings by code + per-doc punch list. Pass --auto-fix to mechanically clean up Tier-1 redundant-associate bullets (dry-run by default; add --yes to actually write).")
   .option("--prefix <p>", "Path prefix filter (scope to a subtree)")
   .option("--limit <n>", "Max docs in the punch list (default: all)")
+  .option("--auto-fix", "Run Tier-1 auto-fix (sibling_assoc_redundant + associate_duplicates_hierarchy) instead of a plain scan. Dry-run by default.")
+  .option("--yes", "With --auto-fix: actually apply the fixes instead of dry-run.")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
+    if (opts.autoFix) {
+      // SPRINT-102: dispatch to autofix tool. Dry-run by default; --yes flips it.
+      const extra = argsFromOpts(opts, { yes: "--yes", remote: "--remote", json: "--json" });
+      shellRead("lint-vault-autofix", opts, extra);
+      return;
+    }
     const extra = argsFromOpts(opts, {
       prefix: "--prefix", limit: "--limit", remote: "--remote", json: "--json",
     });
