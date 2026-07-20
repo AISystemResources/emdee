@@ -32,7 +32,7 @@ function parse(raw: unknown): {
   return JSON.parse(r.content[0].text);
 }
 
-const HUB = `# HUB\n\n> The hub.\n\n## Parent of\n\n* [[A]]\n* [[B]]\n`;
+const HUB = `# HUB\n\n> The hub.\n\n## Parent of\n\n* [[A]]\n* [[B]]\n* [[C]]\n`;
 // A and B are siblings under HUB. Each also lists the other under
 // Associated with — triggers sibling_assoc_redundant on both docs.
 const A = `# A\n\n> Sibling A.\n\n## Child of\n\n* [[HUB]]\n\n## Associated with\n\n* [[B]] — an unnecessary assoc\n\n## Notes\n\nBody.\n`;
@@ -95,6 +95,39 @@ test.describe("lint_vault_autofix Tier 1 (SPRINT-102)", () => {
     // Second dry-run should find nothing to fix.
     expect(second.docs_to_modify).toBe(0);
     expect(second.bullets_to_remove).toBe(0);
+  });
+
+  test("Tier 2a: adds missing Parent-of back-edge for asymmetric_child_edge", async () => {
+    // Seed a doc that declares HUB as parent, but modify HUB to NOT
+    // list the doc as child. That trips asymmetric_child_edge. Autofix
+    // should add the back-edge to HUB's Parent of.
+    const HUB_MISSING = `# HUB\n\n> Hub that forgot one child.\n\n## Parent of\n\n* [[A]]\n* [[B]]\n`; // no [[ORPHAN]]
+    const ORPHAN = `# ORPHAN\n\n> Orphan declares HUB as parent, HUB doesn't list back.\n\n## Child of\n\n* [[HUB]]\n\n## Notes\n\nBody.\n`;
+    await writeFile(path.join(docsDir, "HUB.md"), HUB_MISSING, "utf8");
+    await writeFile(path.join(docsDir, "ORPHAN.md"), ORPHAN, "utf8");
+
+    const result = parse(await lintVaultAutofix(ctx, { dry_run: false }));
+    expect(result.applied).toBeGreaterThan(0);
+
+    const hubAfter = await readFile(path.join(docsDir, "HUB.md"), "utf8");
+    // HUB's Parent of should now list ORPHAN.
+    expect(hubAfter).toContain("[[ORPHAN]]");
+    // Existing bullets preserved.
+    expect(hubAfter).toContain("[[A]]");
+    expect(hubAfter).toContain("[[B]]");
+  });
+
+  test("Tier 2a: idempotent — running twice adds no duplicate back-edge", async () => {
+    const HUB_MISSING = `# HUB\n\n> Hub.\n\n## Parent of\n\n* [[A]]\n`;
+    const ORPHAN = `# ORPHAN\n\n> Orphan.\n\n## Child of\n\n* [[HUB]]\n`;
+    await writeFile(path.join(docsDir, "HUB.md"), HUB_MISSING, "utf8");
+    await writeFile(path.join(docsDir, "ORPHAN.md"), ORPHAN, "utf8");
+
+    await lintVaultAutofix(ctx, { dry_run: false });
+    await lintVaultAutofix(ctx, { dry_run: false });
+    const hubAfter = await readFile(path.join(docsDir, "HUB.md"), "utf8");
+    const occurrences = (hubAfter.match(/\[\[ORPHAN\]\]/g) ?? []).length;
+    expect(occurrences).toBe(1);
   });
 
   test("Tier 1.5: demotes extra Child of bullets to Associated with", async () => {
