@@ -664,6 +664,33 @@ program
     shellRead("list-summary-drift", opts, extra);
   });
 
+program
+  .command("lint-doc")
+  .description("Audit one doc for quality defects (missing preamble, asymmetric edges, sibling assocs, etc).")
+  .requiredOption("--path <path>", "Vault doc path")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, { path: "--path", remote: "--remote", json: "--json" });
+    shellRead("lint-doc", opts, extra);
+  });
+
+program
+  .command("lint-vault")
+  .description("Batch-lint every doc in the vault. Returns aggregated warnings by code + per-doc punch list.")
+  .option("--prefix <p>", "Path prefix filter (scope to a subtree)")
+  .option("--limit <n>", "Max docs in the punch list (default: all)")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      prefix: "--prefix", limit: "--limit", remote: "--remote", json: "--json",
+    });
+    shellRead("lint-vault", opts, extra);
+  });
+
 // -----------------------------------------------------------------------
 // Deferred parity gap closers (post-SPRINT-091): 4 remaining tool verbs.
 // -----------------------------------------------------------------------

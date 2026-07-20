@@ -25,6 +25,8 @@ import { search } from "../lib/mcp/tools/search";
 import { readDocSection } from "../lib/mcp/tools/read_doc_section";
 import { listDocs } from "../lib/mcp/tools/list_docs";
 import { listSummaryDrift } from "../lib/mcp/tools/list_summary_drift";
+import { lintDoc } from "../lib/mcp/tools/lint_doc";
+import { lintVault } from "../lib/mcp/tools/lint_vault";
 import { getImage } from "../lib/mcp/tools/get_image";
 import { writeFileSync } from "node:fs";
 
@@ -172,6 +174,29 @@ const READ_VERBS: Record<string, ReadVerb> = {
       const offset = optionalString(v.offset);
       if (offset) args.offset = Number(offset);
       if (v.format === "text") args.format = "text";
+      return args;
+    },
+  },
+  "lint-doc": {
+    toolName: "lint_doc",
+    toolFn: lintDoc as unknown as ToolFn,
+    parse: { ...COMMON, path: { type: "string" } },
+    buildArgs: (v) => ({ path: asString(v.path) }),
+  },
+  "lint-vault": {
+    toolName: "lint_vault",
+    toolFn: lintVault as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      prefix: { type: "string" },
+      limit: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {};
+      const prefix = optionalString(v.prefix);
+      if (prefix) args.prefix = prefix;
+      const limit = optionalString(v.limit);
+      if (limit) args.limit = Number(limit);
       return args;
     },
   },
