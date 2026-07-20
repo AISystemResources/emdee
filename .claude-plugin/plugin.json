@@ -1,8 +1,8 @@
 {
   "name": "emdee",
-  "displayName": "Emdee — Local-first knowledge graph",
-  "description": "Local-first knowledge graph backed by plain markdown. Bundles the emdee.tech MCP server, the emdee CLI, and 4 Claude Code skills that teach vault conventions + workflows.",
-  "version": "0.2.2",
+  "displayName": "Emdee — Markdown knowledge graph for humans and agents",
+  "description": "A markdown knowledge graph shared by humans and their AI agents. Bundles the emdee.tech MCP server, the emdee CLI, and 4 Claude Code skills that teach vault conventions + workflows.",
+  "version": "0.3.2",
   "author": {
     "name": "AI System Resources",
     "url": "https://emdee.tech"

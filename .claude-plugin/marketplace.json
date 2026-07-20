@@ -1,0 +1,14 @@
+{
+  "name": "aisystemresources",
+  "owner": {
+    "name": "AI System Resources",
+    "url": "https://emdee.tech"
+  },
+  "plugins": [
+    {
+      "name": "emdee",
+      "source": "./",
+      "description": "A markdown knowledge graph shared by humans and their AI agents. Bundles the emdee.tech MCP server, the emdee CLI, and 4 Claude Code skills that teach vault conventions + workflows."
+    }
+  ]
+}
