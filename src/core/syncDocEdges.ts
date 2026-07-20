@@ -314,31 +314,30 @@ export async function syncDocEdges(
   const desiredMap = new Map<string, EdgeRow>();
   for (const r of desiredRows) desiredMap.set(rowKey(r), r);
 
-  // Compute diff: rows to delete (in current, not in desired) and rows
-  // to upsert (in desired and either missing or changed in current).
-  const toDelete: EdgeRow[] = [];
-  for (const [k, r] of currentMap) {
-    if (!desiredMap.has(k)) toDelete.push(r);
-  }
-  const toUpsert: EdgeRow[] = [];
-  for (const [k, r] of desiredMap) {
-    const cur = currentMap.get(k);
-    if (!cur || !rowEqual(cur, r)) toUpsert.push(r);
+  // Short-circuit if nothing changed. Cheaper than the RPC round-trip
+  // when the write was a no-op edge-wise (e.g., body-only edit that
+  // didn't touch any relation section).
+  if (currentMap.size === desiredMap.size) {
+    let identical = true;
+    for (const [k, r] of desiredMap) {
+      const cur = currentMap.get(k);
+      if (!cur || !rowEqual(cur, r)) { identical = false; break; }
+    }
+    if (identical) return;
   }
 
-  // Apply deletes one at a time (PK = composite, .delete().match() per row).
-  // Volume is typically <10 — not worth a stored-proc round trip.
-  for (const r of toDelete) {
-    const { error } = await admin
-      .from("doc_edges")
-      .delete()
-      .match({ namespace: r.namespace, from_path: r.from_path, to_path: r.to_path, kind: r.kind });
-    if (error) throw new Error(`syncDocEdges: delete failed: ${error.message}`);
-  }
-  if (toUpsert.length > 0) {
-    const { error } = await admin.from("doc_edges").upsert(toUpsert);
-    if (error) throw new Error(`syncDocEdges: upsert failed: ${error.message}`);
-  }
+  // SPRINT-108 Fix 2: atomic delete+insert via RPC. Replaces the previous
+  // non-atomic PostgREST delete-then-upsert which drifted on upsert
+  // failure (deletes committed, upsert failed → doc lost edges silently).
+  // The RPC does DELETE-touching-doc + INSERT-desired in one transaction:
+  // either both apply or neither. On constraint violation the transaction
+  // rolls back cleanly and the error surfaces here.
+  const { error: rpcErr } = await admin.rpc("sync_doc_edges_atomic", {
+    p_namespace: namespace,
+    p_doc_path: docPath,
+    p_desired: desiredRows,
+  });
+  if (rpcErr) throw new Error(`syncDocEdges: atomic RPC failed: ${rpcErr.message}`);
 }
 
 /**
