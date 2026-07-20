@@ -18,6 +18,20 @@ import type { ToolContext } from "./types";
 //                                        list A back → add `[[A]]` to B's ## Parent of.
 //                                        Parent of has no cardinality constraint, so
 //                                        this can't violate one_parent.
+//   Tier 2b (heuristic: constraint-aware) — repairs the tricky direction
+//     - asymmetric_parent_edge        : doc A declares [[B]] as child, B doesn't
+//                                        list A as parent → two possible fixes,
+//                                        picked by target state:
+//                                        (i) B has 0 declared parents AND is the
+//                                            first claimer we see → add [[A]] to
+//                                            B's ## Child of (restore full edge)
+//                                        (ii) B has ≥1 parent, OR is already being
+//                                            claimed by another add plan → remove
+//                                            [[B]] from A's ## Parent of (drop the
+//                                            false claim; B has canonical parent).
+//                                        The heuristic avoids ever adding a second
+//                                        Child of bullet — which would violate the
+//                                        one_parent constraint.
 //
 // Every fix is idempotent — running twice does nothing on the second pass.
 //
@@ -35,6 +49,7 @@ const TIER_1_ASSOC_STRIP_CODES = new Set<LintWarning["code"]>([
 ]);
 const TIER_1_5_CODES = new Set<LintWarning["code"]>(["multiple_child_of"]);
 const TIER_2A_CODES = new Set<LintWarning["code"]>(["asymmetric_child_edge"]);
+const TIER_2B_CODES = new Set<LintWarning["code"]>(["asymmetric_parent_edge"]);
 
 const CHILD_OF_HEADING_RE = /^##\s+child of\s*$/i;
 const PARENT_OF_HEADING_RE = /^##\s+parent of\s*$/i;
@@ -48,9 +63,11 @@ function json(value: unknown) {
 
 interface PerDocPlan {
   path: string;
-  bullets_to_remove: string[];   // Tier 1 — lowercase target titles
-  parents_to_demote: boolean;    // Tier 1.5 — flag; the fix is "keep first, demote rest"
-  add_parent_of_bullets: string[]; // Tier 2a — child titles to add to this doc's ## Parent of
+  bullets_to_remove: string[];      // Tier 1 — lowercase target titles for assoc strip
+  parents_to_demote: boolean;       // Tier 1.5 — flag; fix is "keep first, demote rest"
+  add_parent_of_bullets: string[];  // Tier 2a — child titles to add to this doc's ## Parent of
+  add_child_of_bullet: string | null; // Tier 2b — single parent title to add to this doc's ## Child of (only when doc has 0 parents)
+  remove_parent_of_bullets: string[]; // Tier 2b — child titles to remove from this doc's ## Parent of (false claims)
 }
 
 // Locate a section's [startInclusive, endExclusive) line range where
@@ -165,6 +182,64 @@ function demoteExtraChildOf(content: string): { content: string; demotedCount: n
   return { content: out.join("\n"), demotedCount: extrasLines.length };
 }
 
+// Tier 2b: add a single `* [[TITLE]]` bullet to the doc's ## Child of
+// section. Only ever called on docs with 0 existing declared parents,
+// so it can safely INSERT rather than APPEND (a fresh Child of should
+// hold one canonical parent). Creates the section if missing.
+// Idempotent: no-op if the title is already declared.
+function addChildOfBullet(content: string, title: string): { content: string; changed: boolean } | null {
+  const lines = content.split("\n");
+  const childSection = findSection(lines, CHILD_OF_HEADING_RE);
+  if (childSection) {
+    for (let i = childSection.start; i < childSection.end; i++) {
+      const m = lines[i].match(BULLET_RE);
+      if (m && m[1].trim().toLowerCase() === title.toLowerCase()) {
+        return { content, changed: false };
+      }
+    }
+    // Append the bullet to the existing section.
+    const before = lines.slice(0, childSection.end);
+    while (before.length > 0 && before[before.length - 1].trim() === "") before.pop();
+    const out = [...before, `* [[${title}]]`, "", ...lines.slice(childSection.end)];
+    return { content: out.join("\n"), changed: true };
+  }
+  // No ## Child of — insert right after preamble (before first H2, or
+  // at start of doc if no H2 yet).
+  let firstH2Idx = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (H2_RE.test(lines[i])) { firstH2Idx = i; break; }
+  }
+  const out = [
+    ...lines.slice(0, firstH2Idx),
+    "## Child of",
+    "",
+    `* [[${title}]]`,
+    "",
+    ...lines.slice(firstH2Idx),
+  ];
+  return { content: out.join("\n"), changed: true };
+}
+
+// Tier 2b (remove side): drop specific title bullets from the doc's
+// ## Parent of section. Preserves everything else byte-for-byte.
+function removeParentOfBullets(content: string, titlesToDrop: Set<string>): { content: string; changed: boolean } | null {
+  const lines = content.split("\n");
+  const section = findSection(lines, PARENT_OF_HEADING_RE);
+  if (!section) return { content, changed: false };
+  const before = lines.slice(0, section.start);
+  const sectionLines = lines.slice(section.start, section.end);
+  const after = lines.slice(section.end);
+  const kept: string[] = [];
+  let dropped = 0;
+  for (const line of sectionLines) {
+    const m = line.match(BULLET_RE);
+    if (m && titlesToDrop.has(m[1].trim().toLowerCase())) { dropped++; continue; }
+    kept.push(line);
+  }
+  if (dropped === 0) return { content, changed: false };
+  return { content: [...before, ...kept, ...after].join("\n"), changed: true };
+}
+
 // Tier 2a: add missing `* [[TITLE]]` back-edge bullets to the doc's
 // ## Parent of section. If the section doesn't exist, create it right
 // after ## Child of (or at end of doc if Child of also missing).
@@ -209,7 +284,7 @@ export async function lintVaultAutofix(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   const dryRun = args.dry_run !== false;
-  const tier = 2; // shipping Tier 2a (asymmetric_child_edge) alongside 1 + 1.5
+  const tier = 2; // Tier 1 + 1.5 + 2a + 2b — full mechanical + heuristic coverage
 
   const index = await loadVaultIndex(ctx);
 
@@ -232,11 +307,21 @@ export async function lintVaultAutofix(
   const getOrInit = (p: string): PerDocPlan => {
     let plan = plans.get(p);
     if (!plan) {
-      plan = { path: p, bullets_to_remove: [], parents_to_demote: false, add_parent_of_bullets: [] };
+      plan = {
+        path: p,
+        bullets_to_remove: [],
+        parents_to_demote: false,
+        add_parent_of_bullets: [],
+        add_child_of_bullet: null,
+        remove_parent_of_bullets: [],
+      };
       plans.set(p, plan);
     }
     return plan;
   };
+  // Tier 2b bookkeeping: for each target, whether an add-Child-of plan
+  // has been claimed for it. Second-and-later claimants fall to remove.
+  const claimedForChildOfAdd = new Set<string>();
   let remainingCount = 0;
   for (const doc of index.docs) {
     // Virtual system nodes (EMDEE / VAULT / GRAVEYARD / IMAGES / SHARED) are
@@ -272,6 +357,28 @@ export async function lintVaultAutofix(
           continue;
         }
         getOrInit(targetResolved.path).add_parent_of_bullets.push(doc.title);
+      } else if (TIER_2B_CODES.has(w.code) && "asymmetric_target" in w && typeof w.asymmetric_target === "string") {
+        // asymmetric_parent_edge: doc.path declares [[TARGET]] as child,
+        // TARGET doesn't list doc.path as parent. Heuristic:
+        //   - TARGET has 0 declared parents AND no other doc already
+        //     claimed the add slot → add [[doc.title]] to TARGET's Child of
+        //   - Otherwise → remove [[TARGET]] from doc.path's Parent of
+        //     (the false claim; TARGET has a canonical parent or another
+        //     doc got dibs on adding).
+        const targetResolved = resolveWikiLink(index, w.asymmetric_target, doc.path);
+        if (!targetResolved || SYSTEM_NODE_PATHS.has(targetResolved.path)) {
+          remainingCount++;
+          continue;
+        }
+        const targetInfo = docInfoByPath.get(targetResolved.path);
+        const targetHasParent = (targetInfo?.declaredParents.length ?? 0) > 0;
+        if (!targetHasParent && !claimedForChildOfAdd.has(targetResolved.path)) {
+          claimedForChildOfAdd.add(targetResolved.path);
+          getOrInit(targetResolved.path).add_child_of_bullet = doc.title;
+        } else {
+          // Remove the false claim from doc's Parent of.
+          getOrInit(doc.path).remove_parent_of_bullets.push(w.asymmetric_target);
+        }
       } else {
         remainingCount++;
       }
@@ -282,6 +389,8 @@ export async function lintVaultAutofix(
   const totalBullets = plannedFixes.reduce((a, p) => a + p.bullets_to_remove.length, 0);
   const totalDemotes = plannedFixes.filter((p) => p.parents_to_demote).length;
   const totalBackEdges = plannedFixes.reduce((a, p) => a + p.add_parent_of_bullets.length, 0);
+  const totalChildOfAdds = plannedFixes.filter((p) => p.add_child_of_bullet !== null).length;
+  const totalFalseClaimsRemoved = plannedFixes.reduce((a, p) => a + p.remove_parent_of_bullets.length, 0);
 
   if (dryRun) {
     return json({
@@ -293,6 +402,8 @@ export async function lintVaultAutofix(
       bullets_to_remove: totalBullets,
       parents_to_demote: totalDemotes,
       back_edges_to_add: totalBackEdges,
+      child_of_reciprocals_to_add: totalChildOfAdds,
+      false_parent_claims_to_remove: totalFalseClaimsRemoved,
       applied: 0,
       remaining_warnings_estimate: remainingCount,
     });
@@ -329,6 +440,18 @@ export async function lintVaultAutofix(
         const added = addParentOfBullets(content, dedup);
         if (added) content = added.content;
       }
+      // Tier 2b (add-side): add a single canonical parent to Child of.
+      // Only fires on docs that had 0 declared parents at plan time.
+      if (plan.add_child_of_bullet !== null) {
+        const added = addChildOfBullet(content, plan.add_child_of_bullet);
+        if (added) content = added.content;
+      }
+      // Tier 2b (remove-side): drop false Parent of claims.
+      if (plan.remove_parent_of_bullets.length > 0) {
+        const dropSet = new Set(plan.remove_parent_of_bullets.map((t) => t.toLowerCase()));
+        const removed = removeParentOfBullets(content, dropSet);
+        if (removed) content = removed.content;
+      }
 
       if (content === original) {
         applied++;
@@ -350,6 +473,8 @@ export async function lintVaultAutofix(
     bullets_to_remove: totalBullets,
     parents_to_demote: totalDemotes,
     back_edges_to_add: totalBackEdges,
+    child_of_reciprocals_to_add: totalChildOfAdds,
+    false_parent_claims_to_remove: totalFalseClaimsRemoved,
     applied,
     failed,
     remaining_warnings_estimate: remainingCount,
