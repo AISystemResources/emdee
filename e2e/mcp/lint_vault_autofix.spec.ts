@@ -130,6 +130,65 @@ test.describe("lint_vault_autofix Tier 1 (SPRINT-102)", () => {
     expect(occurrences).toBe(1);
   });
 
+  test("Tier 2b add-side: target with 0 parents gets the reciprocal Child of bullet", async () => {
+    // Doc PARENT_A claims [[LEAF]] as child, but LEAF has no Child of.
+    // Autofix should add [[PARENT_A]] to LEAF's Child of (fresh parent).
+    const PARENT_A = `# PARENT_A\n\n> A parent.\n\n## Parent of\n\n* [[LEAF]]\n`;
+    const LEAF = `# LEAF\n\n> An orphan leaf.\n\n## Notes\n\nNo parent declared.\n`;
+    await writeFile(path.join(docsDir, "PARENT_A.md"), PARENT_A, "utf8");
+    await writeFile(path.join(docsDir, "LEAF.md"), LEAF, "utf8");
+
+    const result = parse(await lintVaultAutofix(ctx, { dry_run: false }));
+    expect(result.applied).toBeGreaterThan(0);
+
+    const leafAfter = await readFile(path.join(docsDir, "LEAF.md"), "utf8");
+    expect(leafAfter).toContain("## Child of");
+    expect(leafAfter).toContain("[[PARENT_A]]");
+  });
+
+  test("Tier 2b remove-side: false claim on a doc that already has a parent is dropped from the claimer", async () => {
+    // TAKEN_LEAF has HUB as its canonical parent. IMPOSTOR ALSO claims
+    // TAKEN_LEAF as child. Autofix should remove [[TAKEN_LEAF]] from
+    // IMPOSTOR's Parent of — TAKEN_LEAF has a canonical parent already.
+    const TAKEN_LEAF = `# TAKEN_LEAF\n\n> Already has a real parent.\n\n## Child of\n\n* [[HUB]]\n`;
+    const IMPOSTOR = `# IMPOSTOR\n\n> Falsely claims TAKEN_LEAF as child.\n\n## Parent of\n\n* [[TAKEN_LEAF]]\n`;
+    await writeFile(path.join(docsDir, "TAKEN_LEAF.md"), TAKEN_LEAF, "utf8");
+    await writeFile(path.join(docsDir, "IMPOSTOR.md"), IMPOSTOR, "utf8");
+
+    const result = parse(await lintVaultAutofix(ctx, { dry_run: false }));
+    expect(result.applied).toBeGreaterThan(0);
+
+    const impostorAfter = await readFile(path.join(docsDir, "IMPOSTOR.md"), "utf8");
+    expect(impostorAfter).not.toContain("[[TAKEN_LEAF]]");
+    // TAKEN_LEAF's Child of untouched — HUB stays.
+    const leafAfter = await readFile(path.join(docsDir, "TAKEN_LEAF.md"), "utf8");
+    expect(leafAfter).toContain("[[HUB]]");
+    expect(leafAfter).not.toContain("[[IMPOSTOR]]");
+  });
+
+  test("Tier 2b conflict: multiple claimers on same orphan → first adds, rest are removed", async () => {
+    // Two docs both claim ORPHAN. Only one can add (else multiple_child_of).
+    // The other's claim gets dropped.
+    const CLAIMER_A = `# CLAIMER_A\n\n> First claimer.\n\n## Parent of\n\n* [[ORPHAN]]\n`;
+    const CLAIMER_B = `# CLAIMER_B\n\n> Second claimer.\n\n## Parent of\n\n* [[ORPHAN]]\n`;
+    const ORPHAN = `# ORPHAN\n\n> No parent yet.\n\n## Notes\n\nBody.\n`;
+    await writeFile(path.join(docsDir, "CLAIMER_A.md"), CLAIMER_A, "utf8");
+    await writeFile(path.join(docsDir, "CLAIMER_B.md"), CLAIMER_B, "utf8");
+    await writeFile(path.join(docsDir, "ORPHAN.md"), ORPHAN, "utf8");
+
+    await lintVaultAutofix(ctx, { dry_run: false });
+
+    const orphanAfter = await readFile(path.join(docsDir, "ORPHAN.md"), "utf8");
+    // ORPHAN should have exactly ONE Child of bullet (one_parent invariant).
+    const childOfMatch = orphanAfter.match(/## Child of\s*\n[\s\S]*?(?=\n## |\n?$)/);
+    const bullets = (childOfMatch?.[0].match(/\* \[\[/g) ?? []).length;
+    expect(bullets).toBe(1);
+    // Exactly one of the two claimers should keep the Parent of bullet.
+    const aKeeps = (await readFile(path.join(docsDir, "CLAIMER_A.md"), "utf8")).includes("[[ORPHAN]]");
+    const bKeeps = (await readFile(path.join(docsDir, "CLAIMER_B.md"), "utf8")).includes("[[ORPHAN]]");
+    expect(aKeeps !== bKeeps).toBe(true); // XOR — exactly one kept
+  });
+
   test("Tier 1.5: demotes extra Child of bullets to Associated with", async () => {
     // Seed a doc that violates the one-parent invariant: two Child of
     // bullets. The autofix should keep the first as canonical and
