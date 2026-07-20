@@ -165,4 +165,57 @@ test.describe("move_doc (local-mode tool exercise)", () => {
     expect(body.old_parent_updated).toBe(false);
     expect(body.new_parent_updated).toBe(false);
   });
+
+  test("SPRINT-108 Fix 1: same-parent move repairs stale new-parent when Parent-of is missing the child bullet", async () => {
+    // Drift scenario the fix addresses:
+    // - Child's Child of ALREADY says NEW-PARENT (a prior partial_write's
+    //   child stage committed).
+    // - NEW-PARENT does NOT list CHILD in Parent of (that stage failed).
+    // Calling move_doc(child=CHILD, new_parent=NEW-PARENT) now resolves
+    // oldParentPath from the child's declared parent (= NEW-PARENT), enters
+    // the same-parent path, and — instead of the old premature short-circuit
+    // returning "no-op" — completes the missing new-parent Parent-of insert.
+    const childAlreadyMoved = CHILD_CONTENT.replace("* [[OLD-PARENT]]", "* [[NEW-PARENT]]");
+    await writeFile(path.join(docsDir, "CHILD.md"), childAlreadyMoved, "utf8");
+    // NEW-PARENT still doesn't list CHILD (stale from beforeEach).
+
+    const body = parseToolResult(
+      await moveDoc(ctx, {
+        path: "CHILD.md",
+        new_parent_path: "NEW-PARENT.md",
+      }),
+    );
+    expect(body.ok).toBe(true);
+    expect(body.child_updated).toBe(false);
+    // old_parent_path resolved to NEW-PARENT (same-path), so the removal
+    // step is intentionally skipped — no removal write.
+    expect(body.old_parent_updated).toBe(false);
+    // The stale new-parent Parent-of got repaired.
+    expect(body.new_parent_updated).toBe(true);
+
+    const newParent = await readFile(path.join(docsDir, "NEW-PARENT.md"), "utf8");
+    expect(newParent).toMatch(/\*\s+\[\[CHILD\]\]/);
+  });
+
+  test("SPRINT-108 Fix 1: same-parent move (self-reparent) is a safe no-op when fully synced", async () => {
+    // Move CHILD from OLD-PARENT to OLD-PARENT (self-reparent). Should
+    // detect nothing to do and return no-op. Previously the short-circuit
+    // handled this via the child-only check; now the flow relies on
+    // per-stage idempotency plus the same-path oldParentPatch skip.
+    const body = parseToolResult(
+      await moveDoc(ctx, {
+        path: "CHILD.md",
+        new_parent_path: "OLD-PARENT.md",
+      }),
+    );
+    expect(body.ok).toBe(true);
+    expect(body.child_updated).toBe(false);
+    expect(body.old_parent_updated).toBe(false);
+    expect(body.new_parent_updated).toBe(false);
+
+    // Nothing should have been removed from OLD-PARENT.
+    const oldParent = await readFile(path.join(docsDir, "OLD-PARENT.md"), "utf8");
+    expect(oldParent).toMatch(/\*\s+\[\[CHILD\]\]/);
+    expect(oldParent).toMatch(/\*\s+\[\[OTHER-CHILD\]\]/);
+  });
 });

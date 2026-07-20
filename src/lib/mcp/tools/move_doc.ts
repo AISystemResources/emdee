@@ -335,20 +335,24 @@ export async function moveDoc(
     });
   }
 
-  // Idempotency: child already declares only new parent.
-  if (oldParentPath === newParentPath && declaredParentPaths.length === 1) {
-    return json({
-      ok: true,
-      path: childPath,
-      new_parent_path: newParentPath,
-      old_parent_path: oldParentPath,
-      child_updated: false,
-      old_parent_updated: false,
-      new_parent_updated: false,
-      note: "child already declares new_parent as its only parent",
-    });
-  }
-
+  // SPRINT-108 Fix 1: don't premature-short-circuit on child-only state.
+  // The old check assumed "if child declares new_parent as its only parent,
+  // both parents are also synced" — which was FALSE when a prior move_doc
+  // hit partial_write (child stage committed, old-parent stage failed).
+  // Result: old parent kept a stale [[child]] bullet forever, and every
+  // retry short-circuited without completing the pending work. Now we
+  // ALWAYS read both parent contents + compute all three patches, and
+  // rely on each patch's per-stage idempotency check (childChanged,
+  // oldParentPatch.removed, newParentPatch.alreadyPresent) to skip writes
+  // that would be no-ops.
+  //
+  // Same-parent case (oldParentPath === newParentPath) is special: we
+  // must NOT remove-then-re-add the bullet on the shared parent doc,
+  // because the two patches read the same original content and applying
+  // both sequentially can flip the bullet's presence incorrectly. Handle
+  // by skipping the old-parent step entirely in this case — the
+  // new-parent-side insert is idempotent (no-op if already present,
+  // insert if missing).
   const oldParentContent = await readVaultFile(ctx, oldParentPath);
   if (oldParentContent === null) {
     return json({ error: "old_parent_not_found", path: oldParentPath });
@@ -357,8 +361,11 @@ export async function moveDoc(
   const childTitle = deriveTitle(childContent, childPath);
   const newParentTitle = deriveTitle(newParentContent, newParentPath);
 
+  const samePath = oldParentPath === newParentPath;
   const childPatch = rewriteChildOf(childContent, newParentTitle);
-  const oldParentPatch = removeBulletByTitle(oldParentContent, "Parent of", childTitle);
+  const oldParentPatch = samePath
+    ? { newContent: oldParentContent, newSectionBody: "", removed: false }
+    : removeBulletByTitle(oldParentContent, "Parent of", childTitle);
   const newParentPatch = insertBulletInParentOf(newParentContent, childTitle, position);
 
   if (gateCodes.length > 0) {
