@@ -107,7 +107,7 @@ Load the conventions skill (if not already loaded) and let it take over.
 ## What to avoid
 
 - **Don't dump the full conventions in step 2.** The user is trying to see one thing work. Ship them from zero → seeing their first graph node in under 5 minutes. Depth comes after.
-- **Don't force `create_child` before they know what to create.** The step-3 question ("what do you want to track first?") is critical. If they say "I don't know yet," don't create a doc — instead, suggest they browse [emdee.tech](https://emdee.tech) in incognito to see the public demo vault. Come back when they have an answer.
+- **Don't force `create-child` before they know what to create.** The step-3 question ("what do you want to track first?") is critical. If they say "I don't know yet," don't create a doc — instead, suggest they browse [emdee.tech](https://emdee.tech) in incognito to see the public demo vault. Come back when they have an answer.
 - **Don't reference SPRINTs / LOGS / LEARNINGS in onboarding.** Those are for later. Zero-to-one first.
 
 ## Success signal

@@ -9,7 +9,7 @@ description: |
 
 # emdee-describe-image — rename + summarise uploaded images
 
-When you see an EMDEE image doc that hasn't been described yet, run this workflow. It uses the existing `get_image` + `rename_doc` + `patch_preamble` MCP tools (or their `emdee` CLI equivalents) — no new server-side dependencies.
+When you see an EMDEE image doc that hasn't been described yet, run this workflow. Pure `emdee` CLI — no MCP calls. Every command routes through the authenticated cloud vault via `--remote`.
 
 ## Trigger patterns
 
@@ -22,17 +22,11 @@ Any vault doc where:
 
 ### 1. Read the image
 
-```
-get_image(doc_path=<PATH>)
-```
-
-Or via CLI (when SPRINT-091 chunk 4 lands `get-image`):
-
-```
-emdee get-image --path <PATH> --remote
+```bash
+emdee get-image --doc-path <PATH> --out /tmp/img.png --remote
 ```
 
-The MCP tool returns the image as a visual content block — you can see it.
+Then read `/tmp/img.png` — you'll see it as a visual content block and can describe what's in it.
 
 ### 2. Compose
 
@@ -43,11 +37,11 @@ The MCP tool returns the image as a visual content block — you can see it.
 
 ### 3. Rename
 
-```
+```bash
 emdee rename-doc --old-path <PATH> --new-title <TITLE> --remote
 ```
 
-The tool atomically:
+Atomically:
 - Rewrites the H1
 - Moves the file (default: same folder, `<TITLE>.md`)
 - Updates every `[[<old title>]]` wiki-link across the vault
@@ -56,13 +50,13 @@ The tool atomically:
 
 Fetch the fresh preamble hash:
 
-```
+```bash
 emdee get-doc --path <NEW-PATH> --remote --json
 ```
 
 Take `preamble.content_hash` from the response, then:
 
-```
+```bash
 emdee patch-preamble --path <NEW-PATH> \
   --body "> <your 15-30 word summary>" \
   --expected-hash <hash> --remote
@@ -72,8 +66,8 @@ emdee patch-preamble --path <NEW-PATH> \
 
 If several images need describing:
 
-```
-emdee list-docs --prefix "IMAGES/" --remote | \
+```bash
+emdee list-docs --prefix "IMAGES/" --remote --format text | \
   xargs -I{} emdee get-summary --path {} --remote --format text
 ```
 
@@ -81,7 +75,7 @@ Filter for `_description pending_` in the output, then run the 4-step workflow p
 
 ## Failure modes
 
-- **Title collision** — `rename_doc` returns `title_conflict`. Pick a more specific title (add a subject qualifier).
+- **Title collision** — `rename-doc` returns `title_conflict`. Pick a more specific title (add a subject qualifier).
 - **`_description pending_` was already replaced** — someone else already ran this. `emdee get-doc` will show the new summary; skip.
 - **Image is illegible** — set the summary to `> Illegible / unable to describe from image alone.` and flag it in the user-facing report so they can annotate manually.
 
