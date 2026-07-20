@@ -773,4 +773,22 @@ program
     shellWrite("split-doc", opts, extra);
   });
 
+program
+  .command("reconcile")
+  .description("Repair doc_edges drift. Per-doc with --path, or full namespace with --all. Rebuilds edges from markdown truth. Cloud only.")
+  .option("--path <path>", "Doc path to reconcile (either --path OR --all required)")
+  .option("--all", "Full-namespace rebuild via backfillNamespace")
+  .option("-d, --docs <dir>", "docs directory (local mode — reconcile is cloud-only, this errors)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path",
+      all: "--all",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("reconcile", opts, extra);
+  });
+
 program.parseAsync();

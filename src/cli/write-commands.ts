@@ -28,6 +28,7 @@ import { deleteDoc } from "../lib/mcp/tools/delete_doc";
 import { distillDoc } from "../lib/mcp/tools/distill_doc";
 import { materializeSubgroup } from "../lib/mcp/tools/materialize_subgroup";
 import { splitDoc } from "../lib/mcp/tools/split_doc";
+import { reconcile } from "../lib/mcp/tools/reconcile";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -344,6 +345,22 @@ const VERBS: Record<string, VerbSpec> = {
         const parsed = JSON.parse(readFileSync(extractsFile, "utf8"));
         args.extracts = parsed;
       }
+      return args;
+    },
+  },
+  reconcile: {
+    toolName: "reconcile",
+    toolFn: reconcile as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      all: { type: "boolean" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {};
+      const p = optionalString(v.path);
+      if (p) args.path = p;
+      if (v.all) args.all = true;
       return args;
     },
   },
