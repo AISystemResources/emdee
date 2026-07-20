@@ -4,6 +4,7 @@ import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import { adminClient } from "@/src/lib/supabase/admin";
 import { getVaultStorage } from "@/src/lib/storage";
+import { SYSTEM_NODES, SYSTEM_NODE_PATHS, systemNodeContent } from "@/src/lib/system-nodes";
 
 // SPRINT-034: server-side PDF generation with clickable link annotations.
 // Replaces the client html2pdf.js raster pipeline (which lost <a href> to
@@ -92,7 +93,52 @@ function safeFilename(s: string): string {
 
 async function fetchMarkdown(ns: string, path: string): Promise<string | null> {
   const { storage, prefix } = getVaultStorage(ns);
-  return storage.read(`${prefix}${path}`);
+  const stored = await storage.read(`${prefix}${path}`);
+  if (stored !== null) return stored;
+  // Fall back to virtual system-node content when the user hasn't customised
+  // it. Without this, PDF export of EMDEE.md / VAULT.md / GRAVEYARD.md /
+  // IMAGES.md / SHARED.md returned 404 because virtual nodes are injected
+  // at index-build time, not stored per-user. Matches the read semantics
+  // every other tool (list_docs, get_doc, MCP) already applies.
+  if (SYSTEM_NODE_PATHS.has(path)) {
+    const node = SYSTEM_NODES.find((n) => n.path === path);
+    return node ? systemNodeContent(node) : null;
+  }
+  return null;
+}
+
+// Strip the three graph-metadata sections (`## Child of`, `## Parent of`,
+// `## Associated with`) before rendering — PDF exports are meant to be
+// content-first. Sections are matched by heading + walked until the next
+// H2 (or end of doc). Case-insensitive on the heading match to tolerate
+// human authoring drift.
+function stripEdgeSections(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let skipping = false;
+  const edgeHeadingRe = /^##\s+(child of|parent of|associated with)\s*$/i;
+  const nextH2Re = /^##\s+/;
+  for (const line of lines) {
+    if (skipping) {
+      if (nextH2Re.test(line) && !edgeHeadingRe.test(line)) {
+        skipping = false;
+        out.push(line);
+      }
+      // else: still inside an edge section OR entering another edge section
+      else if (edgeHeadingRe.test(line)) {
+        // Adjacent edge section — stay in skip mode.
+        continue;
+      }
+      // else: swallow this line
+      continue;
+    }
+    if (edgeHeadingRe.test(line)) {
+      skipping = true;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 async function hasShareAccess(granteeId: string, ownerId: string, relPath: string): Promise<boolean> {
@@ -187,7 +233,8 @@ export async function POST(request: Request) {
 
   // GFM + autolinks on; breaks off so soft line breaks don't become <br>.
   marked.setOptions({ gfm: true, breaks: false });
-  const bodyHtml = rewriteWikiLinks(await marked.parse(markdown));
+  const cleaned = stripEdgeSections(markdown);
+  const bodyHtml = rewriteWikiLinks(await marked.parse(cleaned));
   const titleForFile = body.title?.trim() || extractTitle(markdown, path);
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
