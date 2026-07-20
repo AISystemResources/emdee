@@ -96,4 +96,28 @@ test.describe("lint_vault_autofix Tier 1 (SPRINT-102)", () => {
     expect(second.docs_to_modify).toBe(0);
     expect(second.bullets_to_remove).toBe(0);
   });
+
+  test("Tier 1.5: demotes extra Child of bullets to Associated with", async () => {
+    // Seed a doc that violates the one-parent invariant: two Child of
+    // bullets. The autofix should keep the first as canonical and
+    // move the second to Associated with.
+    const DUAL_PARENT = `# DUAL\n\n> A doc that declares two parents.\n\n## Child of\n\n* [[HUB]]\n* [[EXTRA-PARENT]] — a second parent\n\n## Notes\n\nBody.\n`;
+    await writeFile(path.join(docsDir, "DUAL.md"), DUAL_PARENT, "utf8");
+    const HUB_WITH_DUAL = `# HUB\n\n> The hub.\n\n## Parent of\n\n* [[A]]\n* [[B]]\n* [[DUAL]]\n`;
+    const EXTRA_PARENT = `# EXTRA-PARENT\n\n> Second parent.\n\n## Parent of\n\n* [[DUAL]]\n`;
+    await writeFile(path.join(docsDir, "HUB.md"), HUB_WITH_DUAL, "utf8");
+    await writeFile(path.join(docsDir, "EXTRA-PARENT.md"), EXTRA_PARENT, "utf8");
+
+    const result = parse(await lintVaultAutofix(ctx, { dry_run: false }));
+    expect(result.applied).toBeGreaterThan(0);
+
+    const dualAfter = await readFile(path.join(docsDir, "DUAL.md"), "utf8");
+    // Only the first Child of bullet should remain in that section.
+    const childOfSection = dualAfter.match(/## Child of\s*\n[\s\S]*?(?=\n## |\n?$)/);
+    expect(childOfSection?.[0]).toContain("[[HUB]]");
+    expect(childOfSection?.[0]).not.toContain("[[EXTRA-PARENT]]");
+    // The demoted parent should now appear under Associated with.
+    const assocSection = dualAfter.match(/## Associated with\s*\n[\s\S]*?(?=\n## |\n?$)/);
+    expect(assocSection?.[0]).toContain("[[EXTRA-PARENT]]");
+  });
 });
