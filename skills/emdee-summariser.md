@@ -9,7 +9,7 @@ description: |
 
 # emdee-summariser — refresh drifting doc summaries
 
-Docs in EMDEE carry a one-line `> blockquote` summary right below the H1. That summary is what routing sees — search, `get_summary`, cheap enumeration all pivot on it. When the body drifts (new sections, refined framing, changed scope), the summary should catch up. This skill runs that refresh.
+Docs in EMDEE carry a one-line `> blockquote` summary right below the H1. That summary is what routing sees — `emdee search`, `emdee get-summary`, cheap enumeration all pivot on it. When the body drifts (new sections, refined framing, changed scope), the summary should catch up. This skill runs that refresh.
 
 ## Trigger patterns
 
