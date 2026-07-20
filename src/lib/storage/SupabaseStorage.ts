@@ -134,18 +134,28 @@ export class SupabaseStorage implements VaultStorage {
       if (!folder || folder.includes("/")) {
         return this.walkFolder(folder);
       }
-      const { data, error } = await adminClient()
-        .from(CACHE_TABLE)
-        .select("file_path, updated_at")
-        .eq("namespace", folder);
-      if (!error && data) {
-        return data.map((r) => ({
-          path: `${folder}/${r.file_path}`,
-          content: "",
-          updatedAt: r.updated_at as string,
-        }));
+      const admin = adminClient();
+      // HARD RULE 6: PostgREST caps `.select()` at 1000 rows server-side.
+      // Vaults > 1000 docs silently truncate without an explicit range loop.
+      const PAGE = 1000;
+      const rows: Array<{ file_path: string; updated_at: string }> = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await admin
+          .from(CACHE_TABLE)
+          .select("file_path, updated_at")
+          .eq("namespace", folder)
+          .order("file_path", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) return this.walkFolder(folder);
+        const page = (data ?? []) as Array<{ file_path: string; updated_at: string }>;
+        rows.push(...page);
+        if (page.length < PAGE) break;
       }
-      return this.walkFolder(folder);
+      return rows.map((r) => ({
+        path: `${folder}/${r.file_path}`,
+        content: "",
+        updatedAt: r.updated_at,
+      }));
     });
   }
 
@@ -186,13 +196,29 @@ export class SupabaseStorage implements VaultStorage {
       }
 
       const admin = adminClient();
-      const { data, error } = await admin
-        .from(CACHE_TABLE)
-        .select("file_path, content, updated_at")
-        .eq("namespace", folder);
+      // HARD RULE 6: PostgREST caps `.select()` at 1000 rows server-side.
+      // Vaults > 1000 docs silently truncate without an explicit range loop.
+      const PAGE = 1000;
+      const rows: Array<{ file_path: string; content: string; updated_at: string }> = [];
+      let queryError: unknown = null;
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await admin
+          .from(CACHE_TABLE)
+          .select("file_path, content, updated_at")
+          .eq("namespace", folder)
+          .order("file_path", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) {
+          queryError = error;
+          break;
+        }
+        const page = (data ?? []) as Array<{ file_path: string; content: string; updated_at: string }>;
+        rows.push(...page);
+        if (page.length < PAGE) break;
+      }
 
-      if (!error && data && data.length > 0) {
-        return data.map((r) => ({
+      if (!queryError && rows.length > 0) {
+        return rows.map((r) => ({
           path: `${folder}/${r.file_path}`,
           content: r.content,
           updatedAt: r.updated_at,
