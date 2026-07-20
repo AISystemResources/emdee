@@ -27,6 +27,7 @@ import { listDocs } from "../lib/mcp/tools/list_docs";
 import { listSummaryDrift } from "../lib/mcp/tools/list_summary_drift";
 import { lintDoc } from "../lib/mcp/tools/lint_doc";
 import { lintVault } from "../lib/mcp/tools/lint_vault";
+import { lintVaultAutofix } from "../lib/mcp/tools/lint_vault_autofix";
 import { getImage } from "../lib/mcp/tools/get_image";
 import { writeFileSync } from "node:fs";
 
@@ -198,6 +199,19 @@ const READ_VERBS: Record<string, ReadVerb> = {
       const limit = optionalString(v.limit);
       if (limit) args.limit = Number(limit);
       return args;
+    },
+  },
+  "lint-vault-autofix": {
+    toolName: "lint_vault_autofix",
+    toolFn: lintVaultAutofix as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      yes: { type: "boolean" },
+    },
+    buildArgs: (v) => {
+      // Dry-run unless --yes was passed. The tool defaults to dry-run
+      // internally too — belt-and-suspenders.
+      return v.yes ? { dry_run: false } : { dry_run: true };
     },
   },
 };
