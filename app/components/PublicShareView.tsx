@@ -40,48 +40,104 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileDrawerState, setMobileDrawerState] = useState<"closed" | "peek" | "full">("closed");
   const docPaneRef = useRef<HTMLDivElement | null>(null);
+  const appRef = useRef<HTMLDivElement | null>(null);
   const drawerDrag = useDrawerDrag({
     drawerRef: docPaneRef,
     state: mobileDrawerState,
     setState: setMobileDrawerState,
   });
 
-  // Draggable divider between the graph and doc panes — same UX as the
-  // owner view. Persists to localStorage under a separate key so the
-  // public reader's preference doesn't bleed into the owner workspace.
-  const [splitRatio, setSplitRatio] = useState(() => {
-    if (typeof window === "undefined") return 0.5;
-    const ratio = parseFloat(localStorage.getItem("emdee_share_split_ratio") ?? "");
-    return Number.isFinite(ratio) && ratio >= 0.15 && ratio <= 0.85 ? ratio : 0.5;
+  // Three-column layout parity with the owner view (App.tsx): sidebar + doc +
+  // graph, with draggable dividers between all three. Persists to localStorage
+  // under `emdee_share_*` keys so the reader's preference doesn't bleed into
+  // the owner workspace.
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 260;
+    const w = parseInt(localStorage.getItem("emdee_share_sidebar_width") ?? "", 10);
+    return Number.isFinite(w) && w >= 160 && w <= 480 ? w : 260;
   });
-  const [draggingSplit, setDraggingSplit] = useState(false);
+  const [graphWidth, setGraphWidth] = useState(() => {
+    if (typeof window === "undefined") return 420;
+    const w = parseInt(localStorage.getItem("emdee_share_graph_width") ?? "", 10);
+    return Number.isFinite(w) && w >= 200 && w <= 800 ? w : 420;
+  });
+  const [graphCollapsed, setGraphCollapsed] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("emdee_share_graph_collapsed") === "true"
+  );
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
-    const container = splitContainerRef.current;
-    if (!container) return;
+  // Sidebar rail: dual-purpose — drag to resize, click (no movement) to toggle.
+  const onSidebarRailPointerDown = useCallback((e: React.PointerEvent) => {
+    if (sidebarCollapsed) {
+      setSidebarCollapsed(false);
+      return;
+    }
+    const appEl = appRef.current;
+    if (!appEl) return;
     e.preventDefault();
-    setDraggingSplit(true);
-    document.body.dataset.resizingSplit = "true";
-    const rect = container.getBoundingClientRect();
+    const startX = e.clientX;
+    const rect = appEl.getBoundingClientRect();
+    let moved = false;
+
     const onMove = (ev: PointerEvent) => {
-      const x = ev.clientX - rect.left;
-      const ratio = Math.max(0.15, Math.min(0.85, x / rect.width));
-      setSplitRatio(ratio);
+      if (!moved && Math.abs(ev.clientX - startX) > 4) moved = true;
+      if (!moved) return;
+      setSidebarWidth(Math.max(160, Math.min(480, ev.clientX - rect.left)));
     };
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
-      delete document.body.dataset.resizingSplit;
-      setDraggingSplit(false);
-      setSplitRatio((r) => {
-        localStorage.setItem("emdee_share_split_ratio", r.toFixed(4));
-        return r;
-      });
+      if (!moved) {
+        setSidebarCollapsed((v) => !v);
+      } else {
+        setSidebarWidth((w) => {
+          localStorage.setItem("emdee_share_sidebar_width", String(Math.round(w)));
+          return w;
+        });
+      }
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
-  }, []);
+  }, [sidebarCollapsed]);
+
+  // Graph rail: same dual-purpose (drag to resize, click to collapse).
+  const onGraphRailPointerDown = useCallback((e: React.PointerEvent) => {
+    if (graphCollapsed) {
+      setGraphCollapsed(false);
+      localStorage.setItem("emdee_share_graph_collapsed", "false");
+      return;
+    }
+    const container = splitContainerRef.current;
+    if (!container) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const rect = container.getBoundingClientRect();
+    let moved = false;
+
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) > 4) moved = true;
+      if (!moved) return;
+      setGraphWidth(Math.max(200, Math.min(800, rect.right - ev.clientX)));
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      if (!moved) {
+        setGraphCollapsed((v) => {
+          const next = !v;
+          localStorage.setItem("emdee_share_graph_collapsed", String(next));
+          return next;
+        });
+      } else {
+        setGraphWidth((w) => {
+          localStorage.setItem("emdee_share_graph_width", String(Math.round(w)));
+          return w;
+        });
+      }
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, [graphCollapsed]);
   const viewLoggedRef = useRef(false);
 
   useEffect(() => {
@@ -219,7 +275,7 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
   }, [activeDoc, publication.handle, publication.slug]);
 
   return (
-    <div className="app" data-public-share="true">
+    <div className="app" data-public-share="true" ref={appRef}>
       {/* Mobile header — hamburger + brand + sign-up CTA */}
       <header className="mobile-header">
         <button
@@ -248,7 +304,7 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
         onClick={() => setMobileSidebarOpen(false)}
       />
 
-      <div className="sidebar-wrap" data-open={mobileSidebarOpen}>
+      <div className="sidebar-wrap" data-open={mobileSidebarOpen} style={{ "--sidebar-width": sidebarWidth + "px" } as React.CSSProperties}>
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
           {/* Brand block where the Claude-Code connect section lives for owners */}
           <div className="public-share-sidebar-brand">
@@ -290,7 +346,7 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
         </aside>
         <button
           className="sidebar-rail"
-          onClick={() => setSidebarCollapsed((v) => !v)}
+          onPointerDown={onSidebarRailPointerDown}
           aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
           type="button"
         >
@@ -302,28 +358,10 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
         <div
           className="main-split"
           ref={splitContainerRef}
-          data-graph-collapsed={false}
+          data-graph-collapsed={graphCollapsed}
           data-mobile-drawer={mobileDrawerState}
-          style={{ "--graph-ratio": splitRatio } as React.CSSProperties}
+          style={{ "--graph-width": graphWidth + "px" } as React.CSSProperties}
         >
-          <div className="graph-pane">
-            <GraphView
-              index={index}
-              activePath={activePath}
-              onSelect={onGraphSelect}
-              prevSibling={prevSibling}
-              nextSibling={nextSibling}
-              forceBranchLayout
-            />
-          </div>
-          <div
-            className="split-divider"
-            onPointerDown={onDividerPointerDown}
-            data-dragging={draggingSplit}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize panes"
-          />
           <div className="doc-pane" ref={docPaneRef}>
             {/* Mobile drawer header — drag to flick between snap points */}
             <div
@@ -389,6 +427,24 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
             ) : (
               <div className="empty">Pick a node from the graph to start reading.</div>
             )}
+          </div>
+          <button
+            className="graph-rail"
+            onPointerDown={onGraphRailPointerDown}
+            aria-label={graphCollapsed ? "Open graph" : "Close graph"}
+            type="button"
+          >
+            {graphCollapsed ? "‹" : "›"}
+          </button>
+          <div className="graph-pane">
+            <GraphView
+              index={index}
+              activePath={activePath}
+              onSelect={onGraphSelect}
+              prevSibling={prevSibling}
+              nextSibling={nextSibling}
+              forceBranchLayout
+            />
           </div>
         </div>
       </main>
