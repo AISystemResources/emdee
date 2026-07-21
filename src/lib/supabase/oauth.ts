@@ -1,5 +1,6 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { adminClient, hashToken } from "./admin";
+import { deriveHandleFromEmail } from "@/src/lib/owner/handle";
 
 const TOKEN_TTL_DAYS = 30;
 const CODE_TTL_MINUTES = 10;
@@ -192,8 +193,12 @@ export async function ensureProfile(clerkId: string): Promise<void> {
     }
   }
 
-  const row: { clerk_id: string; email?: string } = { clerk_id: clerkId };
-  if (email) row.email = email;
+  const row: { clerk_id: string; email?: string; handle?: string } = { clerk_id: clerkId };
+  if (email) {
+    row.email = email;
+    const derived = await pickAvailableHandle(admin, email);
+    if (derived) row.handle = derived;
+  }
 
   const { error } = await admin
     .from("profiles")
@@ -201,6 +206,30 @@ export async function ensureProfile(clerkId: string): Promise<void> {
   if (error) throw new Error(`failed to ensure profile: ${error.message}`);
 
   if (email) await claimPendingInvitations(clerkId, email);
+}
+
+/**
+ * Best-effort handle from email, with collision-suffix fallback (`-2`, `-3`, …).
+ * Returns null if we can't derive anything usable — signup still succeeds; the
+ * user can set a handle later via `PATCH /api/profile/handle`.
+ */
+async function pickAvailableHandle(
+  admin: ReturnType<typeof adminClient>,
+  email: string,
+): Promise<string | null> {
+  const base = deriveHandleFromEmail(email);
+  if (!base) return null;
+  for (let n = 1; n <= 50; n += 1) {
+    const candidate = n === 1 ? base : `${base}-${n}`;
+    if (candidate.length > 32) return null;
+    const { data } = await admin
+      .from("profiles")
+      .select("clerk_id")
+      .eq("handle", candidate)
+      .maybeSingle();
+    if (!data) return candidate;
+  }
+  return null;
 }
 
 export async function storeAuthCode(params: {

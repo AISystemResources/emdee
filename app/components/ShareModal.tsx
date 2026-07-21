@@ -96,6 +96,41 @@ export function ShareModal({ path, title, index, onClose }: Props) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publicError, setPublicError] = useState<string | null>(null);
 
+  const [handleDraft, setHandleDraft] = useState("");
+  const [handleBusy, setHandleBusy] = useState(false);
+  const [handleError, setHandleError] = useState<string | null>(null);
+
+  const saveHandle = useCallback(async () => {
+    const trimmed = handleDraft.trim().toLowerCase();
+    if (!trimmed || handleBusy) return;
+    setHandleBusy(true);
+    setHandleError(null);
+    try {
+      const res = await fetch("/api/profile/handle", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const map: Record<string, string> = {
+          handle_taken: "That handle is taken.",
+          invalid_chars: "Handle can only contain lowercase letters, numbers, and hyphens.",
+          too_short: "Handle must be at least 2 characters.",
+          too_long: "Handle must be at most 32 characters.",
+          reserved: "That handle is reserved.",
+          empty: "Handle is required.",
+        };
+        setHandleError(map[data?.error] ?? data?.error ?? "Failed to save handle.");
+        return;
+      }
+      setOwnerHandle(data.handle);
+      setHandleDraft("");
+    } finally {
+      setHandleBusy(false);
+    }
+  }, [handleDraft, handleBusy]);
+
   const descCount = useMemo(
     () => collectDescendantPaths(index, path).length - 1,
     [index, path],
@@ -328,8 +363,33 @@ export function ShareModal({ path, title, index, onClose }: Props) {
           </div>
 
           {handleMissing && !isPublic && (
-            <div className="share-public-error">
-              Set a handle on your profile to enable public sharing.
+            <div className="share-public-handle-setup">
+              <label className="share-public-handle-label" htmlFor="share-handle-input">
+                Choose a handle to enable public sharing. This becomes part of your
+                public URL: <code>/share/&lt;handle&gt;/…</code>
+              </label>
+              <div className="share-public-handle-row">
+                <input
+                  id="share-handle-input"
+                  type="text"
+                  value={handleDraft}
+                  onChange={(e) => setHandleDraft(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveHandle(); }}
+                  placeholder="your-handle"
+                  maxLength={32}
+                  disabled={handleBusy}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="share-public-handle-save"
+                  onClick={saveHandle}
+                  disabled={!handleDraft.trim() || handleBusy}
+                >
+                  {handleBusy ? "Saving…" : "Save"}
+                </button>
+              </div>
+              {handleError && <div className="share-public-error">{handleError}</div>}
             </div>
           )}
 
