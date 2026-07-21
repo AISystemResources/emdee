@@ -16,27 +16,27 @@ export const SYSTEM_NODES: readonly SystemNode[] = [
   {
     path: "EMDEE.md",
     title: "EMDEE",
-    summary: "Your knowledge graph, in markdown — the root of your vault.",
+    summary: "Root of your Emdee vault. Every doc hangs off this anchor — the system layer under [[VAULT]], your personal content under your owner node, shared docs under [[SHARED]], archived docs under [[GRAVEYARD]], images under [[IMAGES]].",
   },
   {
     path: "VAULT.md",
     title: "VAULT",
-    summary: "Your private notes, projects, and knowledge.",
+    summary: "System layer for Emdee — vault mechanics every Emdee user shares (system-shipped skills, workflows, automation routines). Deliberately narrow: your personal content lives under your owner node, not here.",
   },
   {
     path: "SHARED.md",
     title: "SHARED",
-    summary: "Content shared with you by others.",
+    summary: "Docs other users have shared into your vault. Visible to your MCP tools and renderer; the content lives in the owner's vault and is read-only here.",
   },
   {
     path: "GRAVEYARD.md",
     title: "GRAVEYARD",
-    summary: "Archived and retired documents.",
+    summary: "Archived and retired docs. Soft-deletion target — occupants remain readable and fully restorable via `restore_doc`, but are filtered from active reading views.",
   },
   {
     path: "IMAGES.md",
     title: "IMAGES",
-    summary: "Images and visual assets.",
+    summary: "Central image library. Every image uploaded via drag-and-drop or the upload_image MCP tool lives here as a child doc holding the image URL and a description.",
   },
 ] as const;
 
