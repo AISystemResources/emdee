@@ -451,6 +451,22 @@ program
     shellWrite("rename-doc", opts, extra);
   });
 
+program
+  .command("rename-title")
+  .description("Bulk-safe wiki-link rewrite. Finds every [[old-title]] across the vault and rewrites to [[new-title]]. Does NOT touch the doc that owns the title — use rename-doc for that.")
+  .requiredOption("--old-title <title>", "Current title to search for")
+  .requiredOption("--new-title <title>", "Replacement title")
+  .option("-d, --docs <dir>", "docs directory (local mode)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      oldTitle: "--old-title", newTitle: "--new-title",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("rename-title", opts, extra);
+  });
+
 // -----------------------------------------------------------------------
 // SPRINT-091 chunk 3: full-file writes + lifecycle.
 // -----------------------------------------------------------------------
