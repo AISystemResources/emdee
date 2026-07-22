@@ -20,6 +20,7 @@ import { createChild } from "../lib/mcp/tools/create_child";
 import { addAssociation } from "../lib/mcp/tools/add_association";
 import { moveDoc } from "../lib/mcp/tools/move_doc";
 import { renameDoc } from "../lib/mcp/tools/rename_doc";
+import { renameTitle } from "../lib/mcp/tools/rename_title";
 import { writeDoc } from "../lib/mcp/tools/write_doc";
 import { writeDocPreview } from "../lib/mcp/tools/write_doc_preview";
 import { trashDoc } from "../lib/mcp/tools/trash_doc";
@@ -232,6 +233,19 @@ const VERBS: Record<string, VerbSpec> = {
       if (newPath) args.new_path = newPath;
       return args;
     },
+  },
+  "rename-title": {
+    toolName: "rename_title",
+    toolFn: renameTitle as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      "old-title": { type: "string" },
+      "new-title": { type: "string" },
+    },
+    buildArgs: (v) => ({
+      old_title: asString(v["old-title"]),
+      new_title: asString(v["new-title"]),
+    }),
   },
   "write-doc": {
     toolName: "write_doc",
