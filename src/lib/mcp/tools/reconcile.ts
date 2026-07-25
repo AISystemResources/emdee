@@ -65,6 +65,9 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
       namespace: ctx.userId,
       docs_scanned: result.docs,
       edges_written: result.rows,
+      // SPRINT-117: surface dual-parent claims the dedup pass had to break
+      // (one_parent constraint). Empty list is the healthy case.
+      duplicate_parents: result.duplicate_parents,
     });
   }
 
