@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile, access, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import readline from "node:readline/promises";
@@ -34,8 +35,19 @@ try {
 
 function applyRemoteDefault(opts) {
   if (opts.remote === true || opts.local === true) return opts;
+  // Explicit -d/--docs signals local intent — don't remote-default.
+  if (typeof opts.docs === "string" && opts.docs.length > 0) return opts;
   if (userConfig.default_mode === "remote") opts.remote = true;
   return opts;
+}
+
+// SPRINT-129: prefer pre-bundled dist/ over `npx tsx` when present.
+// Bundled path is ~40× faster (3.1s → 79ms tsx cold-start eliminated).
+// Falls back to tsx for repo checkouts that haven't run `npm run build:cli`.
+function resolveExecutor(relTsPath) {
+  const bundledPath = path.join(pkgRoot, relTsPath.replace(/^src\//, "dist/").replace(/\.ts$/, ".js"));
+  if (existsSync(bundledPath)) return { cmd: "node", args: [bundledPath] };
+  return { cmd: "npx", args: ["tsx", path.join(pkgRoot, relTsPath)] };
 }
 
 // SPRINT-125: read newline-delimited paths from stdin. Enables shell
@@ -189,7 +201,8 @@ program
   .option("-d, --docs <dir>", "docs directory", "docs")
   .action((opts) => {
     const docs = path.resolve(process.cwd(), opts.docs);
-    const child = spawn("npx", ["tsx", path.join(pkgRoot, "src/mcp/server.ts")], {
+    const exec = resolveExecutor("src/mcp/server.ts");
+    const child = spawn(exec.cmd, exec.args, {
       cwd: pkgRoot,
       stdio: "inherit",
       env: { ...process.env, EMDEE_DOCS: docs },
@@ -207,10 +220,11 @@ program
   .action((opts) => {
     applyRemoteDefault(opts);
     const docs = path.resolve(process.cwd(), opts.docs);
-    const args = ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), "list"];
+    const exec = resolveExecutor("src/cli/read-commands.ts");
+    const args = [...exec.args, "list"];
     if (opts.prefix) args.push("--prefix", opts.prefix);
     if (opts.remote) args.push("--remote");
-    const child = spawn("npx", args, {
+    const child = spawn(exec.cmd, args, {
       cwd: pkgRoot,
       stdio: "inherit",
       env: { ...process.env, EMDEE_DOCS: docs },
@@ -229,16 +243,16 @@ program
   .action((opts) => {
     applyRemoteDefault(opts);
     const docs = path.resolve(process.cwd(), opts.docs);
+    const exec = resolveExecutor("src/cli/read-commands.ts");
     const args = [
-      "tsx",
-      path.join(pkgRoot, "src/cli/read-commands.ts"),
+      ...exec.args,
       "drift-batch",
       "--limit", opts.limit,
       "--offset", opts.offset,
     ];
     if (opts.prefix) args.push("--prefix", opts.prefix);
     if (opts.remote) args.push("--remote");
-    const child = spawn("npx", args, {
+    const child = spawn(exec.cmd, args, {
       cwd: pkgRoot,
       stdio: "inherit",
       env: { ...process.env, EMDEE_DOCS: docs },
@@ -249,9 +263,10 @@ program
 // SPRINT-091: PKCE login against emdee.tech. Credentials stashed in
 // ~/.config/emdee/credentials.json for `--remote` calls to pick up.
 function shellAuth(sub, extra = []) {
+  const exec = resolveExecutor("src/cli/auth-commands.ts");
   const child = spawn(
-    "npx",
-    ["tsx", path.join(pkgRoot, "src/cli/auth-commands.ts"), sub, ...extra],
+    exec.cmd,
+    [...exec.args, sub, ...extra],
     { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
   );
   child.on("exit", (code) => process.exit(code ?? 0));
@@ -260,9 +275,10 @@ function shellAuth(sub, extra = []) {
 // SPRINT-091 chunk 2: write verbs shell through the dispatcher.
 function shellWrite(verb, opts, extra = []) {
   const docs = opts.docs ? path.resolve(process.cwd(), opts.docs) : path.join(process.cwd(), "docs");
+  const exec = resolveExecutor("src/cli/write-commands.ts");
   const child = spawn(
-    "npx",
-    ["tsx", path.join(pkgRoot, "src/cli/write-commands.ts"), verb, ...extra],
+    exec.cmd,
+    [...exec.args, verb, ...extra],
     { cwd: pkgRoot, stdio: "inherit", env: { ...process.env, EMDEE_DOCS: docs } },
   );
   child.on("exit", (code) => process.exit(code ?? 0));
@@ -271,9 +287,10 @@ function shellWrite(verb, opts, extra = []) {
 // SPRINT-091 chunk 3: structured read verbs share read-commands.ts dispatcher.
 function shellRead(verb, opts, extra = []) {
   const docs = opts.docs ? path.resolve(process.cwd(), opts.docs) : path.join(process.cwd(), "docs");
+  const exec = resolveExecutor("src/cli/read-commands.ts");
   const child = spawn(
-    "npx",
-    ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), verb, ...extra],
+    exec.cmd,
+    [...exec.args, verb, ...extra],
     { cwd: pkgRoot, stdio: "inherit", env: { ...process.env, EMDEE_DOCS: docs } },
   );
   child.on("exit", (code) => process.exit(code ?? 0));
@@ -333,9 +350,10 @@ program
     // of where tsx runs from.
     const resolvedDir = opts.dir ? path.resolve(process.cwd(), opts.dir) : "";
     const extra = resolvedDir ? ["--dir", resolvedDir] : [];
+    const exec = resolveExecutor("src/cli/skills-install.ts");
     const child = spawn(
-      "npx",
-      ["tsx", path.join(pkgRoot, "src/cli/skills-install.ts"), ...extra],
+      exec.cmd,
+      [...exec.args, ...extra],
       { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
     );
     child.on("exit", (code) => process.exit(code ?? 0));
@@ -986,6 +1004,59 @@ program
     }
 
     console.error(`unknown action: ${action}. Use get | set | init | path`);
+    process.exit(1);
+  });
+
+// SPRINT-128: cache management. Inspect stats, purge, or configure TTL.
+program
+  .command("cache")
+  .description("Manage the read-response cache at ~/.emdee/cache/. Actions: stats (default), clear, ttl <seconds>.")
+  .argument("[action]", "stats | clear | ttl (default: stats)")
+  .argument("[value]", "For `ttl` action: seconds")
+  .action(async (action, value) => {
+    const cacheDir = path.join(os.homedir(), ".emdee", "cache");
+    const cfgPath = path.join(os.homedir(), ".emdee", "config.json");
+
+    if (!action || action === "stats") {
+      try {
+        const files = await import("node:fs/promises").then((m) => m.readdir(cacheDir));
+        const jsonFiles = files.filter((f) => f.endsWith(".json"));
+        console.log(`cache: ${cacheDir}`);
+        console.log(`entries: ${jsonFiles.length}`);
+        console.log(`ttl_seconds: ${userConfig.cache_ttl_seconds ?? 300}`);
+      } catch {
+        console.log(`cache: ${cacheDir} (not yet populated)`);
+        console.log(`entries: 0`);
+        console.log(`ttl_seconds: ${userConfig.cache_ttl_seconds ?? 300}`);
+      }
+      return;
+    }
+
+    if (action === "clear") {
+      try {
+        await import("node:fs/promises").then((m) => m.rm(cacheDir, { recursive: true, force: true }));
+        console.log(`cleared ${cacheDir}`);
+      } catch (e) {
+        console.error(`clear failed: ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (action === "ttl") {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error("usage: emdee cache ttl <positive-seconds>");
+        process.exit(1);
+      }
+      await mkdir(path.dirname(cfgPath), { recursive: true });
+      const next = { ...userConfig, cache_ttl_seconds: n };
+      await writeFile(cfgPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      console.log(`set cache_ttl_seconds=${n} in ${cfgPath}`);
+      return;
+    }
+
+    console.error(`unknown action: ${action}. Use stats | clear | ttl`);
     process.exit(1);
   });
 

@@ -16,6 +16,7 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 import { buildIndex } from "../core/indexer";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
+import { readCache, writeCacheEntry, isCacheable } from "./cache";
 import type { ToolContext } from "../lib/mcp/tools/types";
 import { getDoc } from "../lib/mcp/tools/get_doc";
 import { getSummary } from "../lib/mcp/tools/get_summary";
@@ -46,6 +47,7 @@ const COMMON = {
   remote: { type: "boolean" },
   format: { type: "string" },
   json: { type: "boolean" },
+  "no-cache": { type: "boolean" },
 } as const;
 
 function asString(v: unknown): string {
@@ -240,10 +242,27 @@ async function runStructuredRead(verbName: string, argv: string[]): Promise<void
   const args = spec.buildArgs(values);
   const remote = Boolean(values.remote);
   const wantJson = Boolean(values.json);
+  const noCache = Boolean(values["no-cache"]);
 
-  const result = remote
-    ? await callTool(spec.toolName, args)
-    : await spec.toolFn({ mode: "local", docsDir }, args);
+  // SPRINT-128: cache hit path.
+  const scope = remote ? "cloud" : docsDir;
+  let result: unknown;
+  let cacheHit = false;
+  if (!noCache && isCacheable(spec.toolName)) {
+    const cached = await readCache(spec.toolName, args, remote, scope);
+    if (cached !== null) {
+      result = cached;
+      cacheHit = true;
+    }
+  }
+  if (!cacheHit) {
+    result = remote
+      ? await callTool(spec.toolName, args)
+      : await spec.toolFn({ mode: "local", docsDir }, args);
+    if (isCacheable(spec.toolName)) {
+      await writeCacheEntry(spec.toolName, args, remote, scope, result);
+    }
+  }
 
   const output = formatReadOutput(result, wantJson);
   process.stdout.write(output + (output.endsWith("\n") ? "" : "\n"));

@@ -17,6 +17,20 @@ import { createHash } from "node:crypto";
 const exec = promisify(execFile);
 const BIN = path.resolve(process.cwd(), "bin/emdee.js");
 
+// SPRINT-127: CLI now exits 1 on tool errors + writes human message to
+// stderr. Some tests intentionally trigger errors; wrap exec so we can
+// assert on the failure without try/catch boilerplate.
+interface CapturedResult { stdout: string; stderr: string; exitCode: number; }
+async function execCapture(cmd: string, args: string[], opts: Parameters<typeof exec>[2]): Promise<CapturedResult> {
+  try {
+    const r = await exec(cmd, args, opts);
+    return { stdout: String(r.stdout ?? ""), stderr: String(r.stderr ?? ""), exitCode: 0 };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; code?: number };
+    return { stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? ""), exitCode: e.code ?? 1 };
+  }
+}
+
 function hashBody(body: string): string {
   return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16);
 }
@@ -52,7 +66,8 @@ test.describe("emdee write commands, local mode (SPRINT-091)", () => {
   test("patch-section returns version_conflict on stale hash", async () => {
     const original = `# ALPHA\n\n> Root doc.\n\n## Notes\n\nOld body.\n`;
     await writeFile(path.join(dir, "docs", "ALPHA.md"), original, "utf8");
-    const result = await exec("node", [
+    // SPRINT-127: errors now on stderr with exit 1.
+    const result = await execCapture("node", [
       BIN, "patch-section",
       "--path", "ALPHA.md",
       "--heading", "Notes",
@@ -60,7 +75,8 @@ test.describe("emdee write commands, local mode (SPRINT-091)", () => {
       "--expected-hash", "0000000000000000",
       "-d", "docs",
     ], { cwd: dir });
-    expect(result.stdout).toMatch(/"error":\s*"version_conflict"/);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("version_conflict");
   });
 
   test("append-doc adds content to the end of the file", async () => {
@@ -124,15 +140,15 @@ test.describe("emdee write commands, local mode (SPRINT-091)", () => {
     const leaf = `# LEAF\n\n> Leaf.\n\n## Child of\n\n* [[HUB]]\n`;
     await writeFile(path.join(dir, "docs", "HUB.md"), parent, "utf8");
     await writeFile(path.join(dir, "docs", "LEAF.md"), leaf, "utf8");
-    const result = await exec("node", [
+    // SPRINT-127: errors now on stderr with exit 1.
+    const result = await execCapture("node", [
       BIN, "add-association",
       "--a-path", "HUB.md",
       "--b-path", "LEAF.md",
       "-d", "docs",
     ], { cwd: dir });
-    // Should either return would_duplicate_hierarchy or ok with a warning;
-    // per SPRINT-054 the tool hard-refuses.
-    expect(result.stdout).toMatch(/would_duplicate_hierarchy|hierarchical/);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/would_duplicate_hierarchy|hierarchically linked/);
   });
 
   test("--json output is machine-parseable", async () => {

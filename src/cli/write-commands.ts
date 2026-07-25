@@ -36,6 +36,7 @@ import { findSimilar } from "../lib/mcp/tools/find_similar";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
+import { readCache, writeCacheEntry, purgeCache, isCacheable } from "./cache";
 
 const docsDir = path.resolve(process.env.EMDEE_DOCS ?? path.join(process.cwd(), "docs"));
 
@@ -52,6 +53,7 @@ interface VerbSpec {
 const COMMON = {
   remote: { type: "boolean" },
   json: { type: "boolean" },
+  "no-cache": { type: "boolean" },
 } as const;
 
 function asString(v: unknown): string {
@@ -453,6 +455,43 @@ function formatOutput(result: unknown, wantJson: boolean): string {
   return JSON.stringify(payload, null, 2);
 }
 
+// SPRINT-127: parse a tool response and detect the common error shape
+// (`{ error: "code", ...extra }` in payload). Returns null when there's
+// no error to surface. Human-message lookup lives in ERROR_HINTS.
+interface ToolErrorInfo { code: string; message: string; }
+
+const ERROR_HINTS: Record<string, (e: Record<string, unknown>) => string> = {
+  version_conflict: () => "Section content changed since you last read it. Re-fetch with `emdee read-doc-section` and retry with the fresh hash.",
+  hash_mismatch: () => "Section content changed since you last read it. Re-fetch with `emdee read-doc-section` and retry with the fresh hash.",
+  section_id_heading_mismatch: () => "The section_id and heading you passed resolve to different sections. Use one or the other.",
+  cloud_mode_required: () => "This tool needs cloud mode. Pass --remote (or set default_mode:remote in ~/.emdee/config.json).",
+  path_required: () => "Missing required --path argument.",
+  paths_required: () => "Missing required --path arguments. Pass --path repeatedly or --stdin for a piped list.",
+  ambiguous_parent: () => "The doc has multiple parents. Pass --old-parent-path to disambiguate.",
+  unresolved_parent: (e) => `The doc's Child of bullet points to \`[[${e.declared_parent_title ?? "?"}]]\` which doesn't exist. Fix the wiki-link first, or pass --original-parent-path.`,
+  no_resolvable_parent: () => "The doc has no `## Child of` bullet. Give it a parent (or pass --original-parent-path) before trashing.",
+  would_duplicate_hierarchy: () => "add_association refused: pair is already hierarchically linked or shares a parent.",
+  lint_gate_failed: () => "Lint gate blocked the write. See warnings in the JSON output for what to fix.",
+  titles_identical: () => "rename_title refused: old_title equals new_title. No-op.",
+  missing_required: () => "Missing required argument. Check the verb's --help for the required flags.",
+  doc_not_found: (e) => `No such doc: ${e.path ?? "?"}`,
+  source_doc_not_found: (e) => `Source doc not found: ${e.path ?? "?"}`,
+};
+
+function extractError(text: string): ToolErrorInfo | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return null; }
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  const code = typeof obj.error === "string" ? obj.error : null;
+  if (!code) return null;
+  const hint = ERROR_HINTS[code];
+  const message = hint
+    ? hint(obj)
+    : `Tool returned error \`${code}\`. Details: ${JSON.stringify(obj, null, 2)}`;
+  return { code, message };
+}
+
 async function runVerb(verbName: string, argv: string[]): Promise<void> {
   const spec = VERBS[verbName];
   if (!spec) {
@@ -465,15 +504,53 @@ async function runVerb(verbName: string, argv: string[]): Promise<void> {
   const wantJson = Boolean(values.json);
   const remote = Boolean(values.remote);
 
-  const result = remote
-    ? await callTool(spec.toolName, args).then((r) => r as unknown)
-    : await spec.toolFn({ mode: "local", docsDir }, args);
+  // SPRINT-128: response cache for read-only tools. On hit, skip the
+  // network/local call entirely. `--no-cache` bypasses. Write tools
+  // purge the whole cache on success (see below) so we never serve
+  // stale reads after mutations.
+  const noCache = Boolean(values["no-cache"]);
+  const scope = remote ? "cloud" : docsDir;
+  let result: unknown;
+  let cacheHit = false;
+  if (!noCache && isCacheable(spec.toolName)) {
+    const cached = await readCache(spec.toolName, args, remote, scope);
+    if (cached !== null) {
+      result = cached;
+      cacheHit = true;
+    }
+  }
+  if (!cacheHit) {
+    result = remote
+      ? await callTool(spec.toolName, args).then((r) => r as unknown)
+      : await spec.toolFn({ mode: "local", docsDir }, args);
+  }
+
+  // Extract response text for error detection + cache storage.
+  const responseText = remote
+    ? unwrapText(result as { content?: Array<{ type: string; text?: string }> })
+    : ((result as { content?: Array<{ type: string; text?: string }> }).content?.[0]?.text ?? "");
+  const errInfo = extractError(responseText);
+
+  // Cache successful read responses; purge cache on successful write.
+  if (!cacheHit && !errInfo) {
+    if (isCacheable(spec.toolName)) {
+      await writeCacheEntry(spec.toolName, args, remote, scope, result);
+    } else {
+      // Non-cacheable = mutation tool → invalidate all cached reads.
+      await purgeCache();
+    }
+  }
 
   const output = remote
-    ? formatOutput({ content: [{ type: "text", text: unwrapText(result as { content?: Array<{ type: string; text?: string }> }) }] }, wantJson)
+    ? formatOutput({ content: [{ type: "text", text: responseText }] }, wantJson)
     : formatOutput(result, wantJson);
 
+  if (errInfo && !wantJson) {
+    process.stderr.write(`error: ${errInfo.code}\n${errInfo.message}\n`);
+    process.exit(1);
+  }
   process.stdout.write(output + "\n");
+  if (errInfo && wantJson) process.exit(1);
 }
 
 const [, , verb, ...rest] = process.argv;
