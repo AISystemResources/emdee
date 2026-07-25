@@ -276,13 +276,32 @@ export async function syncDocEdges(
   // Cheapest correct path is to read content for every doc and re-run
   // the whole namespace's edge derivation, filtered down to rows that
   // touch docPath.
-  const { data: rows, error: readErr } = await admin
-    .from("vault_files")
-    .select("file_path, content")
-    .eq("namespace", namespace);
-  if (readErr) throw new Error(`syncDocEdges: vault_files read failed: ${readErr.message}`);
+  //
+  // SPRINT-119 fix: paginate + ORDER BY. Supabase enforces a 1000-row
+  // server-side cap that .select() alone can't lift. Vaults >1000 docs
+  // (Edmund crossed at ~1100) silently truncated the resolver's docs
+  // list — cross-doc wiki-links to any of the missing ~180 docs failed
+  // to resolve, so their hierarchy edges never got INSERTed. Symptom:
+  // an orphan node at sidebar root even though the markdown is
+  // correct. Same pattern SPRINT-117 fixed in backfillNamespace.
+  const PAGE = 1000;
+  const rows: Array<{ file_path: string; content: string }> = [];
+  let pageStart = 0;
+  while (true) {
+    const { data, error: readErr } = await admin
+      .from("vault_files")
+      .select("file_path, content")
+      .eq("namespace", namespace)
+      .order("file_path", { ascending: true })
+      .range(pageStart, pageStart + PAGE - 1);
+    if (readErr) throw new Error(`syncDocEdges: vault_files read failed: ${readErr.message}`);
+    if (!data || data.length === 0) break;
+    rows.push(...(data as Array<{ file_path: string; content: string }>));
+    if (data.length < PAGE) break;
+    pageStart += PAGE;
+  }
 
-  const docs: DocMeta[] = (rows ?? []).map((r) => {
+  const docs: DocMeta[] = rows.map((r) => {
     const content = (r.content as string) ?? "";
     return {
       path: r.file_path as string,
