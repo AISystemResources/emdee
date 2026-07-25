@@ -22,11 +22,13 @@
     "check:migrations": "node scripts/check-migration-drift.mjs",
     "ci-package": "node scripts/verify-package.mjs",
     "build:cli": "node scripts/build-cli.mjs",
-    "prepublishOnly": "node scripts/build-cli.mjs"
+    "prepublishOnly": "node scripts/build-cli.mjs",
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "files": [
     "bin/",
     "dist/",
+    "scripts/postinstall.mjs",
     "src/cli/",
     "src/core/",
     "src/lib/cache/",
