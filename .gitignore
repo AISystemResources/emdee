@@ -58,3 +58,6 @@ supabase/.temp/
 # (e.g. app/api/rest/docs/).
 /docs/
 !/docs/.gitkeep
+
+# SPRINT-129: pre-compiled CLI bundles (rebuilt on npm publish)
+dist/

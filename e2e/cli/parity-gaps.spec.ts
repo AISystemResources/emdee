@@ -39,13 +39,22 @@ test.describe("emdee parity gap closers", () => {
 
   test("materialize-subgroup requires source-path and subgroup-heading", async () => {
     // Just prove the arg-validation surface works — no valid source in this dir.
-    const { stdout } = await exec("node", [
-      BIN, "materialize-subgroup",
-      "--source-path", "MISSING.md",
-      "--subgroup-heading", "Some Group",
-      "-d", "docs", "--json",
-    ], { cwd: dir });
-    // Expect an error envelope; the tool should refuse a missing source.
+    // SPRINT-127: --json is passed so payload still lands on stdout; exit 1.
+    let stdout = "", exitCode = 0;
+    try {
+      const r = await exec("node", [
+        BIN, "materialize-subgroup",
+        "--source-path", "MISSING.md",
+        "--subgroup-heading", "Some Group",
+        "-d", "docs", "--json",
+      ], { cwd: dir });
+      stdout = r.stdout;
+    } catch (err: unknown) {
+      const e = err as { stdout?: string; code?: number };
+      stdout = e.stdout ?? "";
+      exitCode = e.code ?? 1;
+    }
+    expect(exitCode).toBe(1);
     expect(stdout).toMatch(/error|not.*found|source/i);
   });
 

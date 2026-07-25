@@ -461,6 +461,7 @@ function formatOutput(result: unknown, wantJson: boolean): string {
 interface ToolErrorInfo { code: string; message: string; }
 
 const ERROR_HINTS: Record<string, (e: Record<string, unknown>) => string> = {
+  version_conflict: () => "Section content changed since you last read it. Re-fetch with `emdee read-doc-section` and retry with the fresh hash.",
   hash_mismatch: () => "Section content changed since you last read it. Re-fetch with `emdee read-doc-section` and retry with the fresh hash.",
   section_id_heading_mismatch: () => "The section_id and heading you passed resolve to different sections. Use one or the other.",
   cloud_mode_required: () => "This tool needs cloud mode. Pass --remote (or set default_mode:remote in ~/.emdee/config.json).",
