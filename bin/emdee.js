@@ -852,6 +852,23 @@ program
     shellWrite("batch-get-doc", opts, extra);
   });
 
+program
+  .command("find-similar")
+  .description("Find docs with vocabulary overlap to a source doc (Postgres FTS). Zero-cost, zero-dep semantic-adjacent search. Cloud-only.")
+  .requiredOption("--path <path>", "Source doc path")
+  .option("--limit <n>", "Max results (default 10, max 50)")
+  .option("-d, --docs <dir>", "docs directory (local mode — find-similar is cloud-only, this errors)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      path: "--path",
+      limit: "--limit",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("find-similar", opts, extra);
+  });
 
 program
   .command("lint-orphans")

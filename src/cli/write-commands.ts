@@ -32,6 +32,7 @@ import { splitDoc } from "../lib/mcp/tools/split_doc";
 import { reconcile } from "../lib/mcp/tools/reconcile";
 import { lintOrphans } from "../lib/mcp/tools/lint_orphans";
 import { batchGetSummary, batchGetDoc } from "../lib/mcp/tools/batch_get";
+import { findSimilar } from "../lib/mcp/tools/find_similar";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -415,6 +416,21 @@ const VERBS: Record<string, VerbSpec> = {
     buildArgs: (v) => {
       const paths = Array.isArray(v.path) ? v.path : (v.path ? [v.path] : []);
       return { paths };
+    },
+  },
+  "find-similar": {
+    toolName: "find_similar",
+    toolFn: findSimilar as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string" },
+      limit: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = { path: asString(v.path) };
+      const lim = optionalString(v.limit);
+      if (lim) args.limit = Number(lim);
+      return args;
     },
   },
 };
