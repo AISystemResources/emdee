@@ -102,6 +102,30 @@ Every destructive write (`patch-section`, `patch-preamble`, `move-doc`) requires
 3. **Any change to a tool's behaviour (CLI verb or MCP surface) requires an e2e spec in the same PR.** Test end-to-end via a real `ToolContext` + temp filesystem.
 4. **Migrations touch `supabase/migrations/**` and are NEVER auto-merged.** Human review required.
 
+## Skill-first, CLI-second for new user-facing workflows
+
+When you're tempted to add a new CLI verb because "the user wants to do X" — pause and ask if X is a **workflow** or a **primitive**.
+
+- **Primitive** = fine-grained operation whose shape doesn't vary across users or projects. `get_doc`, `patch_section`, `create_child`, `add_association`. These deserve CLI verbs + MCP tools.
+- **Workflow** = orchestration of primitives to accomplish a user intent that may vary per user, project, or season. `capture-signal-into-marketing-lane`, `voice-dna-interview`, `weekly-draft-generator`, `import-book-highlights`. These belong in **skills**, not CLI verbs.
+
+**Why skills for workflows:**
+
+1. Skills are declarative markdown — iterate without a code PR, version bump, or npm publish.
+2. Skills adapt to vault variability. A CLI verb hardcodes conventions (`--lane marketing --project X`); a skill can infer or ask.
+3. Skills compose existing primitives — no new MCP endpoint needed.
+4. Skills carry design intent visibly. CLI code hides it behind flags.
+
+**Only carve out a CLI verb LATER if:**
+
+- The workflow needs to run in shell pipelines (`emdee list | emdee workflow --stdin`)
+- The workflow needs to run without a Claude session (cron, git hook)
+- The workflow is used dozens of times per day and the natural-language invocation becomes measurable friction
+
+Even then, the CLI verb should be a thin wrapper around the same primitives the skill uses. Don't fork the workflow.
+
+**Full rationale:** `edmund/projects/emdee_os/production/learnings/SKILL-FIRST-CLI-SECOND.md` in the vault.
+
 ## When in doubt
 
 - `emdee lint-doc --path X --remote` — surface every warning code the doc trips
