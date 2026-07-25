@@ -790,6 +790,39 @@ program
   });
 
 program
+  .command("batch-get-summary")
+  .description("Fetch {path, title, summary} for many docs in one call. Pass --path repeatedly (max 50).")
+  .option("--path <p...>", "Doc path (repeat for multiple)")
+  .option("-d, --docs <dir>", "docs directory")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = [];
+    const paths = Array.isArray(opts.path) ? opts.path : (opts.path ? [opts.path] : []);
+    for (const p of paths) extra.push("--path", p);
+    if (opts.remote) extra.push("--remote");
+    if (opts.json) extra.push("--json");
+    shellWrite("batch-get-summary", opts, extra);
+  });
+
+program
+  .command("batch-get-doc")
+  .description("Fetch envelope (no body) for many docs in one call. Pass --path repeatedly (max 50).")
+  .option("--path <p...>", "Doc path (repeat for multiple)")
+  .option("-d, --docs <dir>", "docs directory")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = [];
+    const paths = Array.isArray(opts.path) ? opts.path : (opts.path ? [opts.path] : []);
+    for (const p of paths) extra.push("--path", p);
+    if (opts.remote) extra.push("--remote");
+    if (opts.json) extra.push("--json");
+    shellWrite("batch-get-doc", opts, extra);
+  });
+
+
+program
   .command("lint-orphans")
   .description("Scan for orphan nodes (docs with no incoming hierarchy edge in doc_edges). Reports by kind: data_layer_drift (auto-fixable), markdown_drift (needs human), structural_orphan (may be intentional). Pass --fix to auto-repair data-layer cases via per-doc reconcile. Cloud-only.")
   .option("--fix", "Auto-fix data_layer_drift orphans by running per-doc reconcile")
