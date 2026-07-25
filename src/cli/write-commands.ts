@@ -30,6 +30,7 @@ import { distillDoc } from "../lib/mcp/tools/distill_doc";
 import { materializeSubgroup } from "../lib/mcp/tools/materialize_subgroup";
 import { splitDoc } from "../lib/mcp/tools/split_doc";
 import { reconcile } from "../lib/mcp/tools/reconcile";
+import { lintOrphans } from "../lib/mcp/tools/lint_orphans";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -375,6 +376,19 @@ const VERBS: Record<string, VerbSpec> = {
       const p = optionalString(v.path);
       if (p) args.path = p;
       if (v.all) args.all = true;
+      return args;
+    },
+  },
+  "lint-orphans": {
+    toolName: "lint_orphans",
+    toolFn: lintOrphans as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      fix: { type: "boolean" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {};
+      if (v.fix) args.fix = true;
       return args;
     },
   },
