@@ -16,6 +16,8 @@ const ALLOWED_PREFIXES = [
   "package.json",
   "README.md",
   "bin/",
+  "dist/",
+  "scripts/postinstall.mjs",
   "src/cli/",
   "src/core/",
   "src/lib/cache/",
