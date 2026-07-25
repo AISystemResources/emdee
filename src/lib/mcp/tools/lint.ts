@@ -10,6 +10,8 @@
 // title→doc map to check that every declared edge has a reciprocal
 // declaration in the target doc.
 
+import { SYSTEM_NODE_PATHS } from "../../system-nodes";
+
 const FENCE_RE = /^\s*(?:```|~~~)/;
 const H1_RE = /^#\s+(.+?)\s*$/;
 const H2_RE = /^##\s+(.+?)\s*$/;
@@ -473,6 +475,9 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
     for (const childTitle of declaredChildrenTitles) {
       const child = ctx.resolveTarget(childTitle);
       if (!child) continue; // dangling link — separate concern, not asymmetric
+      // SPRINT-137: same exemption as below — system nodes never have a
+      // Child of pointing back, so they'd always trigger a false positive.
+      if (SYSTEM_NODE_PATHS.has(child.path)) continue;
       const childDeclaresMe = child.declaredParents.some((p) => p === ctx.selfPath);
       if (!childDeclaresMe) {
         warnings.push({
@@ -489,6 +494,11 @@ export function lintDocContent(content: string, ctx?: LintVaultContext): LintRes
     for (const parentTitle of declaredParentTitles) {
       const parent = ctx.resolveTarget(parentTitle);
       if (!parent) continue;
+      // SPRINT-137: virtual system nodes (EMDEE, VAULT, SHARED, GRAVEYARD, IMAGES)
+      // have no persisted Parent of section — they're synthesized on read.
+      // Skip the reciprocity check when the resolved parent is a system node
+      // so we don't emit permanent false-positive asymmetric_child_edge warnings.
+      if (SYSTEM_NODE_PATHS.has(parent.path)) continue;
       const parentDeclaresMe = parent.declaredChildren.some((c) => c === ctx.selfPath);
       if (!parentDeclaresMe) {
         warnings.push({
