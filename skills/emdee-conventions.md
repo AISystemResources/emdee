@@ -102,6 +102,30 @@ Every destructive write (`patch-section`, `patch-preamble`, `move-doc`) requires
 3. **Any change to a tool's behaviour (CLI verb or MCP surface) requires an e2e spec in the same PR.** Test end-to-end via a real `ToolContext` + temp filesystem.
 4. **Migrations touch `supabase/migrations/**` and are NEVER auto-merged.** Human review required.
 
+## Nested-hub title convention (parent-chain prefix)
+
+Sidebar rendering strips the parent title as a prefix from each child, so titles can be verbose in storage but clean on screen. The rule for every doc at every nesting level:
+
+> **A child doc's title = parent's full title + ` — ` + child's own segment.**
+
+Examples:
+
+| Level | Title in storage | Sidebar display |
+|---|---|---|
+| L1 | `01-EMDEE_OS` | `01-EMDEE_OS` |
+| L2 | `EMDEE_OS — 03-PRODUCTION` | `03-PRODUCTION` (parent prefix stripped) |
+| L3 | `EMDEE_OS — 03-PRODUCTION — 01-SIGNALS` | `01-SIGNALS` (full ancestor chain stripped) |
+| L4 | `EMDEE_OS — 03-PRODUCTION — 01-SIGNALS — SIG-042-FOO` | `SIG-042-FOO` |
+
+Renderer walks parent's title segments longest-first and strips the longest matching prefix. Works at arbitrary depth (`app/components/DocTree.tsx` → `displayTitle`).
+
+**Why this convention matters:**
+- Same short name in different lanes (e.g., `01-SIGNALS` under PRODUCTION vs MARKETING) needs unique full titles to avoid `title_conflict` on rename.
+- Numbered prefix (`01-`, `02-`, `99-`) forces canonical sidebar ordering.
+- Full ancestor chain in storage makes wiki-link resolution unambiguous across the vault.
+
+**When creating new nested hubs:** always write the title as `<parent's exact title> — <NN-NAME>`. Don't drop the prefix. Renderer handles the rest.
+
 ## Skill-first, CLI-second for new user-facing workflows
 
 When you're tempted to add a new CLI verb because "the user wants to do X" — pause and ask if X is a **workflow** or a **primitive**.
