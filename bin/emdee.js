@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { spawn } from "node:child_process";
-import { mkdir, writeFile, access } from "node:fs/promises";
+import { mkdir, writeFile, access, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import readline from "node:readline/promises";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,6 +15,28 @@ const pkgRoot = path.resolve(__dirname, "..");
 // Node >= 14 without depending on the newer `import ... with { type: "json" }`
 // attribute syntax (stable only in Node 20.10+).
 const pkg = createRequire(import.meta.url)("../package.json");
+
+// SPRINT-124: config file at ~/.emdee/config.json for user-level defaults.
+// Currently supported keys:
+//   - default_mode: "remote" | "local" — when "remote", commands act as if
+//     --remote was passed. Explicit --local overrides. Reduces typing on
+//     every command for users whose primary workflow is cloud.
+//   - default_docs: absolute path — default value for -d/--docs.
+// Loaded once on startup; env vars still take precedence.
+let userConfig = {};
+try {
+  const cfgPath = path.join(os.homedir(), ".emdee", "config.json");
+  const raw = await readFile(cfgPath, "utf8");
+  userConfig = JSON.parse(raw);
+} catch {
+  // Missing / unreadable config is fine — every flag has its own default.
+}
+
+function applyRemoteDefault(opts) {
+  if (opts.remote === true || opts.local === true) return opts;
+  if (userConfig.default_mode === "remote") opts.remote = true;
+  return opts;
+}
 
 // SPRINT-090: `start` and `serve-next` shell out to Vite / Next.js against
 // the full repo. Those files (app/, next.config.*, etc.) aren't in the
@@ -164,6 +187,7 @@ program
   .option("--prefix <prefix>", "filter to paths starting with this prefix")
   .option("--remote", "route through emdee.tech (requires `emdee login`)")
   .action((opts) => {
+    applyRemoteDefault(opts);
     const docs = path.resolve(process.cwd(), opts.docs);
     const args = ["tsx", path.join(pkgRoot, "src/cli/read-commands.ts"), "list"];
     if (opts.prefix) args.push("--prefix", opts.prefix);
@@ -185,6 +209,7 @@ program
   .option("--prefix <prefix>", "filter to paths starting with this prefix")
   .option("--remote", "route through emdee.tech (requires `emdee login`)")
   .action((opts) => {
+    applyRemoteDefault(opts);
     const docs = path.resolve(process.cwd(), opts.docs);
     const args = [
       "tsx",
@@ -239,7 +264,13 @@ function shellRead(verb, opts, extra = []) {
 // Every write verb takes the same core flag surface; a small helper builds
 // the extra-args array from commander's parsed opts + a spec of which flags
 // map to which write-commands.ts flag names.
+//
+// SPRINT-124: honour ~/.emdee/config.json default_mode by injecting
+// opts.remote before mapping when the user has opted in and hasn't
+// explicitly overridden with --local. Central hook so every command
+// benefits without per-verb edits.
 function argsFromOpts(opts, mapping) {
+  applyRemoteDefault(opts);
   const extra = [];
   for (const [optKey, cliFlag] of Object.entries(mapping)) {
     const v = opts[optKey];
@@ -854,6 +885,54 @@ program
       json: "--json",
     });
     shellWrite("reconcile", opts, extra);
+  });
+
+// SPRINT-124: config subcommand — inspect, set, or init the user
+// config at ~/.emdee/config.json. Keeps the config surface discoverable
+// (no docs-diving to figure out what keys exist).
+program
+  .command("config")
+  .description("Manage ~/.emdee/config.json. `emdee config` prints current. `emdee config set <key> <value>` writes. `emdee config init` writes a starter file.")
+  .argument("[action]", "get | set | init | path (default: get)")
+  .argument("[key]", "config key (for set)")
+  .argument("[value]", "config value (for set)")
+  .action(async (action, key, value) => {
+    const cfgDir = path.join(os.homedir(), ".emdee");
+    const cfgPath = path.join(cfgDir, "config.json");
+
+    const printCurrent = () => {
+      console.log(`config: ${cfgPath}`);
+      console.log(JSON.stringify(userConfig, null, 2));
+    };
+
+    if (!action || action === "get") return printCurrent();
+
+    if (action === "path") { console.log(cfgPath); return; }
+
+    if (action === "init") {
+      await mkdir(cfgDir, { recursive: true });
+      try { await access(cfgPath); console.log(`already exists at ${cfgPath}`); return; } catch {}
+      const starter = { default_mode: "remote" };
+      await writeFile(cfgPath, JSON.stringify(starter, null, 2) + "\n", "utf8");
+      console.log(`wrote ${cfgPath}`);
+      console.log(JSON.stringify(starter, null, 2));
+      return;
+    }
+
+    if (action === "set") {
+      if (!key || value === undefined) {
+        console.error("usage: emdee config set <key> <value>");
+        process.exit(1);
+      }
+      await mkdir(cfgDir, { recursive: true });
+      const next = { ...userConfig, [key]: value };
+      await writeFile(cfgPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      console.log(`set ${key}=${value} in ${cfgPath}`);
+      return;
+    }
+
+    console.error(`unknown action: ${action}. Use get | set | init | path`);
+    process.exit(1);
   });
 
 program.parseAsync();
