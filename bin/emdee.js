@@ -790,6 +790,22 @@ program
   });
 
 program
+  .command("lint-orphans")
+  .description("Scan for orphan nodes (docs with no incoming hierarchy edge in doc_edges). Reports by kind: data_layer_drift (auto-fixable), markdown_drift (needs human), structural_orphan (may be intentional). Pass --fix to auto-repair data-layer cases via per-doc reconcile. Cloud-only.")
+  .option("--fix", "Auto-fix data_layer_drift orphans by running per-doc reconcile")
+  .option("-d, --docs <dir>", "docs directory (local mode — lint-orphans is cloud-only, this errors)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      fix: "--fix",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("lint-orphans", opts, extra);
+  });
+
+program
   .command("reconcile")
   .description("Repair doc_edges drift. Per-doc with --path, or full namespace with --all. Rebuilds edges from markdown truth. Cloud only.")
   .option("--path <path>", "Doc path to reconcile (either --path OR --all required)")

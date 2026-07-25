@@ -21,6 +21,7 @@ export { lintDoc } from "./lint_doc";
 export { lintVault } from "./lint_vault";
 export { lintVaultAutofix } from "./lint_vault_autofix";
 export { reconcile } from "./reconcile";
+export { lintOrphans } from "./lint_orphans";
 export { distillDoc } from "./distill_doc";
 export { createChild } from "./create_child";
 export { addAssociation } from "./add_association";
