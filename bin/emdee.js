@@ -199,6 +199,7 @@ program
 
 program
   .command("list")
+  .alias("ls")
   .description("Print one doc path per line. Local by default; --remote reads your live vault via emdee.tech.")
   .option("-d, --docs <dir>", "docs directory (local mode)", "docs")
   .option("--prefix <prefix>", "filter to paths starting with this prefix")
@@ -348,6 +349,7 @@ program
 
 program
   .command("patch-section")
+  .alias("p")
   .description("Replace an H2 section's body — version-guarded. Same shape as the patch_section MCP tool.")
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--body <text>", "New section body")
@@ -425,6 +427,7 @@ program
 
 program
   .command("create-child")
+  .alias("cc")
   .description("Atomic write + parent-of patch: create a new doc as child of an existing one.")
   .requiredOption("--parent-path <path>", "Parent doc path")
   .requiredOption("--title <title>", "New doc's H1 title")
@@ -521,6 +524,7 @@ program
 
 program
   .command("write-doc")
+  .alias("w")
   .description("Create or overwrite an entire doc. DESTRUCTIVE — always run write-doc-preview first.")
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--content <text>", "Full markdown content")
@@ -599,6 +603,7 @@ program
 
 program
   .command("get-doc")
+  .alias("g")
   .description("Fetch a doc's envelope (title + summary + preamble + section headings). Pass --full for the body.")
   .requiredOption("--path <path>", "Vault doc path")
   .option("--full", "Include the full markdown body")
@@ -617,6 +622,7 @@ program
 
 program
   .command("get-summary")
+  .alias("gs")
   .description("Return {path, title, summary} for one doc — cheapest way to preview.")
   .requiredOption("--path <path>", "Vault doc path")
   .option("--format <fmt>", "text | json")
@@ -632,6 +638,7 @@ program
 
 program
   .command("get-neighbors")
+  .alias("gn")
   .description("Return the doc + 1-hop neighbours categorised by relationship type.")
   .requiredOption("--path <path>", "Vault doc path")
   .option("-d, --docs <dir>", "docs directory (local mode)")
@@ -665,6 +672,7 @@ program
 
 program
   .command("search")
+  .alias("s")
   .description("Case-insensitive substring match over titles, summaries, content.")
   .requiredOption("--query <text>", "Search query")
   .option("--limit <n>", "Max results (default 10)")
