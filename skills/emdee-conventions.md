@@ -102,6 +102,28 @@ Every destructive write (`patch-section`, `patch-preamble`, `move-doc`) requires
 3. **Any change to a tool's behaviour (CLI verb or MCP surface) requires an e2e spec in the same PR.** Test end-to-end via a real `ToolContext` + temp filesystem.
 4. **Migrations touch `supabase/migrations/**` and are NEVER auto-merged.** Human review required.
 
+## Every hierarchy edit touches BOTH sides
+
+A hierarchy edge (parent → child) lives in TWO markdown places:
+
+1. Parent's `## Parent of` (bullet like `* [[CHILD-TITLE]]`)
+2. Child's `## Child of` (bullet like `* [[PARENT-TITLE]]`)
+
+The rendered graph derives from BOTH. Patching only ONE side leaves an asymmetric edge — the doc still renders (Pass 1b straggler at position 9999) but in the wrong place, and lint warnings fire (`asymmetric_parent_edge` / `asymmetric_child_edge`).
+
+**Right way — use atomic tools:**
+- `move_doc` — three-side atomic (child's Child of + old parent's Parent of + new parent's Parent of)
+- `create_child` — two-side atomic (new doc's Child of + parent's Parent of)
+- `add_association` — two-side atomic (both docs' Associated with)
+
+**Wrong way — never do without patching the other side in the same turn:**
+- `patch_section` on `## Child of` without patching the parent's `## Parent of`
+- `patch_section` on `## Parent of` without patching each child's `## Child of`
+
+If you MUST use `patch_section` on a relationship section, patch both sides in the same turn. No exceptions.
+
+Full rationale: `edmund/projects/emdee_os/production/learnings/EDGES-ARE-TWO-SIDED.md`.
+
 ## Nested-hub title convention (parent-chain prefix)
 
 Sidebar rendering strips the parent title as a prefix from each child, so titles can be verbose in storage but clean on screen. The rule for every doc at every nesting level:
