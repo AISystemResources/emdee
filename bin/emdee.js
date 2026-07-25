@@ -989,4 +989,57 @@ program
     process.exit(1);
   });
 
+// SPRINT-128: cache management. Inspect stats, purge, or configure TTL.
+program
+  .command("cache")
+  .description("Manage the read-response cache at ~/.emdee/cache/. Actions: stats (default), clear, ttl <seconds>.")
+  .argument("[action]", "stats | clear | ttl (default: stats)")
+  .argument("[value]", "For `ttl` action: seconds")
+  .action(async (action, value) => {
+    const cacheDir = path.join(os.homedir(), ".emdee", "cache");
+    const cfgPath = path.join(os.homedir(), ".emdee", "config.json");
+
+    if (!action || action === "stats") {
+      try {
+        const files = await import("node:fs/promises").then((m) => m.readdir(cacheDir));
+        const jsonFiles = files.filter((f) => f.endsWith(".json"));
+        console.log(`cache: ${cacheDir}`);
+        console.log(`entries: ${jsonFiles.length}`);
+        console.log(`ttl_seconds: ${userConfig.cache_ttl_seconds ?? 300}`);
+      } catch {
+        console.log(`cache: ${cacheDir} (not yet populated)`);
+        console.log(`entries: 0`);
+        console.log(`ttl_seconds: ${userConfig.cache_ttl_seconds ?? 300}`);
+      }
+      return;
+    }
+
+    if (action === "clear") {
+      try {
+        await import("node:fs/promises").then((m) => m.rm(cacheDir, { recursive: true, force: true }));
+        console.log(`cleared ${cacheDir}`);
+      } catch (e) {
+        console.error(`clear failed: ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (action === "ttl") {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error("usage: emdee cache ttl <positive-seconds>");
+        process.exit(1);
+      }
+      await mkdir(path.dirname(cfgPath), { recursive: true });
+      const next = { ...userConfig, cache_ttl_seconds: n };
+      await writeFile(cfgPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+      console.log(`set cache_ttl_seconds=${n} in ${cfgPath}`);
+      return;
+    }
+
+    console.error(`unknown action: ${action}. Use stats | clear | ttl`);
+    process.exit(1);
+  });
+
 program.parseAsync();
