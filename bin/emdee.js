@@ -38,6 +38,23 @@ function applyRemoteDefault(opts) {
   return opts;
 }
 
+// SPRINT-125: read newline-delimited paths from stdin. Enables shell
+// composition — `emdee list | emdee batch-get-summary --stdin`. Empty
+// lines are skipped; the whole input is capped at 50 paths (matching
+// the batch tool's MAX_BATCH).
+async function readStdinPaths() {
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => { buf += chunk; });
+    process.stdin.on("end", () => {
+      const paths = buf.split("\n").map((s) => s.trim()).filter((s) => s.length > 0).slice(0, 50);
+      resolve(paths);
+    });
+    process.stdin.on("error", reject);
+  });
+}
+
 // SPRINT-090: `start` and `serve-next` shell out to Vite / Next.js against
 // the full repo. Those files (app/, next.config.*, etc.) aren't in the
 // published tarball, so when the CLI is installed via `npm install -g`
@@ -822,14 +839,20 @@ program
 
 program
   .command("batch-get-summary")
-  .description("Fetch {path, title, summary} for many docs in one call. Pass --path repeatedly (max 50).")
+  .description("Fetch {path, title, summary} for many docs in one call. Pass --path repeatedly OR --stdin for newline-delimited paths (max 50 combined).")
   .option("--path <p...>", "Doc path (repeat for multiple)")
+  .option("--stdin", "Read newline-delimited paths from stdin (composable with pipes)")
   .option("-d, --docs <dir>", "docs directory")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
-  .action((opts) => {
+  .action(async (opts) => {
+    applyRemoteDefault(opts);
     const extra = [];
     const paths = Array.isArray(opts.path) ? opts.path : (opts.path ? [opts.path] : []);
+    if (opts.stdin) {
+      const stdinPaths = await readStdinPaths();
+      paths.push(...stdinPaths);
+    }
     for (const p of paths) extra.push("--path", p);
     if (opts.remote) extra.push("--remote");
     if (opts.json) extra.push("--json");
@@ -838,14 +861,20 @@ program
 
 program
   .command("batch-get-doc")
-  .description("Fetch envelope (no body) for many docs in one call. Pass --path repeatedly (max 50).")
+  .description("Fetch envelope (no body) for many docs in one call. Pass --path repeatedly OR --stdin for newline-delimited paths (max 50 combined).")
   .option("--path <p...>", "Doc path (repeat for multiple)")
+  .option("--stdin", "Read newline-delimited paths from stdin (composable with pipes)")
   .option("-d, --docs <dir>", "docs directory")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
-  .action((opts) => {
+  .action(async (opts) => {
+    applyRemoteDefault(opts);
     const extra = [];
     const paths = Array.isArray(opts.path) ? opts.path : (opts.path ? [opts.path] : []);
+    if (opts.stdin) {
+      const stdinPaths = await readStdinPaths();
+      paths.push(...stdinPaths);
+    }
     for (const p of paths) extra.push("--path", p);
     if (opts.remote) extra.push("--remote");
     if (opts.json) extra.push("--json");
