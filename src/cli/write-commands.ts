@@ -31,6 +31,7 @@ import { materializeSubgroup } from "../lib/mcp/tools/materialize_subgroup";
 import { splitDoc } from "../lib/mcp/tools/split_doc";
 import { reconcile } from "../lib/mcp/tools/reconcile";
 import { lintOrphans } from "../lib/mcp/tools/lint_orphans";
+import { batchGetSummary, batchGetDoc } from "../lib/mcp/tools/batch_get";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -390,6 +391,30 @@ const VERBS: Record<string, VerbSpec> = {
       const args: Record<string, unknown> = {};
       if (v.fix) args.fix = true;
       return args;
+    },
+  },
+  "batch-get-summary": {
+    toolName: "batch_get_summary",
+    toolFn: batchGetSummary as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const paths = Array.isArray(v.path) ? v.path : (v.path ? [v.path] : []);
+      return { paths };
+    },
+  },
+  "batch-get-doc": {
+    toolName: "batch_get_doc",
+    toolFn: batchGetDoc as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      path: { type: "string", multiple: true },
+    },
+    buildArgs: (v) => {
+      const paths = Array.isArray(v.path) ? v.path : (v.path ? [v.path] : []);
+      return { paths };
     },
   },
 };
