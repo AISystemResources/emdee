@@ -109,5 +109,34 @@ export async function patchSection(ctx: ToolContext, args: Record<string, unknow
     section_id: newId,
   };
   if (lint.warnings.length > 0) payload.warnings = lint.warnings;
+
+  // SPRINT-136: soft-guard on relationship sections. patch_section on
+  // Child of / Parent of / Associated with is a common source of
+  // asymmetric edges (patcher forgets the other side). Nudge toward
+  // atomic tools without blocking the write.
+  const relationshipHint = relationshipSectionHint(target.heading);
+  if (relationshipHint) {
+    const existing = Array.isArray(payload.warnings) ? payload.warnings : [];
+    payload.warnings = [
+      ...existing,
+      { code: "relationship_section_patched", message: relationshipHint },
+    ];
+  }
+
   return json(payload);
+}
+
+// SPRINT-136: return a suggestion string when patch_section targeted a
+// relationship section, or null otherwise. Kept intentionally short so
+// callers (both MCP-side response consumers and CLI human readers) can
+// scan quickly.
+function relationshipSectionHint(headingRaw: string): string | null {
+  const h = headingRaw.trim().toLowerCase();
+  if (h === "child of" || h === "parent of") {
+    return "You patched a hierarchy section. Both sides (child's Child of AND parent's Parent of) must stay in sync. Consider `move_doc` or `create_child` for atomic multi-side updates. If you must use patch_section, patch the other side in the same turn.";
+  }
+  if (h === "associated with") {
+    return "You patched an association section. Both docs' Associated with must stay in sync. Consider `add_association` for atomic two-side updates. If you must use patch_section, patch the other doc in the same turn.";
+  }
+  return null;
 }
