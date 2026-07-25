@@ -85,6 +85,8 @@ interface DesiredEdges {
   hierMap: Map<string, EdgeRow>;
   /** Assoc rows keyed by `from::to` (already expanded to two rows per pair). */
   assocMap: Map<string, EdgeRow>;
+  /** Dual-parent claims resolved by locality — surfaced so callers can flag vault defects. */
+  duplicateParents: Array<{ child: string; kept: string; dropped: string[] }>;
 }
 
 /**
@@ -137,6 +139,31 @@ function computeAllEdges(
     }
   }
 
+  // Enforce the doc_edges_one_parent UNIQUE(namespace, to_path) constraint:
+  // when two parents both claim the same child, pick the closer parent by
+  // directory locality. Prior to SPRINT-117 this only lived in the archived
+  // backfill script, so MCP-side backfill + single-doc sync (when the
+  // affected doc was the shared child) both blew up on dup-key. Universal
+  // here so every entry-point derives constraint-safe rows.
+  const byChild = new Map<string, EdgeRow[]>();
+  for (const r of hierMap.values()) {
+    const arr = byChild.get(r.to_path) ?? [];
+    arr.push(r);
+    byChild.set(r.to_path, arr);
+  }
+  const duplicateParents: Array<{ child: string; kept: string; dropped: string[] }> = [];
+  for (const [toPath, candidates] of byChild) {
+    if (candidates.length <= 1) continue;
+    const winner = pickByLocality(candidates.map((r) => ({ path: r.from_path })), toPath);
+    const dropped: string[] = [];
+    for (const r of candidates) {
+      if (r.from_path === winner.path) continue;
+      hierMap.delete(`${r.from_path}::${toPath}`);
+      dropped.push(r.from_path);
+    }
+    duplicateParents.push({ child: toPath, kept: winner.path, dropped });
+  }
+
   // Build pair-set + parents-of for assoc suppression.
   const hierPairs = new Set<string>();
   const parentsOf = new Map<string, Set<string>>();
@@ -182,7 +209,7 @@ function computeAllEdges(
     assocMap.set(`${b}::${a}`, { namespace, from_path: b, to_path: a, kind: "assoc", label, position });
   }
 
-  return { hierMap, assocMap };
+  return { hierMap, assocMap, duplicateParents };
 }
 
 /**
@@ -212,6 +239,9 @@ function computeDesired(
   return {
     hierMap: filterTouching(all.hierMap),
     assocMap: filterTouching(all.assocMap),
+    duplicateParents: all.duplicateParents.filter(
+      (d) => d.child === affectedPath || d.kept === affectedPath || d.dropped.includes(affectedPath),
+    ),
   };
 }
 
@@ -355,15 +385,25 @@ export async function syncDocEdges(
 export async function backfillNamespace(
   admin: SupabaseClient,
   namespace: string,
-): Promise<{ docs: number; rows: number }> {
+): Promise<{
+  docs: number;
+  rows: number;
+  duplicate_parents: Array<{ child: string; kept: string; dropped: string[] }>;
+}> {
   const PAGE = 1000;
   const docs: DocMeta[] = [];
   let pageStart = 0;
   while (true) {
+    // SPRINT-117 fix: explicit ORDER BY on paginated read. Without a stable
+    // sort, PostgREST is free to return rows in any order per page, so on
+    // vaults near the 1000-row page boundary the same doc may appear twice
+    // (page 1 tail + page 2 head) OR slip between pages entirely, leaving
+    // its edges out of the rebuild. Non-deterministic between runs.
     const { data, error } = await admin
       .from("vault_files")
       .select("file_path, content")
       .eq("namespace", namespace)
+      .order("file_path", { ascending: true })
       .range(pageStart, pageStart + PAGE - 1);
     if (error) throw new Error(`backfillNamespace: vault_files read failed: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -398,7 +438,7 @@ export async function backfillNamespace(
     if (insErr) throw new Error(`backfillNamespace: insert failed: ${insErr.message}`);
   }
 
-  return { docs: docs.length, rows: edgeRows.length };
+  return { docs: docs.length, rows: edgeRows.length, duplicate_parents: all.duplicateParents };
 }
 
 /**
