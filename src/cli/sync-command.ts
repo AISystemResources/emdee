@@ -89,10 +89,29 @@ async function enumerateCloud(): Promise<Map<string, { content_hash: string }>> 
     const chunk = paths.slice(i, i + BATCH);
     const raw = await callTool("batch_get_doc", { paths: chunk });
     const text = unwrapText(raw);
-    const parsed = JSON.parse(text) as Array<{ path: string; doc_content_hash?: string }>;
-    for (const d of parsed) {
-      if (d.doc_content_hash) out.set(d.path, { content_hash: d.doc_content_hash });
+    for (const [p, hash] of parseBatchGetHashes(text)) {
+      out.set(p, { content_hash: hash });
     }
+  }
+  return out;
+}
+
+/**
+ * SPRINT-142F: batch_get_doc returns `{ count, results: [...] }`, not a bare
+ * array. The prior code cast to Array and blew up with "parsed is not
+ * iterable" on the first cloud enumeration. Exported so the regression
+ * spec can pin the exact envelope shape.
+ */
+export function parseBatchGetHashes(rawText: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const parsed = JSON.parse(rawText) as {
+    count?: number;
+    results?: Array<{ path: string; doc_content_hash?: string }>;
+    error?: string;
+  };
+  if (parsed.error) throw new Error(`batch_get_doc: ${parsed.error}`);
+  for (const d of parsed.results ?? []) {
+    if (d.doc_content_hash) out.set(d.path, d.doc_content_hash);
   }
   return out;
 }
