@@ -315,6 +315,11 @@ function argsFromOpts(opts, mapping) {
       extra.push(cliFlag, v);
     } else if (v === true) {
       extra.push(cliFlag);
+    } else if (v === false && cliFlag.startsWith("--no-")) {
+      // SPRINT-160: commander sets opts.foo = false when --no-foo is
+      // passed. Forward the negation flag verbatim so the downstream
+      // dispatcher sees it.
+      extra.push(cliFlag);
     }
   }
   return extra;
@@ -398,10 +403,11 @@ program
   .description("Replace an H2 section's body — version-guarded. Same shape as the patch_section MCP tool.")
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--body <text>", "New section body")
-  .requiredOption("--expected-hash <hash>", "Prior content_hash from get_doc")
+  .option("--expected-hash <hash>", "Prior content_hash from get_doc (auto-hydrated when omitted, SPRINT-160)")
   .option("--section-id <id>", "Section id (preferred over --heading)")
   .option("--heading <heading>", "H2 heading text (without ##)")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--no-auto-hash", "Disable OCC auto-hydration (SPRINT-160)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -409,6 +415,7 @@ program
     const extra = argsFromOpts(opts, {
       path: "--path", body: "--body", expectedHash: "--expected-hash",
       sectionId: "--section-id", heading: "--heading", gateOn: "--gate-on",
+      noAutoHash: "--no-auto-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("patch-section", opts, extra);
@@ -461,7 +468,7 @@ program
   .description("Replace the region between H1 and first H2 (blockquote summary + intro paragraphs).")
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--body <text>", "New preamble body")
-  .requiredOption("--expected-hash <hash>", "Prior preamble content_hash from get_doc")
+  .option("--expected-hash <hash>", "Prior preamble content_hash from get_doc (auto-hydrated when omitted, SPRINT-160)")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
@@ -484,7 +491,8 @@ program
   .option("--summary <text>", "Optional blockquote summary (placeholder if omitted)")
   .option("--child-path <path>", "Override the derived child path")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
-  .option("--expected-parent-hash <hash>", "Optional parent doc_content_hash — parent-side write rejected on mismatch (SPRINT-141b)")
+  .option("--expected-parent-hash <hash>", "Parent doc_content_hash — auto-hydrated when omitted (SPRINT-160)")
+  .option("--no-auto-hash", "Disable OCC auto-hydration (SPRINT-160)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -493,6 +501,7 @@ program
       parentPath: "--parent-path", title: "--title", body: "--body",
       summary: "--summary", childPath: "--child-path", gateOn: "--gate-on",
       expectedParentHash: "--expected-parent-hash",
+      noAutoHash: "--no-auto-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("create-child", opts, extra);
@@ -505,8 +514,9 @@ program
   .requiredOption("--b-path <path>", "Second doc path")
   .option("--label <text>", "Shared label on both bullets")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
-  .option("--expected-a-hash <hash>", "Optional a_path doc_content_hash (SPRINT-141b)")
-  .option("--expected-b-hash <hash>", "Optional b_path doc_content_hash (SPRINT-141b)")
+  .option("--expected-a-hash <hash>", "a_path doc_content_hash — auto-hydrated when omitted (SPRINT-160)")
+  .option("--expected-b-hash <hash>", "b_path doc_content_hash — auto-hydrated when omitted (SPRINT-160)")
+  .option("--no-auto-hash", "Disable OCC auto-hydration (SPRINT-160)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -515,6 +525,7 @@ program
       aPath: "--a-path", bPath: "--b-path", label: "--label",
       gateOn: "--gate-on",
       expectedAHash: "--expected-a-hash", expectedBHash: "--expected-b-hash",
+      noAutoHash: "--no-auto-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("add-association", opts, extra);

@@ -34,6 +34,7 @@ import { reconcile } from "../lib/mcp/tools/reconcile";
 import { lintOrphans } from "../lib/mcp/tools/lint_orphans";
 import { batchGetSummary, batchGetDoc } from "../lib/mcp/tools/batch_get";
 import { findSimilar } from "../lib/mcp/tools/find_similar";
+import { getDoc } from "../lib/mcp/tools/get_doc";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -55,6 +56,7 @@ const COMMON = {
   remote: { type: "boolean" },
   json: { type: "boolean" },
   "no-cache": { type: "boolean" },
+  "no-auto-hash": { type: "boolean" },
 } as const;
 
 function asString(v: unknown): string {
@@ -509,6 +511,93 @@ const ERROR_HINTS: Record<string, (e: Record<string, unknown>) => string> = {
   source_doc_not_found: (e) => `Source doc not found: ${e.path ?? "?"}`,
 };
 
+// SPRINT-160: OCC auto-hydration + retry.
+//
+// Motivation: create_child and add_association do read-full-doc →
+// append-bullet → write-full-doc under the hood. When agents run these
+// concurrently against the same parent (as happened during the CV /
+// BLOCKCHAIN research migration), the second write reads a stale
+// snapshot and clobbers sections the first write added.
+//
+// The tools ALREADY support expected_content_hash guards (SPRINT-141),
+// but the CLI never passed them, so the guards were skipped and races
+// slipped through. Fix: fetch the hash right before the write, pass it,
+// and retry once on version_conflict. Now concurrent CLI calls are
+// serializable — the losing write gets a conflict, refetches, retries
+// with the fresh state, and both bullets land.
+//
+// Opt out with `--no-auto-hash` when you want to accept clobbering (e.g.
+// scripted bulk backfills). Default is safe.
+
+interface OccSpec {
+  hashArg: string; // key in the args object the tool consumes
+  pathArg: string; // key in the args object that holds the doc path to hash
+}
+
+// Only doc-scoped verbs auto-hydrate — their expected-hash arg maps to
+// the doc's content_hash returned by get_doc.doc_content_hash.
+// Section-scoped verbs (patch-section, append-section, patch-preamble)
+// need the section's own content_hash from get_doc.sections[].content_hash,
+// which is a different feature and stays manual for now.
+const OCC_SPECS: Record<string, OccSpec[]> = {
+  "append-doc": [{ hashArg: "expected_content_hash", pathArg: "path" }],
+  "write-doc": [{ hashArg: "expected_content_hash", pathArg: "path" }],
+  "delete-doc": [{ hashArg: "expected_content_hash", pathArg: "path" }],
+  "create-child": [{ hashArg: "expected_parent_content_hash", pathArg: "parent_path" }],
+  "add-association": [
+    { hashArg: "expected_a_content_hash", pathArg: "a_path" },
+    { hashArg: "expected_b_content_hash", pathArg: "b_path" },
+  ],
+  "move-doc": [
+    { hashArg: "expected_child_content_hash", pathArg: "path" },
+    { hashArg: "expected_old_parent_content_hash", pathArg: "old_parent_path" },
+    { hashArg: "expected_new_parent_content_hash", pathArg: "new_parent_path" },
+  ],
+  "rename-doc": [{ hashArg: "expected_content_hash", pathArg: "old_path" }],
+  "trash-doc": [{ hashArg: "expected_content_hash", pathArg: "path" }],
+};
+
+const OCC_MAX_RETRIES = 3;
+
+async function fetchDocHash(docPath: string, remote: boolean): Promise<string | null> {
+  const argsIn = { path: docPath };
+  const raw = remote
+    ? await callTool("get_doc", argsIn)
+    : await getDoc(localToolContext(docsDir), argsIn);
+  const text = unwrapText(raw as { content?: Array<{ type: string; text?: string }> });
+  try {
+    const parsed = JSON.parse(text) as { doc_content_hash?: string; error?: string };
+    if (parsed.error) return null;
+    return parsed.doc_content_hash ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fill in every OCC hash arg that (a) the verb supports and (b) the
+ * caller didn't already set. Missing paths / doc-not-found responses
+ * are skipped silently — the underlying tool will surface its own
+ * error if the path is truly invalid.
+ */
+async function hydrateOccHashes(
+  verbName: string,
+  args: Record<string, unknown>,
+  remote: boolean,
+): Promise<Record<string, unknown>> {
+  const specs = OCC_SPECS[verbName];
+  if (!specs || specs.length === 0) return args;
+  const next = { ...args };
+  for (const { hashArg, pathArg } of specs) {
+    if (typeof next[hashArg] === "string" && (next[hashArg] as string).length > 0) continue;
+    const docPath = next[pathArg];
+    if (typeof docPath !== "string" || docPath.length === 0) continue;
+    const hash = await fetchDocHash(docPath, remote);
+    if (hash) next[hashArg] = hash;
+  }
+  return next;
+}
+
 function extractError(text: string): ToolErrorInfo | null {
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { return null; }
@@ -550,17 +639,38 @@ async function runVerb(verbName: string, argv: string[]): Promise<void> {
       cacheHit = true;
     }
   }
-  if (!cacheHit) {
-    result = remote
-      ? await callTool(spec.toolName, args).then((r) => r as unknown)
-      : await spec.toolFn(localToolContext(docsDir), args);
-  }
+  // SPRINT-160: hydrate OCC hashes right before the call, so concurrent
+  // writes to the same doc get version_conflict instead of clobbering.
+  const autoHash = !Boolean(values["no-auto-hash"]);
+  let effectiveArgs = args;
+  let responseText = "";
+  let errInfo: ToolErrorInfo | null = null;
 
-  // Extract response text for error detection + cache storage.
-  const responseText = remote
-    ? unwrapText(result as { content?: Array<{ type: string; text?: string }> })
-    : ((result as { content?: Array<{ type: string; text?: string }> }).content?.[0]?.text ?? "");
-  const errInfo = extractError(responseText);
+  if (!cacheHit) {
+    let attempt = 0;
+    // Retry loop for version_conflict — refetches hashes and retries with
+    // fresh state. Only kicks in when auto-hash is on and the verb has an
+    // OCC spec. Caps at OCC_MAX_RETRIES to avoid unbounded looping if
+    // there's a real contention storm.
+    while (true) {
+      effectiveArgs = autoHash ? await hydrateOccHashes(verbName, args, remote) : args;
+      result = remote
+        ? await callTool(spec.toolName, effectiveArgs).then((r) => r as unknown)
+        : await spec.toolFn(localToolContext(docsDir), effectiveArgs);
+      responseText = remote
+        ? unwrapText(result as { content?: Array<{ type: string; text?: string }> })
+        : ((result as { content?: Array<{ type: string; text?: string }> }).content?.[0]?.text ?? "");
+      errInfo = extractError(responseText);
+      const isConflict = errInfo && (errInfo.code === "version_conflict" || errInfo.code === "hash_mismatch");
+      if (!isConflict || !autoHash || !OCC_SPECS[verbName] || attempt >= OCC_MAX_RETRIES) break;
+      attempt++;
+    }
+  } else {
+    responseText = remote
+      ? unwrapText(result as { content?: Array<{ type: string; text?: string }> })
+      : ((result as { content?: Array<{ type: string; text?: string }> }).content?.[0]?.text ?? "");
+    errInfo = extractError(responseText);
+  }
 
   // Cache successful read responses; purge cache on successful write.
   if (!cacheHit && !errInfo) {
