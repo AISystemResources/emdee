@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShareTreePicker } from "./ShareTreePicker";
 import { filenameSlug } from "@/src/core/resolveLink";
 import type { DocIndex } from "@/src/core/indexer";
@@ -136,12 +136,41 @@ export function DownloadModal({ path, title, namespace, index, onClose }: Props)
     setSelectedPaths(initial);
   }, [index, path]);
 
-  const contentByPath = useMemo(() => {
-    const m = new Map<string, string>();
-    if (!index) return m;
-    for (const d of index.docs) m.set(d.path, d.content);
-    return m;
+  // SPRINT-146b: the index now arrives metadata-only (docs[].content === "").
+  // Fetching all content upfront would defeat the egress win, so we fetch
+  // per selected path in the download handler and cache what comes back.
+  const contentCache = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    // Warm the cache with any content that IS present (edits made in this
+    // session live in the index; those don't need re-fetching).
+    if (!index) return;
+    for (const d of index.docs) {
+      if (d.content && d.content.length > 0) contentCache.current.set(d.path, d.content);
+    }
   }, [index]);
+
+  async function fetchContentFor(paths: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    // Sequential to keep this simple; typical download is dozens not thousands.
+    for (const p of paths) {
+      const cached = contentCache.current.get(p);
+      if (cached && cached.length > 0) {
+        out.set(p, cached);
+        continue;
+      }
+      try {
+        const res = await fetch(`/api/doc?path=${encodeURIComponent(p)}&ns=${encodeURIComponent(namespace)}`, {
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const c = await res.text();
+          contentCache.current.set(p, c);
+          out.set(p, c);
+        }
+      } catch { /* skip individual failures */ }
+    }
+    return out;
+  }
 
   const onDownload = async () => {
     if (!index || selectedPaths.size === 0) return;
@@ -155,6 +184,8 @@ export function DownloadModal({ path, title, namespace, index, onClose }: Props)
       const usedByDir = new Map<string, Set<string>>();
       const sorted = [...selectedPaths].sort();
       const prefix = commonDirPrefix(sorted);
+      // SPRINT-146b: bulk-fetch content only for docs actually being downloaded.
+      const contentByPath = await fetchContentFor(sorted);
 
       if (format === "md") {
         let added = 0;
