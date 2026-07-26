@@ -33,7 +33,7 @@ test.describe("smoke (anonymous)", () => {
     expect(res.status()).toBeLessThan(500);
     await page.goto("/vault");
     await expect(
-      page.getByText(/your knowledge graph/i).first(),
+      page.getByText(/your second brain/i).first(),
     ).toBeVisible({ timeout: 10_000 });
   });
 

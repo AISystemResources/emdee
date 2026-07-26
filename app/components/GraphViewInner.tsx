@@ -224,9 +224,13 @@ const ROLE_LABEL: Record<Role, string> = {
 // (darker variant of base). Fill = soft tint for node interior so labels stay
 // readable. Picked from Tailwind 500/600/100 ramps with each family hue
 // roughly 40°+ apart for distinguishability under common color vision.
+// SPRINT-150d Cerebral brand: EMDEE root + default fall-through now use
+// the brand palette so the graph feels part of the same product as the
+// homepage. Category-specific hues stay so branches remain visually
+// distinct — but the neutral cases warm up to pink/oxblood.
 const CATEGORY_BASE: Record<Category, string> = {
-  emdee: "#4f46e5",       // indigo — the root itself
-  vault: "#64748b",       // slate — meta/spec
+  emdee: "#FF3D6E",       // Cerebral Pink — the root wears the brand
+  vault: "#8B0033",       // Oxblood — meta/spec, grounding
   projects: "#3b82f6",    // blue
   people: "#10b981",      // emerald
   events: "#f59e0b",      // amber
@@ -234,12 +238,12 @@ const CATEGORY_BASE: Record<Category, string> = {
   info: "#14b8a6",        // teal
   education: "#8b5cf6",   // violet
   career: "#06b6d4",      // cyan
-  default: "#9ca3af",     // neutral gray
+  default: "#B91C4A",     // muted brand pink (not grey)
 };
 
 const CATEGORY_HIER: Record<Category, string> = {
-  emdee: "#4338ca",
-  vault: "#475569",
+  emdee: "#8B0033",       // Oxblood on hover for the brand node
+  vault: "#5C0022",
   projects: "#2563eb",
   people: "#059669",
   events: "#d97706",
@@ -247,12 +251,12 @@ const CATEGORY_HIER: Record<Category, string> = {
   info: "#0d9488",
   education: "#7c3aed",
   career: "#0891b2",
-  default: "#6b7280",
+  default: "#8B0033",
 };
 
 const CATEGORY_FILL: Record<Category, string> = {
-  emdee: "#e0e7ff",
-  vault: "#e2e8f0",
+  emdee: "#FFECEF",       // Cerebral Surface — matches page background
+  vault: "#FCE0E7",
   projects: "#dbeafe",
   people: "#d1fae5",
   events: "#fef3c7",
@@ -260,7 +264,7 @@ const CATEGORY_FILL: Record<Category, string> = {
   info: "#ccfbf1",
   education: "#ede9fe",
   career: "#cffafe",
-  default: "#f3f4f6",
+  default: "#FFECEF",     // brand surface, not neutral grey
 };
 
 // Path-based category detection. Pillars are detected by their root anchor

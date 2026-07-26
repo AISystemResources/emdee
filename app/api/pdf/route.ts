@@ -46,8 +46,9 @@ const PRINT_CSS = `
     font-size: 13px;
   }
   .doc { padding: 24px; max-width: 760px; margin: 0 auto; }
-  h1 { font-size: 24px; margin: 0 0 16px; color: #111827;
-       background: #fef9c3; padding: 8px 12px; border-radius: 4px; }
+  h1 { font-size: 24px; margin: 0 0 16px; color: #1A0E15;
+       background: #FFECEF; padding: 8px 12px; border-radius: 4px;
+       border-left: 3px solid #FF3D6E; }
   h2 { font-size: 18px; margin: 24px 0 8px; border-bottom: 1px solid #e5e7eb;
        padding-bottom: 4px; color: #111827; }
   h3 { font-size: 15px; margin: 18px 0 6px; color: #111827; }
