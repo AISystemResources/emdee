@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -70,9 +69,11 @@ function jsonLd() {
 }
 
 export default async function Home() {
-  // Signed-in users skip the marketing page and land in their vault.
+  // Signed-in users still see the homepage — the top-right nav flips to a
+  // "Vault" button so they can jump into their workspace with one click.
+  // Same pattern as supabase.com's "Dashboard" button (SPRINT-149a).
   const { userId } = await auth();
-  if (userId) redirect(`/vault/${userId}`);
+  const isSignedIn = Boolean(userId);
 
   return (
     <main style={styles.page}>
@@ -88,7 +89,11 @@ export default async function Home() {
           <div style={styles.navRight}>
             <Link href="/vault" style={styles.navLink}>Public vault</Link>
             <a href="https://github.com/AISystemResources/emdee" style={styles.navLink} target="_blank" rel="noopener">GitHub</a>
-            <Link href="/sign-in" style={styles.signInBtn}>Sign in</Link>
+            {isSignedIn ? (
+              <Link href={`/vault/${userId}`} style={styles.signInBtn}>Vault</Link>
+            ) : (
+              <Link href="/sign-in" style={styles.signInBtn}>Sign in</Link>
+            )}
           </div>
         </div>
       </nav>
