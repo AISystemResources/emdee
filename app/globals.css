@@ -3000,3 +3000,75 @@ a.sidebar-footer-btn { text-decoration: none; }
   font-size: 0.92em;
   border: 1px solid var(--border);
 }
+
+/* SPRINT-150d — override toastui-editor's default preview-highlight
+ * (a rendered-mode "you are editing here" glow) from yellow to the
+ * Cerebral Pink surface tone. Keeps the editor's UX signal intact
+ * but stops the yellow rectangle around H1s clashing with the brand. */
+.toastui-editor-contents .toastui-editor-md-preview-highlight::after,
+.toastui-editor-contents th.toastui-editor-md-preview-highlight,
+.toastui-editor-contents td.toastui-editor-md-preview-highlight {
+  background-color: rgba(255, 61, 110, 0.10) !important;
+}
+
+/* SPRINT-150d — Prefrontal Cortex "great minds" section. Editorial
+ * treatment: two-column-worth of ledes on desktop, quote grid below,
+ * one payoff line to snap it back to the product. */
+.cerebral-minds { background: transparent; }
+.cerebral-minds-lede {
+  text-align: left;
+  max-width: 780px;
+  margin: 0 0 1.25rem;
+  color: var(--fg);
+  font-size: 1.08rem;
+}
+.cerebral-minds-lede:last-of-type { margin-bottom: 2.5rem; }
+.cerebral-minds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+.cerebral-mind-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 1.2rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 160px;
+}
+.cerebral-mind-quote {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.02rem;
+  line-height: 1.4;
+  color: var(--fg);
+  margin: 0 0 1rem;
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 24, "SOFT" 40;
+}
+.cerebral-mind-attribution {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+.cerebral-mind-name { color: var(--accent-deep); font-weight: 600; text-transform: uppercase; }
+.cerebral-mind-craft { color: var(--muted); text-transform: uppercase; }
+.cerebral-minds-payoff {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  line-height: 1.4;
+  color: var(--fg);
+  max-width: 780px;
+  margin: 0;
+  padding: 1.5rem 0 0;
+  border-top: 1px dashed var(--border);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 48, "SOFT" 40;
+}

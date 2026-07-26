@@ -119,7 +119,7 @@ export default async function Home() {
       {/* OCCIPITAL — the visual cortex. What is EMDEE? */}
       <section className="cerebral-section">
         <span className="cerebral-lobe">Occipital Lobe</span>
-        <h2 className="cerebral-h2">What is a Second Brain, and why does it need to be AI-safe?</h2>
+        <h2 className="cerebral-h2">What is EMDEE?</h2>
 
         {/* SPRINT-150b — the name is the promise. E-M-D-E-E hides `.md` at
              its heart: everything you write is a plain markdown file. */}
@@ -136,26 +136,33 @@ export default async function Home() {
 
         <div className="cerebral-prose">
           <p>
-            A Second Brain is where you offload the thoughts, ideas, references, and
-            half-formed plans your first brain can&apos;t hold all at once. Every knowledge worker
-            builds one — in Notion, Obsidian, Apple Notes, a folder of text files.
-          </p>
-          <p>
-            When AI agents entered the loop, that Second Brain became load-bearing in a new way:
-            you want Claude to know what you&apos;ve been working on, ChatGPT to remember the
-            context from three weeks ago, Cursor to reference your architecture notes without
-            you re-pasting them every session.
-          </p>
-          <p>
-            EMDEE is a Second Brain built for that reality. Your knowledge lives as plain
-            markdown files in a folder you own — no proprietary format, no lock-in. A built-in
-            <em> MCP server </em>
-            exposes every read and write to your AI agents. The write path is
-            <em> safe by construction</em>: every mutation is version-guarded, multi-doc
-            operations are atomic, and the graph structure (parent / child / associated) is
-            enforced by the tools themselves so an agent can&apos;t silently corrupt what you&apos;ve built.
+            Your knowledge as plain markdown files in a folder you own — no proprietary
+            format, no lock-in. A built-in <em>MCP server</em> lets Claude, ChatGPT, and
+            other AI agents extend it safely: every write is version-guarded, multi-doc
+            operations are atomic, and the graph structure is enforced by the tools.
           </p>
         </div>
+      </section>
+
+      {/* PREFRONTAL — the WHY. Deep work + great minds motif. */}
+      <section className="cerebral-section cerebral-minds">
+        <span className="cerebral-lobe">Prefrontal Cortex</span>
+        <h2 className="cerebral-h2">
+          Think like the greats — <em>with the load lifted</em>.
+        </h2>
+        <p className="cerebral-lede cerebral-minds-lede">
+          Einstein, Da Vinci, Feynman, Kobe. None of them held it all in their heads —
+          they externalised the load so their first brain was free to do the actual work.
+        </p>
+        <div className="cerebral-minds-grid">
+          <MindCard name="Albert Einstein" craft="Physics" quote="Never memorise something that you can look up." />
+          <MindCard name="Leonardo da Vinci" craft="Everything" quote="Learning never exhausts the mind." />
+          <MindCard name="Richard Feynman" craft="Physics + Teaching" quote="What I cannot create, I do not understand." />
+          <MindCard name="Kobe Bryant" craft="Deep Work" quote="The most important thing is to inspire people to be great in whatever they want to do." />
+        </div>
+        <p className="cerebral-minds-payoff">
+          EMDEE is that externalised load — for the era where your AI reads it alongside you.
+        </p>
       </section>
 
       {/* TEMPORAL — memory + language. Comparison. */}
@@ -191,12 +198,10 @@ export default async function Home() {
         <span className="cerebral-lobe">Parietal Lobe</span>
         <h2 className="cerebral-h2">Built for AI-native knowledge work</h2>
         <div className="cerebral-grid">
-          <FeatureCard title="MCP-native" body="Every read and write tool is exposed to Claude, ChatGPT, and other agents via the Model Context Protocol. Your AI adds nodes, patches sections, moves docs, and derives the graph — safely." />
-          <FeatureCard title="Multi-agent safe" body="Universal version-guards prevent two agents from silently overwriting each other. Stale writes are rejected with an actionable conflict response." />
-          <FeatureCard title="Local-first" body="Your Second Brain lives on your disk as plain markdown. SQLite backs the graph index locally. Cloud sync is optional and opt-in." />
-          <FeatureCard title="Enforced structure" body="Reciprocal edges (Parent of / Child of / Associated with) are validated by the tools, not left to prose. Lint catches drift; reconcile heals it." />
-          <FeatureCard title="Portable by design" body="No proprietary format, no vendor lock-in. Export as a zip of .md files any time. Move to Obsidian tomorrow if you outgrow us." />
-          <FeatureCard title="Shared vaults" body="Grant read or write access to subtrees. Human collaborators and their AI agents navigate shared docs without leaking outside the share root." />
+          <FeatureCard title="MCP-native" body="Every read and write tool is exposed to Claude, ChatGPT, and other agents via the Model Context Protocol." />
+          <FeatureCard title="Multi-agent safe" body="Universal version-guards prevent two agents from silently overwriting each other." />
+          <FeatureCard title="Local-first" body="Your Second Brain lives on your disk as plain markdown. Cloud sync is optional." />
+          <FeatureCard title="Portable" body="No proprietary format, no lock-in. Export as a zip of .md files any time." />
         </div>
       </section>
 
@@ -224,27 +229,19 @@ export default async function Home() {
         <div>
           <FaqItem
             q="How is EMDEE different from Obsidian?"
-            a="Obsidian is a markdown editor with a plugin ecosystem — optimised for humans typing. EMDEE is a markdown editor plus a built-in MCP server, atomic multi-doc write tools, and version-guarded writes designed for AI agents to use safely. If you use Obsidian purely as a human notes app, stay on Obsidian. If you want an AI agent to reliably extend your Second Brain, use EMDEE."
+            a="Obsidian is optimised for humans typing. EMDEE adds a built-in MCP server + version-guarded writes so AI agents can extend your Second Brain safely. Use both if you want."
           />
           <FaqItem
-            q="Do I need to sign up to use EMDEE?"
-            a="No. The npm CLI runs fully offline with no account. Sign-in only unlocks the cloud vault, sync, and sharing. Local users are first-class citizens."
+            q="Do I need to sign up?"
+            a="No. The npm CLI runs fully offline with no account. Sign-in only unlocks the cloud vault, sync, and sharing."
           />
           <FaqItem
-            q="Can I use EMDEE with Claude?"
-            a="Yes — that's the primary integration. Point Claude Desktop or Claude Code at the EMDEE MCP server (either your local npm install or the cloud HTTP endpoint) and Claude can read, write, and navigate your Second Brain."
-          />
-          <FaqItem
-            q="Can I use EMDEE with ChatGPT / Cursor / other agents?"
-            a="Any AI client that speaks the Model Context Protocol can use EMDEE. Cursor, Continue.dev, and other MCP-compatible tools work out of the box."
+            q="Which AI agents work with EMDEE?"
+            a="Claude Desktop, Claude Code, Cursor, Continue.dev, and any MCP-compatible client. ChatGPT via connectors."
           />
           <FaqItem
             q="Is my data safe?"
-            a="Local mode: your data never leaves your disk. Cloud mode: your vault is stored in a per-user namespace on Supabase; only you (and anyone you explicitly share with) can read it. Export the entire Second Brain as a zip of markdown files at any time."
-          />
-          <FaqItem
-            q="What does the free tier include?"
-            a="The full local experience is free forever — npm install, full MCP server, graph rendering, all writing tools. Cloud sync, team sharing, and unlimited cloud storage will be part of a future paid tier."
+            a="Local mode: your data never leaves your disk. Cloud mode: per-user namespace on Supabase, only you (and explicit shares) can read it. Export as a zip of .md files any time."
           />
           <FaqItem
             q="Is EMDEE open source?"
@@ -311,6 +308,18 @@ function InstallCard({
             {cta}
           </a>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MindCard({ name, craft, quote }: { name: string; craft: string; quote: string }) {
+  return (
+    <div className="cerebral-mind-card">
+      <blockquote className="cerebral-mind-quote">&ldquo;{quote}&rdquo;</blockquote>
+      <div className="cerebral-mind-attribution">
+        <span className="cerebral-mind-name">{name}</span>
+        <span className="cerebral-mind-craft">{craft}</span>
       </div>
     </div>
   );
