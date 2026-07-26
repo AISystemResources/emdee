@@ -75,22 +75,32 @@ export async function deleteCreds(): Promise<boolean> {
 // Browser open (best-effort per platform) -----------------------------------
 
 /**
- * SPRINT-160B: platform-specific browser launch resolver.
- * Pure — returns the spawn argv for a given platform. Exported for
- * regression testing (the actual spawn call is a side effect and
- * can't be portably asserted in CI).
+ * Platform-specific browser launch resolver. Pure — returns the spawn
+ * argv for a given platform. Exported for regression testing (the actual
+ * spawn call is a side effect and can't be portably asserted in CI).
  *
- * - macOS: `open <url>` — real executable.
- * - Linux: `xdg-open <url>` — real executable.
- * - Windows: `start` is a cmd.exe BUILTIN, not a standalone executable,
- *   so `spawn("start", [url])` fails with ENOENT. Correct incantation
- *   is `cmd /c start "" "<url>"` — the empty "" is required as the
- *   window title placeholder (start otherwise treats the first quoted
- *   arg as the title and silently swallows the URL).
+ * - macOS (SPRINT-160B): `open <url>` — real executable.
+ * - Linux (SPRINT-160B): `xdg-open <url>` — real executable.
+ * - Windows (SPRINT-160C): PowerShell's `Start-Process '<url>'`. Two
+ *   prior attempts failed:
+ *     1. `spawn("start", [url])` → ENOENT (start is a cmd.exe builtin,
+ *        not a standalone executable) — SPRINT-160B.
+ *     2. `spawn("cmd", ["/c", "start", "", url])` → browser opened but
+ *        URL got truncated at the first `&`, because cmd re-parses `&`
+ *        as a command separator when start receives it, even through
+ *        quoted args. OAuth URLs are `&`-heavy, so this reliably broke.
+ *   PowerShell's Start-Process handles URL arguments as opaque strings —
+ *   no cmd escaping, no truncation. `-NoProfile` skips user profile
+ *   loading for a faster spawn. Single-quote wrapping treats the URL
+ *   literally in PowerShell; embedded `'` doubles to escape (URLs
+ *   almost never contain single quotes, but handle it anyway).
  */
 export function browserOpenerArgv(url: string, platform: NodeJS.Platform): { cmd: string; args: string[] } {
   if (platform === "darwin") return { cmd: "open", args: [url] };
-  if (platform === "win32") return { cmd: "cmd", args: ["/c", "start", "", url] };
+  if (platform === "win32") {
+    const escaped = url.replace(/'/g, "''");
+    return { cmd: "powershell", args: ["-NoProfile", "-Command", `Start-Process '${escaped}'`] };
+  }
   return { cmd: "xdg-open", args: [url] };
 }
 

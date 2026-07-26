@@ -26,15 +26,27 @@ test.describe("browserOpenerArgv (SPRINT-160B)", () => {
     expect(args).toEqual([URL]);
   });
 
-  test("win32 → `cmd /c start \"\" <url>` (not bare `start`)", () => {
+  test("win32 → `powershell -NoProfile -Command Start-Process '<url>'` (SPRINT-160C)", () => {
     const { cmd, args } = browserOpenerArgv(URL, "win32");
-    expect(cmd).toBe("cmd");
-    // The empty "" is required as start's window-title placeholder.
-    // Without it, start treats the first quoted arg as the title and
-    // silently swallows the URL.
-    expect(args).toEqual(["/c", "start", "", URL]);
-    // Explicit anti-regression: never regress to bare `start`.
+    expect(cmd).toBe("powershell");
+    expect(args[0]).toBe("-NoProfile");
+    expect(args[1]).toBe("-Command");
+    // Must contain the FULL URL (including & and everything after it).
+    // The `cmd /c start` predecessor truncated URLs at the first `&`;
+    // this regresses if someone switches back.
+    expect(args[2]).toBe(`Start-Process '${URL}'`);
+    expect(args[2]).toContain("client_id=");
+    expect(args[2]).toContain("&state=xyz");
+    // Explicit anti-regression: never regress to bare `start` or `cmd start`.
     expect(cmd).not.toBe("start");
+    expect(cmd).not.toBe("cmd");
+  });
+
+  test("win32 → embedded single quotes in URL are escaped for PowerShell", () => {
+    const urlWithQuote = "https://emdee.tech/oauth/authorize?state=abc'def";
+    const { args } = browserOpenerArgv(urlWithQuote, "win32");
+    // PowerShell escapes ' inside single-quoted strings as ''.
+    expect(args[2]).toBe("Start-Process 'https://emdee.tech/oauth/authorize?state=abc''def'");
   });
 
   test("unknown platform falls through to xdg-open", () => {
