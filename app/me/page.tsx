@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export default async function MePage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
-  redirect(`/${userId}`);
+  redirect(`/vault/${userId}`);
 }
