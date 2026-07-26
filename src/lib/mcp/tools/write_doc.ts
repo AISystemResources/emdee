@@ -5,9 +5,10 @@ import { buildLintVaultContext } from "./lint_doc";
 import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["path", "content", "gate_on_warnings"],
+  allowed: ["path", "content", "gate_on_warnings", "expected_content_hash"],
   required: ["path", "content"],
 } as const;
 
@@ -59,6 +60,12 @@ export async function writeDoc(ctx: ToolContext, args: Record<string, unknown>):
       hint: "EMDEE filenames are all-caps ASCII (CLAUDE.md, SPRINT-029.md). Re-run write_doc with `path: <suggested>`.",
     });
   }
+
+  // SPRINT-141a: version-guard the overwrite case (create case is
+  // guard-passthrough — helper returns null when the doc doesn't exist).
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const conflict = await guardDocContentHash(ctx, rel, expected);
+  if (conflict) return json(conflict);
 
   const content = String(args.content ?? "");
   const gateCodes = parseGateCodes(args.gate_on_warnings);

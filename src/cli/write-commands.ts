@@ -101,6 +101,7 @@ const VERBS: Record<string, VerbSpec> = {
       body: { type: "string" },
       "create-if-missing": { type: "boolean" },
       "gate-on": { type: "string", multiple: true },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -111,6 +112,7 @@ const VERBS: Record<string, VerbSpec> = {
       if (v.heading) args.heading = v.heading;
       if (v["create-if-missing"]) args.create_if_missing = true;
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },
@@ -122,10 +124,12 @@ const VERBS: Record<string, VerbSpec> = {
       path: { type: "string" },
       body: { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = { path: asString(v.path), body: asString(v.body) };
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },
@@ -261,6 +265,7 @@ const VERBS: Record<string, VerbSpec> = {
       path: { type: "string" },
       content: { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -268,6 +273,7 @@ const VERBS: Record<string, VerbSpec> = {
         content: asString(v.content),
       };
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },
@@ -308,8 +314,12 @@ const VERBS: Record<string, VerbSpec> = {
   "delete-doc": {
     toolName: "delete_doc",
     toolFn: deleteDoc as unknown as ToolFn,
-    parse: { ...COMMON, path: { type: "string" } },
-    buildArgs: (v) => ({ path: asString(v.path) }),
+    parse: { ...COMMON, path: { type: "string" }, "expected-hash": { type: "string" } },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = { path: asString(v.path) };
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
+      return args;
+    },
   },
   "distill-doc": {
     // READ-ONLY intake for split planning — lives under write commands
@@ -354,6 +364,7 @@ const VERBS: Record<string, VerbSpec> = {
       // Extracts is a complex array-of-objects; take it via --extracts-file
       // pointing at a JSON document rather than shoehorn it into a flag.
       "extracts-file": { type: "string" },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -365,6 +376,7 @@ const VERBS: Record<string, VerbSpec> = {
         const parsed = JSON.parse(readFileSync(extractsFile, "utf8"));
         args.extracts = parsed;
       }
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },
