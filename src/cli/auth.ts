@@ -74,11 +74,35 @@ export async function deleteCreds(): Promise<boolean> {
 
 // Browser open (best-effort per platform) -----------------------------------
 
+/**
+ * SPRINT-160B: platform-specific browser launch resolver.
+ * Pure — returns the spawn argv for a given platform. Exported for
+ * regression testing (the actual spawn call is a side effect and
+ * can't be portably asserted in CI).
+ *
+ * - macOS: `open <url>` — real executable.
+ * - Linux: `xdg-open <url>` — real executable.
+ * - Windows: `start` is a cmd.exe BUILTIN, not a standalone executable,
+ *   so `spawn("start", [url])` fails with ENOENT. Correct incantation
+ *   is `cmd /c start "" "<url>"` — the empty "" is required as the
+ *   window title placeholder (start otherwise treats the first quoted
+ *   arg as the title and silently swallows the URL).
+ */
+export function browserOpenerArgv(url: string, platform: NodeJS.Platform): { cmd: string; args: string[] } {
+  if (platform === "darwin") return { cmd: "open", args: [url] };
+  if (platform === "win32") return { cmd: "cmd", args: ["/c", "start", "", url] };
+  return { cmd: "xdg-open", args: [url] };
+}
+
 function openBrowser(url: string): void {
-  const platform = process.platform;
-  const cmd = platform === "darwin" ? "open" : platform === "win32" ? "start" : "xdg-open";
+  const { cmd, args } = browserOpenerArgv(url, process.platform);
   try {
-    spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();
+    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    // spawn's ENOENT surfaces as an async 'error' event, not a sync
+    // throw — the outer try/catch alone doesn't catch it. Swallow it
+    // here so a missing opener doesn't crash the login flow.
+    child.on("error", () => {});
+    child.unref();
   } catch {
     // Best-effort — user can copy the URL if this fails.
   }
