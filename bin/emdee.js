@@ -347,8 +347,14 @@ program
   .option("--dry-run", "Show planned actions without writing anything")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
-    const extra = [];
-    if (opts.docs) extra.push("--docs", path.resolve(process.cwd(), opts.docs));
+    // SPRINT-142F: always resolve --docs against the user's CWD before spawning.
+    // The child runs with cwd: pkgRoot, so process.cwd() inside the child is
+    // the install directory — the fallback would silently resolve to
+    // <install>/docs (a phantom path) instead of the user's vault.
+    const docs = opts.docs
+      ? path.resolve(process.cwd(), opts.docs)
+      : path.join(process.cwd(), "docs");
+    const extra = ["--docs", docs];
     if (opts.dryRun) extra.push("--dry-run");
     if (opts.json) extra.push("--json");
     const exec = resolveExecutor("src/cli/sync-command.ts");
