@@ -188,7 +188,8 @@ async function handleMcp(request: Request): Promise<Response> {
   if (!clerkId) return bearerChallenge(origin);
 
   const storage = new SupabaseStorage();
-  const ctx: ToolContext = { mode: "cloud", storage, userId: clerkId };
+  const { cloudDatabase } = await import("@/src/lib/database");
+  const ctx: ToolContext = { mode: "cloud", storage, userId: clerkId, db: cloudDatabase() };
   const server = buildMcpServer(ctx);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
