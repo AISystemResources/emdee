@@ -396,6 +396,7 @@ program
   .option("--heading <heading>", "H2 heading text (without ##)")
   .option("--create-if-missing", "Create the section at end of file if not found")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-hash <hash>", "Optional doc_content_hash from get_doc — write rejected on mismatch (SPRINT-141a)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -403,7 +404,8 @@ program
     const extra = argsFromOpts(opts, {
       path: "--path", body: "--body", sectionId: "--section-id",
       heading: "--heading", createIfMissing: "--create-if-missing",
-      gateOn: "--gate-on", remote: "--remote", json: "--json",
+      gateOn: "--gate-on", expectedHash: "--expected-hash",
+      remote: "--remote", json: "--json",
     });
     shellWrite("append-section", opts, extra);
   });
@@ -414,12 +416,14 @@ program
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--body <text>", "Content to append")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-hash <hash>", "Optional doc_content_hash — write rejected on mismatch (SPRINT-141a)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
     const extra = argsFromOpts(opts, {
       path: "--path", body: "--body", gateOn: "--gate-on",
+      expectedHash: "--expected-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("append-doc", opts, extra);
@@ -547,12 +551,14 @@ program
   .requiredOption("--path <path>", "Vault doc path")
   .requiredOption("--content <text>", "Full markdown content")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-hash <hash>", "Optional doc_content_hash — overwrite rejected on mismatch. Create case is guard-passthrough (SPRINT-141a).")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
     const extra = argsFromOpts(opts, {
       path: "--path", content: "--content", gateOn: "--gate-on",
+      expectedHash: "--expected-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("write-doc", opts, extra);
@@ -606,11 +612,15 @@ program
   .command("delete-doc")
   .description("Permanently remove a doc. NO UNDO. Returns inbound_edges + title_conflicts.")
   .requiredOption("--path <path>", "Vault doc path")
+  .option("--expected-hash <hash>", "Optional doc_content_hash — delete rejected on mismatch (SPRINT-141a)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
-    const extra = argsFromOpts(opts, { path: "--path", remote: "--remote", json: "--json" });
+    const extra = argsFromOpts(opts, {
+      path: "--path", expectedHash: "--expected-hash",
+      remote: "--remote", json: "--json",
+    });
     shellWrite("delete-doc", opts, extra);
   });
 
@@ -849,6 +859,7 @@ program
   .requiredOption("--source-path <path>", "Source doc being split")
   .requiredOption("--rewrite-source-content <text>", "New markdown for the source (with wiki-links to extracts)")
   .requiredOption("--extracts-file <path>", 'JSON file: [{"path":"<new>.md","content":"<md>"}, ...]')
+  .option("--expected-hash <hash>", "Optional source doc_content_hash — split rejected on mismatch (SPRINT-141a)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -857,6 +868,7 @@ program
     const extra = argsFromOpts(opts, {
       sourcePath: "--source-path",
       rewriteSourceContent: "--rewrite-source-content",
+      expectedHash: "--expected-hash",
       remote: "--remote", json: "--json",
     });
     extra.push("--extracts-file", extractsResolved);

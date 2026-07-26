@@ -11,6 +11,7 @@ import {
 } from "./sections";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -19,7 +20,7 @@ const CROSS_DOC_CODES = new Set([
 ]);
 
 const ARG_SPEC = {
-  allowed: ["path", "heading", "section_id", "body", "create_if_missing", "gate_on_warnings"],
+  allowed: ["path", "heading", "section_id", "body", "create_if_missing", "gate_on_warnings", "expected_content_hash"],
   required: ["path", "body"],
 } as const;
 
@@ -51,6 +52,9 @@ export async function appendSection(ctx: ToolContext, args: Record<string, unkno
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const conflict = await guardDocContentHash(ctx, rel, expected);
+  if (conflict) return json(conflict);
   const headingArg = args.heading !== undefined ? String(args.heading).trim() : "";
   const sectionIdArg = args.section_id !== undefined ? String(args.section_id).trim() : "";
   const body = String(args.body ?? "");

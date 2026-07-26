@@ -1,8 +1,9 @@
 import { deleteVaultFile, loadVaultIndex, readVaultFile, validatePath } from "./vault";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
-const ARG_SPEC = { allowed: ["path"], required: ["path"] } as const;
+const ARG_SPEC = { allowed: ["path", "expected_content_hash"], required: ["path"] } as const;
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -29,6 +30,9 @@ export async function deleteDoc(ctx: ToolContext, args: Record<string, unknown>)
   if (content === null) {
     return { content: [{ type: "text", text: `not found: ${rel}` }] };
   }
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const conflict = await guardDocContentHash(ctx, rel, expected);
+  if (conflict) return json(conflict);
 
   const index = await loadVaultIndex(ctx);
   const target = index.docs.find((d) => d.path === rel);

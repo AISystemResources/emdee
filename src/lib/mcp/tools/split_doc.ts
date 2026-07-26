@@ -2,9 +2,10 @@ import path from "node:path";
 import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["source_path", "rewrite_source_content", "extracts"],
+  allowed: ["source_path", "rewrite_source_content", "extracts", "expected_content_hash"],
   required: ["source_path", "rewrite_source_content", "extracts"],
 } as const;
 
@@ -50,6 +51,12 @@ export async function splitDoc(ctx: ToolContext, args: Record<string, unknown>):
   if (extracts.length === 0) return json({ error: "extracts array must be non-empty" });
 
   validatePath(sourcePath);
+  // SPRINT-141a: guard the source doc against stale writes. The caller
+  // was working from a snapshot to build the split plan; if the source
+  // changed since, the extracts + rewrite are likely inconsistent.
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const sourceConflict = await guardDocContentHash(ctx, sourcePath, expected);
+  if (sourceConflict) return json(sourceConflict);
   for (const e of extracts) {
     if (!e || typeof e.path !== "string" || typeof e.content !== "string") {
       return json({ error: "each extract requires { path, content }" });
