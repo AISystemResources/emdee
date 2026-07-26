@@ -38,6 +38,13 @@ const commonOptions = {
     "marked",
     "commander",
     "tsx",
+    // SPRINT-140F: better-sqlite3 is a native module with a `.node`
+    // binding and CJS internals that use `require("fs")`. Bundling it
+    // into an ESM output produces "Dynamic require of 'fs' is not
+    // supported" at runtime. Keep it external so Node resolves it from
+    // the installed dependency tree normally.
+    "better-sqlite3",
+    "bindings",
   ],
   logLevel: "info",
 };
