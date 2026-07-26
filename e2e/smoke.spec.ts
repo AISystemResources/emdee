@@ -17,10 +17,10 @@ test.describe("smoke (anonymous)", () => {
     expect(response!.status(), "no 5xx on root").toBeLessThan(500);
     await expect(page.locator("body")).toBeVisible();
     await expect(
-      page.getByRole("heading", { level: 1, name: /knowledge graph ai agents can read and write/i }),
+      page.getByRole("heading", { level: 1, name: /your second brain/i }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(
-      page.getByRole("link", { name: /start your vault/i }).first(),
+      page.getByRole("link", { name: /start your second brain/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
     // Public-vault link in nav — proves the /vault route is still discoverable.
     await expect(
