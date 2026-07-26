@@ -26,11 +26,13 @@ export async function POST(request: Request) {
   let ctx: ToolContext;
   if (docsDir) {
     const path = await import("node:path");
-    ctx = { mode: "local", docsDir: path.resolve(docsDir) };
+    const { localToolContext } = await import("@/src/lib/mcp/tools/context");
+    ctx = localToolContext(path.resolve(docsDir));
   } else {
     const { userId } = await auth();
     if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
-    ctx = { mode: "cloud", storage: new SupabaseStorage(), userId };
+    const { cloudDatabase } = await import("@/src/lib/database");
+    ctx = { mode: "cloud", storage: new SupabaseStorage(), userId, db: cloudDatabase() };
   }
 
   try {

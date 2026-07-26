@@ -176,7 +176,8 @@ async function handleMcp(request: Request): Promise<Response> {
   const docsDir = process.env.EMDEE_DOCS;
   if (docsDir) {
     const path = await import("node:path");
-    const ctx: ToolContext = { mode: "local", docsDir: path.resolve(docsDir) };
+    const { localToolContext } = await import("@/src/lib/mcp/tools/context");
+    const ctx: ToolContext = localToolContext(path.resolve(docsDir));
     const server = buildMcpServer(ctx);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await server.connect(transport);

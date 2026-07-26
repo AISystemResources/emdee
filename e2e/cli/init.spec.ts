@@ -19,6 +19,7 @@ import { normalizeOwnerTitle } from "@/src/lib/owner/identity";
 import { getDoc } from "@/src/lib/mcp/tools/get_doc";
 import { listDocs } from "@/src/lib/mcp/tools/list_docs";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 const exec = promisify(execFile);
 const BIN = path.resolve(process.cwd(), "bin/emdee.js");
@@ -60,7 +61,7 @@ test.describe("emdee init (SPRINT-093)", () => {
 
   test("list surfaces the 5 virtual system nodes plus the owner", async () => {
     await exec("node", [BIN, "init", "--nickname", "Testy"], { cwd: dir });
-    const ctx: ToolContext = { mode: "local", docsDir: path.join(dir, "docs") };
+    const ctx: ToolContext = localToolContext(path.join(dir, "docs"));
     const raw = await listDocs(ctx, {});
     const docs = parseJson(raw) as Array<{ path: string; title: string }>;
     const paths = docs.map((d) => d.path).sort();
@@ -69,7 +70,7 @@ test.describe("emdee init (SPRINT-093)", () => {
 
   test("get_doc returns virtual VAULT content when no VAULT.md exists on disk", async () => {
     await exec("node", [BIN, "init", "--nickname", "Testy"], { cwd: dir });
-    const ctx: ToolContext = { mode: "local", docsDir: path.join(dir, "docs") };
+    const ctx: ToolContext = localToolContext(path.join(dir, "docs"));
     const raw = await getDoc(ctx, { path: "VAULT.md", full: true });
     const parsed = parseJson(raw) as { content?: string; summary?: string };
     expect(parsed.content).toContain("# VAULT");

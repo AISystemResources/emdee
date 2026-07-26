@@ -6,6 +6,7 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import path from "node:path";
+import { localToolContext } from "../lib/mcp/tools/context";
 import {
   listDocs,
   listSummaryDrift,
@@ -33,7 +34,8 @@ import pkg from "../../package.json";
 // skipped here. Cloud-mode logging lives in app/api/mcp/route.ts.
 
 const docsDir = path.resolve(process.env.EMDEE_DOCS ?? path.join(process.cwd(), "docs"));
-const ctx: ToolContext = { mode: "local", docsDir };
+// SPRINT-140: local ctx now carries a SqliteDatabase (SIG-032 Phase 2).
+const ctx: ToolContext = localToolContext(docsDir);
 
 const server = new Server(
   {

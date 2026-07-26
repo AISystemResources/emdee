@@ -403,6 +403,13 @@ export async function writeVaultFile(ctx: ToolContext, rel: string, content: str
       const file = localSafePath(ctx.docsDir, rel);
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, content, "utf8");
+      // SPRINT-140: mirror the write into the local SQLite vault_files +
+      // resync doc_edges, so lint_orphans / find_similar / reconcile stay
+      // coherent with disk truth.
+      const { LOCAL_NAMESPACE } = await import("./types");
+      const { syncDocEdges } = await import("../../../core/syncDocEdges");
+      await ctx.db.putFile(LOCAL_NAMESPACE, rel, content);
+      await syncDocEdges(ctx.db, LOCAL_NAMESPACE, rel, content);
       return;
     }
     await ctx.storage.write(`${ctx.userId}/${rel}`, content);
@@ -421,6 +428,11 @@ export async function deleteVaultFile(ctx: ToolContext, rel: string): Promise<vo
   try {
     if (ctx.mode === "local") {
       await rm(localSafePath(ctx.docsDir, rel), { force: true });
+      // SPRINT-140: mirror the delete into local SQLite.
+      const { LOCAL_NAMESPACE } = await import("./types");
+      const { deleteDocEdges } = await import("../../../core/syncDocEdges");
+      await ctx.db.deleteFile(LOCAL_NAMESPACE, rel);
+      await deleteDocEdges(ctx.db, LOCAL_NAMESPACE, rel);
       return;
     }
     await ctx.storage.delete(`${ctx.userId}/${rel}`);

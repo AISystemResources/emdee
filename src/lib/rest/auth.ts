@@ -1,5 +1,6 @@
 import { clerkIdFromOAuthToken } from "@/src/lib/supabase/oauth";
 import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
+import { cloudDatabase } from "@/src/lib/database";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 
 /**
@@ -15,5 +16,5 @@ import type { ToolContext } from "@/src/lib/mcp/tools/types";
 export async function ctxFromAuthHeader(req: Request): Promise<ToolContext | null> {
   const clerkId = await clerkIdFromOAuthToken(req);
   if (!clerkId) return null;
-  return { mode: "cloud", storage: new SupabaseStorage(), userId: clerkId };
+  return { mode: "cloud", storage: new SupabaseStorage(), userId: clerkId, db: cloudDatabase() };
 }

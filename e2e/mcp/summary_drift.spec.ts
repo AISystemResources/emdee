@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { listSummaryDrift } from "@/src/lib/mcp/tools/list_summary_drift";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -36,7 +37,7 @@ test.describe("list_summary_drift (SPRINT-081)", () => {
     await writeFile(path.join(docsDir, "ALPHA.md"), ALPHA, "utf8");
     await writeFile(path.join(docsDir, "BETA.md"), BETA, "utf8");
     await writeFile(path.join(docsDir, "GAMMA.md"), GAMMA, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

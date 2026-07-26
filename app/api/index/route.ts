@@ -212,8 +212,8 @@ export async function GET(request: Request) {
   const includeTrashed = url.searchParams.get("include_trashed") === "true";
   if (!includeTrashed) {
     const trashCtx: ToolContext = isLocal
-      ? { mode: "local", docsDir: process.env.EMDEE_DOCS ?? "" }
-      : { mode: "cloud", storage, userId: ns };
+      ? (await import("@/src/lib/mcp/tools/context")).localToolContext(process.env.EMDEE_DOCS ?? "")
+      : { mode: "cloud", storage, userId: ns, db: cloudDatabase() };
     try {
       const trashed = await listTrashedPaths(trashCtx);
       if (trashed.size > 0) {

@@ -1,16 +1,16 @@
-// SPRINT-120: HARD RULE 11 spec for lint_orphans.
+// SPRINT-140: lint_orphans runs in both cloud AND local modes now.
+// This spec exercises the local-mode path end-to-end: build a temp docs
+// tree with a known orphan, run the tool, verify the classification.
 //
-// The tool needs cloud mode + Supabase; we can't exercise the full end-to-end
-// against a temp filesystem. Instead we assert the pieces that would silently
-// break: the local-mode refusal path (must never scan bogus data) and the
-// classifier helper (via the exported behavior).
-//
-// The full auto-fix path is exercised implicitly during real-vault use — this
-// spec's job is to pin the shape so future refactors don't drift the contract.
+// The cloud-mode path shares the exact same code (VaultDatabase
+// abstraction), so covering local is sufficient for the CI gate.
 
 import { expect, test } from "@playwright/test";
 import { lintOrphans } from "@/src/lib/mcp/tools/lint_orphans";
-import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 interface ToolCallResult { content: Array<{ type: "text"; text: string }>; }
 
@@ -20,16 +20,31 @@ function parse(raw: unknown): Record<string, unknown> {
   return JSON.parse(r.content[0].text) as Record<string, unknown>;
 }
 
-test.describe("lint_orphans", () => {
-  test("refuses in local mode", async () => {
-    const ctx: ToolContext = { mode: "local", docsDir: "/tmp/does-not-matter" };
-    const result = parse(await lintOrphans(ctx, {}));
-    expect(result.error).toBe("cloud_mode_required");
+test.describe("lint_orphans (SPRINT-140 local mode)", () => {
+  let docsDir: string;
+
+  test.beforeEach(() => {
+    docsDir = join(tmpdir(), `emdee-lint-orphans-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(docsDir, { recursive: true });
   });
 
-  test("refuses in local mode even with fix=true", async () => {
-    const ctx: ToolContext = { mode: "local", docsDir: "/tmp/does-not-matter" };
-    const result = parse(await lintOrphans(ctx, { fix: true }));
-    expect(result.error).toBe("cloud_mode_required");
+  test.afterEach(() => {
+    try { rmSync(docsDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  test("detects a structural orphan in local mode", async () => {
+    // Root doc + one orphan (no ## Child of section).
+    writeFileSync(join(docsDir, "ROOT.md"), "# ROOT\n\n## Parent of\n\n* [[Child A]]\n\n## Notes\n");
+    writeFileSync(join(docsDir, "child-a.md"), "# Child A\n\n## Child of\n\n* [[ROOT]]\n\n## Notes\n");
+    writeFileSync(join(docsDir, "orphan.md"), "# Orphan Doc\n\n## Notes\n\nI have no parent.\n");
+
+    const ctx = localToolContext(docsDir);
+    const result = parse(await lintOrphans(ctx, {}));
+    expect(result.ok).toBe(true);
+    const byKind = result.by_kind as Record<string, number>;
+    expect(byKind.structural_orphan).toBeGreaterThanOrEqual(1);
+    const orphans = result.orphans as Array<{ path: string; kind: string }>;
+    const orphanPaths = orphans.filter((o) => o.kind === "structural_orphan").map((o) => o.path);
+    expect(orphanPaths).toContain("orphan.md");
   });
 });

@@ -12,6 +12,7 @@
 import path from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import type { ToolContext } from "../lib/mcp/tools/types";
+import { localToolContext } from "../lib/mcp/tools/context";
 import { patchSection } from "../lib/mcp/tools/patch_section";
 import { appendSection } from "../lib/mcp/tools/append_section";
 import { appendDoc } from "../lib/mcp/tools/append_doc";
@@ -522,7 +523,7 @@ async function runVerb(verbName: string, argv: string[]): Promise<void> {
   if (!cacheHit) {
     result = remote
       ? await callTool(spec.toolName, args).then((r) => r as unknown)
-      : await spec.toolFn({ mode: "local", docsDir }, args);
+      : await spec.toolFn(localToolContext(docsDir), args);
   }
 
   // Extract response text for error detection + cache storage.

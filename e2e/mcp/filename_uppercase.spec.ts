@@ -13,6 +13,7 @@ import { writeDoc } from "@/src/lib/mcp/tools/write_doc";
 import { createChild } from "@/src/lib/mcp/tools/create_child";
 import { lintDoc } from "@/src/lib/mcp/tools/lint_doc";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -43,7 +44,7 @@ test.describe("filename uppercase enforcement (local-mode)", () => {
     docsDir = await mkdtemp(path.join(tmpdir(), "emdee-filename-"));
     await mkdir(docsDir, { recursive: true });
     await writeFile(path.join(docsDir, "PARENT.md"), PARENT_CONTENT, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { renameTitle } from "@/src/lib/mcp/tools/rename_title";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -48,7 +49,7 @@ test.describe("rename_title", () => {
       await writeFile(path.join(docsDir, "UNRELATED.md"),
         `# UNRELATED\n\n> Nothing to see.\n`);
 
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, { old_title: "HUB", new_title: "NEW-HUB" }));
 
       expect(result.ok).toBe(true);
@@ -69,7 +70,7 @@ test.describe("rename_title", () => {
     try {
       await writeFile(path.join(docsDir, "REF.md"),
         `# REF\n\n> See [[OLD-TITLE|the docs]] for details.\n`);
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, { old_title: "OLD-TITLE", new_title: "NEW-TITLE" }));
       expect(result.docs_rewritten).toBe(1);
       const ref = await readFile(path.join(docsDir, "REF.md"), "utf8");
@@ -82,7 +83,7 @@ test.describe("rename_title", () => {
     try {
       await writeFile(path.join(docsDir, "A.md"), `# A\n\n> [[emdee_os — LOGS]]\n`);
       await writeFile(path.join(docsDir, "B.md"), `# B\n\n> [[EMDEE_OS — Logs]]\n`);
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, {
         old_title: "EMDEE_OS — LOGS",
         new_title: "EMDEE_OS — PRODUCTION — LOGS",
@@ -95,7 +96,7 @@ test.describe("rename_title", () => {
     const docsDir = await setup();
     try {
       await writeFile(path.join(docsDir, "X.md"), `# X\n\n> body\n`);
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, { old_title: "SAME", new_title: "SAME" }));
       expect(result.error).toBe("titles_identical");
     } finally { await teardown(docsDir); }
@@ -104,7 +105,7 @@ test.describe("rename_title", () => {
   test("refuses when old_title missing", async () => {
     const docsDir = await setup();
     try {
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, { new_title: "Only" }));
       expect(result.error).toBe("missing_required");
     } finally { await teardown(docsDir); }
@@ -117,7 +118,7 @@ test.describe("rename_title", () => {
         await writeFile(path.join(docsDir, `DOC-${i}.md`),
           `# DOC-${i}\n\n> Content mentioning [[OLD]] and [[OLD|alias]].\n`);
       }
-      const ctx: ToolContext = { mode: "local", docsDir };
+      const ctx: ToolContext = localToolContext(docsDir);
       const result = parse(await renameTitle(ctx, { old_title: "OLD", new_title: "NEW" }));
       expect(result.ok).toBe(true);
       expect(result.docs_rewritten).toBe(20);
