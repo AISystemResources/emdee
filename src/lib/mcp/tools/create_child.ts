@@ -8,9 +8,10 @@ import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { LintWarning } from "./lint";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["parent_path", "title", "body", "summary", "child_path", "gate_on_warnings"],
+  allowed: ["parent_path", "title", "body", "summary", "child_path", "gate_on_warnings", "expected_parent_content_hash"],
   required: ["parent_path", "title"],
 } as const;
 
@@ -215,6 +216,10 @@ export async function createChild(ctx: ToolContext, args: Record<string, unknown
 
   const parentContent = await readVaultFile(ctx, parentPath);
   if (parentContent === null) return json({ error: "parent_not_found", path: parentPath });
+  // SPRINT-141b: guard parent's content hash if supplied. Child is new — no guard.
+  const parentExpected = args.expected_parent_content_hash !== undefined ? String(args.expected_parent_content_hash) : undefined;
+  const parentConflict = await guardDocContentHash(ctx, parentPath, parentExpected);
+  if (parentConflict) return json(parentConflict);
   const parentTitle = deriveTitle(parentContent, parentPath);
 
   const index = await loadVaultIndex(ctx);

@@ -7,9 +7,13 @@ import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardMulti } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["path", "new_parent_path", "old_parent_path", "position", "gate_on_warnings"],
+  allowed: [
+    "path", "new_parent_path", "old_parent_path", "position", "gate_on_warnings",
+    "expected_child_content_hash", "expected_old_parent_content_hash", "expected_new_parent_content_hash",
+  ],
   required: ["path", "new_parent_path"],
 } as const;
 
@@ -357,6 +361,16 @@ export async function moveDoc(
   if (oldParentContent === null) {
     return json({ error: "old_parent_not_found", path: oldParentPath });
   }
+
+  // SPRINT-141b: three-side guard. All three docs must match their
+  // supplied hashes (if any); first mismatch short-circuits without
+  // any writes.
+  const conflict = await guardMulti(ctx, [
+    { path: childPath, expected: args.expected_child_content_hash !== undefined ? String(args.expected_child_content_hash) : undefined },
+    { path: oldParentPath, expected: args.expected_old_parent_content_hash !== undefined ? String(args.expected_old_parent_content_hash) : undefined },
+    { path: newParentPath, expected: args.expected_new_parent_content_hash !== undefined ? String(args.expected_new_parent_content_hash) : undefined },
+  ]);
+  if (conflict) return json(conflict);
 
   const childTitle = deriveTitle(childContent, childPath);
   const newParentTitle = deriveTitle(newParentContent, newParentPath);

@@ -8,9 +8,10 @@ import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardMulti } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["a_path", "b_path", "label", "gate_on_warnings"],
+  allowed: ["a_path", "b_path", "label", "gate_on_warnings", "expected_a_content_hash", "expected_b_content_hash"],
   required: ["a_path", "b_path"],
 } as const;
 
@@ -156,6 +157,13 @@ export async function addAssociation(ctx: ToolContext, args: Record<string, unkn
   if (aContent === null) return json({ error: "a_not_found", path: aPath });
   const bContent = await readVaultFile(ctx, bPath);
   if (bContent === null) return json({ error: "b_not_found", path: bPath });
+
+  // SPRINT-141b: guard both docs. First-failing short-circuits.
+  const conflict = await guardMulti(ctx, [
+    { path: aPath, expected: args.expected_a_content_hash !== undefined ? String(args.expected_a_content_hash) : undefined },
+    { path: bPath, expected: args.expected_b_content_hash !== undefined ? String(args.expected_b_content_hash) : undefined },
+  ]);
+  if (conflict) return json(conflict);
 
   const aTitle = deriveTitle(aContent, aPath);
   const bTitle = deriveTitle(bContent, bPath);

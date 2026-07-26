@@ -457,6 +457,7 @@ program
   .option("--summary <text>", "Optional blockquote summary (placeholder if omitted)")
   .option("--child-path <path>", "Override the derived child path")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-parent-hash <hash>", "Optional parent doc_content_hash — parent-side write rejected on mismatch (SPRINT-141b)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -464,6 +465,7 @@ program
     const extra = argsFromOpts(opts, {
       parentPath: "--parent-path", title: "--title", body: "--body",
       summary: "--summary", childPath: "--child-path", gateOn: "--gate-on",
+      expectedParentHash: "--expected-parent-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("create-child", opts, extra);
@@ -476,13 +478,17 @@ program
   .requiredOption("--b-path <path>", "Second doc path")
   .option("--label <text>", "Shared label on both bullets")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-a-hash <hash>", "Optional a_path doc_content_hash (SPRINT-141b)")
+  .option("--expected-b-hash <hash>", "Optional b_path doc_content_hash (SPRINT-141b)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
     const extra = argsFromOpts(opts, {
       aPath: "--a-path", bPath: "--b-path", label: "--label",
-      gateOn: "--gate-on", remote: "--remote", json: "--json",
+      gateOn: "--gate-on",
+      expectedAHash: "--expected-a-hash", expectedBHash: "--expected-b-hash",
+      remote: "--remote", json: "--json",
     });
     shellWrite("add-association", opts, extra);
   });
@@ -495,6 +501,9 @@ program
   .option("--old-parent-path <path>", "Old parent (required if child has multiple Child of bullets)")
   .option("--position <n>", "0-indexed position in new parent's Parent of")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
+  .option("--expected-child-hash <hash>", "Optional child doc_content_hash (SPRINT-141b)")
+  .option("--expected-old-parent-hash <hash>", "Optional old-parent doc_content_hash (SPRINT-141b)")
+  .option("--expected-new-parent-hash <hash>", "Optional new-parent doc_content_hash (SPRINT-141b)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -502,7 +511,11 @@ program
     const extra = argsFromOpts(opts, {
       path: "--path", newParentPath: "--new-parent-path",
       oldParentPath: "--old-parent-path", position: "--position",
-      gateOn: "--gate-on", remote: "--remote", json: "--json",
+      gateOn: "--gate-on",
+      expectedChildHash: "--expected-child-hash",
+      expectedOldParentHash: "--expected-old-parent-hash",
+      expectedNewParentHash: "--expected-new-parent-hash",
+      remote: "--remote", json: "--json",
     });
     shellWrite("move-doc", opts, extra);
   });
@@ -585,12 +598,14 @@ program
   .description("Sidecar-based soft delete. Restore is lossless (edges preserved).")
   .requiredOption("--path <path>", "Vault doc path")
   .option("--original-parent-path <path>", "Override the auto-derived restore target")
+  .option("--expected-hash <hash>", "Optional doc_content_hash — trash rejected on mismatch (SPRINT-141b)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
     const extra = argsFromOpts(opts, {
       path: "--path", originalParentPath: "--original-parent-path",
+      expectedHash: "--expected-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("trash-doc", opts, extra);
@@ -841,6 +856,7 @@ program
   .option("--new-doc-title <title>", "Override the derived new doc title")
   .option("--new-doc-path <path>", "Override the derived new doc path")
   .option("--summary <text>", "Blockquote summary for the new intermediate")
+  .option("--expected-source-hash <hash>", "Optional source doc_content_hash (SPRINT-141b)")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -848,7 +864,9 @@ program
     const extra = argsFromOpts(opts, {
       sourcePath: "--source-path", subgroupHeading: "--subgroup-heading",
       newDocTitle: "--new-doc-title", newDocPath: "--new-doc-path",
-      summary: "--summary", remote: "--remote", json: "--json",
+      summary: "--summary",
+      expectedSourceHash: "--expected-source-hash",
+      remote: "--remote", json: "--json",
     });
     shellWrite("materialize-subgroup", opts, extra);
   });

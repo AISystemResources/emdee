@@ -164,6 +164,7 @@ const VERBS: Record<string, VerbSpec> = {
       summary: { type: "string" },
       "child-path": { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "expected-parent-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -177,6 +178,7 @@ const VERBS: Record<string, VerbSpec> = {
       const childPath = optionalString(v["child-path"]);
       if (childPath) args.child_path = childPath;
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-parent-hash"]) args.expected_parent_content_hash = asString(v["expected-parent-hash"]);
       return args;
     },
   },
@@ -189,6 +191,8 @@ const VERBS: Record<string, VerbSpec> = {
       "b-path": { type: "string" },
       label: { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "expected-a-hash": { type: "string" },
+      "expected-b-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -198,6 +202,8 @@ const VERBS: Record<string, VerbSpec> = {
       const label = optionalString(v.label);
       if (label) args.label = label;
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-a-hash"]) args.expected_a_content_hash = asString(v["expected-a-hash"]);
+      if (v["expected-b-hash"]) args.expected_b_content_hash = asString(v["expected-b-hash"]);
       return args;
     },
   },
@@ -211,6 +217,9 @@ const VERBS: Record<string, VerbSpec> = {
       "old-parent-path": { type: "string" },
       position: { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "expected-child-hash": { type: "string" },
+      "expected-old-parent-hash": { type: "string" },
+      "expected-new-parent-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -222,6 +231,9 @@ const VERBS: Record<string, VerbSpec> = {
       const pos = optionalString(v.position);
       if (pos) args.position = Number(pos);
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["expected-child-hash"]) args.expected_child_content_hash = asString(v["expected-child-hash"]);
+      if (v["expected-old-parent-hash"]) args.expected_old_parent_content_hash = asString(v["expected-old-parent-hash"]);
+      if (v["expected-new-parent-hash"]) args.expected_new_parent_content_hash = asString(v["expected-new-parent-hash"]);
       return args;
     },
   },
@@ -297,11 +309,13 @@ const VERBS: Record<string, VerbSpec> = {
       ...COMMON,
       path: { type: "string" },
       "original-parent-path": { type: "string" },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = { path: asString(v.path) };
       const op = optionalString(v["original-parent-path"]);
       if (op) args.original_parent_path = op;
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },
@@ -339,6 +353,7 @@ const VERBS: Record<string, VerbSpec> = {
       "new-doc-title": { type: "string" },
       "new-doc-path": { type: "string" },
       summary: { type: "string" },
+      "expected-source-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -351,6 +366,7 @@ const VERBS: Record<string, VerbSpec> = {
       if (p) args.new_doc_path = p;
       const s = optionalString(v.summary);
       if (s) args.summary = s;
+      if (v["expected-source-hash"]) args.expected_source_content_hash = asString(v["expected-source-hash"]);
       return args;
     },
   },

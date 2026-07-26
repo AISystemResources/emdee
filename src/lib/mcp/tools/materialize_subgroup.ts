@@ -3,9 +3,10 @@ import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./v
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["source_path", "subgroup_heading", "new_doc_title", "new_doc_path", "summary"],
+  allowed: ["source_path", "subgroup_heading", "new_doc_title", "new_doc_path", "summary", "expected_source_content_hash"],
   required: ["source_path", "subgroup_heading"],
 } as const;
 
@@ -194,6 +195,11 @@ export async function materializeSubgroup(ctx: ToolContext, args: Record<string,
 
   const sourceContent = await readVaultFile(ctx, sourcePath);
   if (sourceContent === null) return json({ error: "source_not_found", path: sourcePath });
+
+  // SPRINT-141b: guard source doc if caller supplied a hash.
+  const sourceExpected = args.expected_source_content_hash !== undefined ? String(args.expected_source_content_hash) : undefined;
+  const sourceConflict = await guardDocContentHash(ctx, sourcePath, sourceExpected);
+  if (sourceConflict) return json(sourceConflict);
 
   const sourceTitle = deriveTitle(sourceContent, sourcePath);
 

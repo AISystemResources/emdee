@@ -3,9 +3,10 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["path", "original_parent_path"],
+  allowed: ["path", "original_parent_path", "expected_content_hash"],
   required: ["path"],
 } as const;
 
@@ -64,6 +65,11 @@ export async function trashDoc(
 
   const content = await readVaultFile(ctx, docPath);
   if (content === null) return json({ error: "doc_not_found", path: docPath });
+
+  // SPRINT-141b: version-guard the doc being trashed if the caller passed a hash.
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const conflict = await guardDocContentHash(ctx, docPath, expected);
+  if (conflict) return json(conflict);
 
   // Resolve original parent. Explicit arg wins; otherwise derive from the
   // doc's first Child of bullet via the indexer.
