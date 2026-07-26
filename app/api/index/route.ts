@@ -6,6 +6,7 @@ import { adminClient } from "@/src/lib/supabase/admin";
 import { ensureProfile } from "@/src/lib/supabase/oauth";
 import { vaultListTag } from "@/src/lib/cache/bust";
 import { backfillNamespace } from "@/src/core/syncDocEdges";
+import { cloudDatabase } from "@/src/lib/database";
 import { fetchSharesForGrantee } from "@/src/lib/share/grants";
 import { listTrashedPaths } from "@/src/lib/trash/state";
 import { ownerTitleFromEmail, normalizeOwnerTitle, ownerNodeScaffold } from "@/src/lib/owner/identity";
@@ -181,7 +182,7 @@ export async function GET(request: Request) {
     // Rebuild all edges after seed + owner node are both written, so
     // EMDEE→<owner> and EMDEE→system-node edges all resolve in one pass.
     try {
-      await backfillNamespace(adminClient(), ns);
+      await backfillNamespace(cloudDatabase(), ns);
     } catch (e) {
       console.error(`post-seed backfill failed for ${ns}:`, e);
     }

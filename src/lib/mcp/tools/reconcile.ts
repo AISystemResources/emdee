@@ -1,6 +1,6 @@
 import { readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges, backfillNamespace } from "../../../core/syncDocEdges";
-import { adminClient } from "../../supabase/admin";
+import { cloudDatabase } from "../../database";
 import type { ToolContext } from "./types";
 
 // SPRINT-108 Fix 3: user-facing repair verb for doc_edges drift.
@@ -55,10 +55,10 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
     });
   }
 
-  const admin = adminClient();
+  const db = ctx.db ?? cloudDatabase();
 
   if (all) {
-    const result = await backfillNamespace(admin, ctx.userId);
+    const result = await backfillNamespace(db, ctx.userId);
     return json({
       ok: true,
       mode: "namespace",
@@ -76,7 +76,7 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
   if (content === null) {
     // File doesn't exist. Best repair action: delete all doc_edges rows
     // that reference this path (they're orphaned pointers to a missing doc).
-    await deleteDocEdges(admin, ctx.userId, targetPath!);
+    await deleteDocEdges(db, ctx.userId, targetPath!);
     return json({
       ok: true,
       mode: "per-doc",
@@ -90,8 +90,8 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
   // rebuild from the current content. syncDocEdges is idempotent w.r.t.
   // the desired-state set post-SPRINT-108 Fix 2 (atomic RPC), so the sync
   // will land the correct rows even if they existed before.
-  await deleteDocEdges(admin, ctx.userId, targetPath!);
-  await syncDocEdges(admin, ctx.userId, targetPath!, content);
+  await deleteDocEdges(db, ctx.userId, targetPath!);
+  await syncDocEdges(db, ctx.userId, targetPath!, content);
 
   return json({
     ok: true,
