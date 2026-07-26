@@ -415,7 +415,10 @@ export function App({ namespace }: { namespace: string }) {
 
   const loadIndex = useCallback(async (preserveActive: boolean) => {
     try {
-      const res = await fetch(`/api/index?ns=${encodeURIComponent(namespace)}`, { cache: "no-store" });
+      // SPRINT-146b: request metadata-only. Docs come back with content:""
+      // and lazy-fill via ensureDocContent below when the user selects them.
+      // Foundation: SPRINT-146a's ?meta=true endpoint.
+      const res = await fetch(`/api/index?ns=${encodeURIComponent(namespace)}&meta=true`, { cache: "no-store" });
       if (!res.ok) throw new Error(`index fetch failed: ${res.status}`);
       const data: DocIndex = await res.json();
       if (data.needsNickname) {
@@ -754,12 +757,94 @@ export function App({ namespace }: { namespace: string }) {
   const indexRef = useRef<DocIndex | null>(null);
   useEffect(() => { indexRef.current = index; }, [index]);
 
+  // SPRINT-146b: lazy-load content for a single doc when the user selects
+  // it (or when a caller explicitly asks for it). Splices the fetched
+  // content back into `index` so subsequent reads are cache-hits.
+  // Returns the content string, or null on error.
+  const contentInFlight = useRef<Map<string, Promise<string | null>>>(new Map());
+  const ensureDocContent = useCallback(async (path: string, targetNs?: string): Promise<string | null> => {
+    if (!path) return null;
+    const ns = targetNs ?? namespace;
+    // Fast path — already have it.
+    const cached = indexRef.current?.docs.find((d) => d.path === path)?.content;
+    if (cached && cached.length > 0) return cached;
+    // De-dupe concurrent in-flight fetches for the same path.
+    const inflightKey = `${ns}::${path}`;
+    const inflight = contentInFlight.current.get(inflightKey);
+    if (inflight) return inflight;
+    const fetching = (async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`/api/doc?path=${encodeURIComponent(path)}&ns=${encodeURIComponent(ns)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const content = await res.text();
+        // Splice into local state so the DocIndex behaves as if content
+        // was always there — every downstream consumer reads it via the
+        // existing d.content field.
+        if (ns === namespace) {
+          setIndex((cur) =>
+            cur ? { ...cur, docs: cur.docs.map((d) => (d.path === path ? { ...d, content } : d)) } : cur,
+          );
+        } else {
+          setSharedShares((cur) =>
+            cur.map((s) =>
+              s.ownerId === ns
+                ? { ...s, docs: s.docs.map((d) => (d.path === path ? { ...d, content } : d)) }
+                : s,
+            ),
+          );
+        }
+        return content;
+      } catch {
+        return null;
+      } finally {
+        contentInFlight.current.delete(inflightKey);
+      }
+    })();
+    contentInFlight.current.set(inflightKey, fetching);
+    return fetching;
+  }, [namespace]);
+
+  // SPRINT-146b: when the active doc changes, kick off lazy-fetch of its
+  // content if we don't already have it. Non-blocking — the DocEditor
+  // renders with empty content briefly, then re-renders when state updates.
+  //
+  // Shared docs are addressed as `${SHARED_PREFIX}${ownerId}:${relPath}`
+  // (see sharedActiveKey above) so `activeSharedDoc`'s content path is
+  // already resolved for us via sharedDocsByKey; we just need to trigger
+  // a fetch against the OWNER's namespace.
+  useEffect(() => {
+    if (!activePath) return;
+    if (activePath.startsWith(SHARED_PREFIX)) {
+      const rest = activePath.slice(SHARED_PREFIX.length);
+      const colon = rest.indexOf(":");
+      if (colon > 0) {
+        const ownerId = rest.slice(0, colon);
+        const relPath = rest.slice(colon + 1);
+        void ensureDocContent(relPath, ownerId);
+      }
+      return;
+    }
+    void ensureDocContent(activePath);
+  }, [activePath, ensureDocContent]);
+
   const save = useCallback(async (path: string, content: string, opts?: { ns?: string; skipIndexUpdate?: boolean }) => {
     const targetNs = opts?.ns ?? namespace;
     const shouldLog = !loggedInSession.current.has(path);
-    const previousContent = shouldLog
-      ? (prevContentRef.current.get(path) ?? indexRef.current?.docs.find(d => d.path === path)?.content)
-      : undefined;
+    // SPRINT-146b: content is lazy-loaded, so the in-memory copy may be
+    // empty on first edit of this session. If so, fetch it (or accept
+    // undefined and let the log entry omit previousContent — undo log
+    // isn't load-bearing enough to block the save).
+    let previousContent: string | undefined;
+    if (shouldLog) {
+      previousContent = prevContentRef.current.get(path)
+        ?? indexRef.current?.docs.find(d => d.path === path)?.content;
+      if (!previousContent) {
+        const fetched = await ensureDocContent(path, targetNs);
+        previousContent = fetched ?? undefined;
+      }
+    }
     setSaveState("saving");
     try {
       localEdit.current = true;
@@ -801,7 +886,7 @@ export function App({ namespace }: { namespace: string }) {
       setSaveState("error");
       localEdit.current = false;
     }
-  }, [namespace, docLog]);
+  }, [namespace, docLog, ensureDocContent]);
 
   const openDeleteNode = useCallback((focalPath: string, focalTitle: string) => {
     setDeleteCtx({ focalPath, focalTitle });
@@ -1002,7 +1087,12 @@ export function App({ namespace }: { namespace: string }) {
       const newLine = assocLabel.trim()
         ? `- [[${targetDoc.title}]] (${assocLabel.trim()})`
         : `- [[${targetDoc.title}]]`;
-      const updatedContent = appendToSection(focalDoc.content, "## Associated with", newLine);
+      // SPRINT-146b: focalDoc.content may be empty (lazy-loaded). Fetch
+      // it if so before splicing the new bullet.
+      const focalContent = focalDoc.content && focalDoc.content.length > 0
+        ? focalDoc.content
+        : (await ensureDocContent(addAssocCtx.focalPath)) ?? "";
+      const updatedContent = appendToSection(focalContent, "## Associated with", newLine);
       await fetch(
         `/api/doc?path=${encodeURIComponent(addAssocCtx.focalPath)}&ns=${encodeURIComponent(namespace)}`,
         { method: "PUT", headers: { "content-type": "text/markdown" }, body: updatedContent }
@@ -1012,7 +1102,7 @@ export function App({ namespace }: { namespace: string }) {
     } finally {
       setAssocBusy(false);
     }
-  }, [addAssocCtx, assocTarget, assocLabel, namespace, loadIndex, index]);
+  }, [addAssocCtx, assocTarget, assocLabel, namespace, loadIndex, index, ensureDocContent]);
 
   const handleWikiLinkClick = useCallback((title: string) => {
     if (!index) return;
