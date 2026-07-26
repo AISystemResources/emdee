@@ -9,24 +9,40 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("smoke (anonymous)", () => {
-  test("public root renders the LANDING doc and the sign-in CTA", async ({ page }) => {
-    // SPRINT-052 (SIG-009): root no longer exposes the operator's INFO. The
-    // public namespace renders LANDING.md at `/` plus a sign-in CTA banner.
+  test("root renders the marketing homepage (SPRINT-149)", async ({ page }) => {
+    // SPRINT-148/149: root `/` is now the marketing landing. The public vault
+    // renderer moved to `/vault`. Pin on distinctive hero copy + primary CTA.
     const response = await page.goto("/");
     expect(response, "navigation returned a response").not.toBeNull();
-    expect(response!.status(), "no 5xx on public root").toBeLessThan(500);
+    expect(response!.status(), "no 5xx on root").toBeLessThan(500);
     await expect(page.locator("body")).toBeVisible();
-    // LANDING's H1 / value-prop content is what visitors see — pin on a
-    // distinctive phrase from the placeholder body. Edits to LANDING content
-    // (via MCP, post-merge) should keep the "knowledge graph" phrase to
-    // keep this assertion valid; otherwise update the spec at the same time.
+    await expect(
+      page.getByRole("heading", { level: 1, name: /knowledge graph ai agents can read and write/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("link", { name: /start your vault/i }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+    // Public-vault link in nav — proves the /vault route is still discoverable.
+    await expect(
+      page.getByRole("link", { name: /public vault/i }).first(),
+    ).toBeVisible();
+  });
+
+  test("/vault serves the public vault renderer (SPRINT-148 URL move)", async ({ page, request, baseURL }) => {
+    const res = await request.get(`${baseURL ?? ""}/vault`);
+    expect(res.status()).toBeLessThan(500);
+    await page.goto("/vault");
     await expect(
       page.getByText(/your knowledge graph/i).first(),
     ).toBeVisible({ timeout: 10_000 });
-    // CTA banner — SSR'd at the top of the shell for unauthenticated visitors.
-    await expect(
-      page.getByRole("link", { name: /sign in to start your own vault/i }).first(),
-    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("/{userId} legacy URL 308 redirects to /vault/{userId} (SPRINT-148)", async ({ request, baseURL }) => {
+    const res = await request.get(`${baseURL ?? ""}/user_TESTLEGACYID`, { maxRedirects: 0 });
+    // 308 = permanent redirect preserving method.
+    expect([301, 302, 307, 308]).toContain(res.status());
+    const loc = res.headers()["location"] ?? "";
+    expect(loc, "redirect target").toContain("/vault/user_TESTLEGACYID");
   });
 
   test("/api/index returns the public namespace with EMDEE as root", async ({ request, baseURL }) => {
