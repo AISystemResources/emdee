@@ -3,7 +3,7 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["path", "original_parent_path", "expected_content_hash"],
@@ -49,7 +49,7 @@ function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
-export async function trashDoc(
+async function _trashDoc(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ): Promise<unknown> {
@@ -120,3 +120,5 @@ export async function trashDoc(
     already_trashed: false,
   });
 }
+
+export const trashDoc = withHashDeprecation(_trashDoc, ["expected_content_hash"]);

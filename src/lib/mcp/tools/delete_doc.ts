@@ -1,7 +1,7 @@
 import { deleteVaultFile, loadVaultIndex, readVaultFile, validatePath } from "./vault";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = { allowed: ["path", "expected_content_hash"], required: ["path"] } as const;
 
@@ -20,7 +20,7 @@ function json(value: unknown) {
  * The caller is expected to fix dangling references with patch_section
  * afterwards if inbound_edges is non-empty.
  */
-export async function deleteDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _deleteDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const rel = String(args.path);
@@ -70,3 +70,5 @@ export async function deleteDoc(ctx: ToolContext, args: Record<string, unknown>)
     ],
   };
 }
+
+export const deleteDoc = withHashDeprecation(_deleteDoc, ["expected_content_hash"]);

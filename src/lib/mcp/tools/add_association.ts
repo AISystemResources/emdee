@@ -8,7 +8,7 @@ import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardMulti } from "./version_guard";
+import { guardMulti, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["a_path", "b_path", "label", "gate_on_warnings", "expected_a_content_hash", "expected_b_content_hash"],
@@ -137,7 +137,7 @@ function json(value: unknown) {
  * presence-of-bullet alone). Use a future `update_association_label` for
  * label edits.
  */
-export async function addAssociation(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _addAssociation(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const aPath = String(args.a_path ?? "");
@@ -305,3 +305,5 @@ export async function addAssociation(ctx: ToolContext, args: Record<string, unkn
     b_associated_with_hash: hashBody(bPatch.assocBody),
   });
 }
+
+export const addAssociation = withHashDeprecation(_addAssociation, ["expected_a_content_hash", "expected_b_content_hash"]);

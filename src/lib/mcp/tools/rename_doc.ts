@@ -3,7 +3,7 @@ import { validatePath, readVaultFile, writeVaultFile, deleteVaultFile, loadVault
 import { adminClient } from "../../supabase/admin";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["old_path", "new_title", "new_path", "expected_content_hash"],
@@ -77,7 +77,7 @@ function rewriteWikiLinks(content: string, oldTitle: string, newTitle: string): 
  * re-run with the same args; per-doc writes are idempotent because the
  * old-title links won't be present in already-rewritten docs.
  */
-export async function renameDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _renameDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const oldPath = String(args.old_path ?? "");
@@ -173,3 +173,5 @@ export async function renameDoc(ctx: ToolContext, args: Record<string, unknown>)
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
+
+export const renameDoc = withHashDeprecation(_renameDoc, ["expected_content_hash"]);

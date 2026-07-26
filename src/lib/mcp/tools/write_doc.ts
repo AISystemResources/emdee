@@ -5,7 +5,7 @@ import { buildLintVaultContext } from "./lint_doc";
 import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["path", "content", "gate_on_warnings", "expected_content_hash"],
@@ -42,7 +42,7 @@ function parseGateCodes(raw: unknown): string[] {
  * `{ error: "lint_gate_failed", fixes, original_warnings }`. Default
  * `[]` preserves the legacy signal-not-gate behaviour.
  */
-export async function writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const rel = String(args.path);
@@ -86,3 +86,5 @@ export async function writeDoc(ctx: ToolContext, args: Record<string, unknown>):
   if (lint.warnings.length > 0) payload.warnings = lint.warnings;
   return json(payload);
 }
+
+export const writeDoc = withHashDeprecation(_writeDoc, ["expected_content_hash"]);

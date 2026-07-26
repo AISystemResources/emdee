@@ -2,7 +2,7 @@ import path from "node:path";
 import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["source_path", "rewrite_source_content", "extracts", "expected_content_hash"],
@@ -39,7 +39,7 @@ function deriveTitle(rel: string, content: string): string {
  * stay (idempotent — calling again with the same plan will fail the
  * existence check, which is the desired safety).
  */
-export async function splitDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _splitDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const sourcePath = String(args.source_path ?? "");
@@ -134,3 +134,5 @@ export async function splitDoc(ctx: ToolContext, args: Record<string, unknown>):
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
+
+export const splitDoc = withHashDeprecation(_splitDoc, ["expected_content_hash"]);

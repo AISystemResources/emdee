@@ -75,3 +75,43 @@ export async function guardDocContentHash(
     hint: "Doc changed since you last read it. Call get_doc to fetch the current doc_content_hash + content, reconcile your intended change, and retry.",
   };
 }
+
+/**
+ * SPRINT-141d: soft deprecation wrapper.
+ *
+ * Wraps a tool function. When any of `hashArgNames` is missing from
+ * `args`, tacks a `deprecation_warnings` array onto successful responses
+ * so the calling AI/CLI sees a clear signal that the guard arg will
+ * become required later. Never adds warnings to error responses; never
+ * changes behaviour otherwise.
+ *
+ * Parses + re-encodes the JSON MCP envelope { content: [{ type:"text",
+ * text: <json> }] }. Non-envelope responses pass through untouched.
+ */
+type ToolFn = (ctx: ToolContext, args: Record<string, unknown>) => Promise<unknown>;
+
+export function withHashDeprecation(fn: ToolFn, hashArgNames: readonly string[]): ToolFn {
+  return async (ctx, args) => {
+    const result = await fn(ctx, args);
+    const missing = hashArgNames.filter((n) => args[n] === undefined || args[n] === "");
+    if (missing.length === 0) return result;
+
+    try {
+      const envelope = result as { content?: Array<{ type: string; text: string }> };
+      const first = envelope?.content?.[0];
+      if (!first || first.type !== "text" || typeof first.text !== "string") return result;
+      const parsed = JSON.parse(first.text) as Record<string, unknown>;
+      // Only annotate positive responses — don't obscure errors.
+      if (parsed.error !== undefined) return result;
+      const existing = Array.isArray(parsed.deprecation_warnings)
+        ? (parsed.deprecation_warnings as string[])
+        : [];
+      const warn = `SPRINT-141d: version-guard args omitted (${missing.join(", ")}). These will become required in a future release — pass them from get_doc.doc_content_hash to guard against stale writes.`;
+      parsed.deprecation_warnings = [...existing, warn];
+      return { content: [{ type: "text" as const, text: JSON.stringify(parsed, null, 2) }] };
+    } catch {
+      // If the response isn't valid JSON we don't touch it.
+      return result;
+    }
+  };
+}

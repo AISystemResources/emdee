@@ -8,7 +8,7 @@ import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { LintWarning } from "./lint";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["parent_path", "title", "body", "summary", "child_path", "gate_on_warnings", "expected_parent_content_hash"],
@@ -173,7 +173,7 @@ function json(value: unknown) {
  * with the same args detects an existing-and-byte-equal child + an
  * already-present parent bullet and converges to the same state.
  */
-export async function createChild(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _createChild(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const parentPath = String(args.parent_path ?? "");
@@ -326,3 +326,5 @@ export async function createChild(ctx: ToolContext, args: Record<string, unknown
     idempotent_retry: isRetry,
   });
 }
+
+export const createChild = withHashDeprecation(_createChild, ["expected_parent_content_hash"]);
