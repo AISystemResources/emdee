@@ -185,24 +185,6 @@ function computeAllEdges(namespace: string, docs: DocMeta[]): DesiredEdges {
   return { hierMap, assocMap, duplicateParents };
 }
 
-function computeDesired(namespace: string, docs: DocMeta[], affectedPath: string): DesiredEdges {
-  const all = computeAllEdges(namespace, docs);
-  const filterTouching = <T extends EdgeRow>(map: Map<string, T>) => {
-    const out = new Map<string, T>();
-    for (const [k, r] of map) {
-      if (r.from_path === affectedPath || r.to_path === affectedPath) out.set(k, r);
-    }
-    return out;
-  };
-  return {
-    hierMap: filterTouching(all.hierMap),
-    assocMap: filterTouching(all.assocMap),
-    duplicateParents: all.duplicateParents.filter(
-      (d) => d.child === affectedPath || d.kept === affectedPath || d.dropped.includes(affectedPath),
-    ),
-  };
-}
-
 function rowKey(r: { from_path: string; to_path: string; kind: string }): string {
   return `${r.kind}::${r.from_path}::${r.to_path}`;
 }
@@ -213,7 +195,19 @@ function rowEqual(a: EdgeRow, b: EdgeRow): boolean {
 
 /**
  * Sync doc_edges rows touching `docPath` to match `newContent`.
- * SPRINT-139: takes VaultDatabase; pagination + atomic RPC live in the impl.
+ *
+ * SPRINT-143 (egress fix): fetches (file_path, title) instead of content
+ * for OTHER docs — a ~99% egress reduction on the write hot path. See
+ * migration 20260726120000_add_vault_files_title.sql. Consequence:
+ * we no longer re-derive OTHER docs' outgoing edges on every write.
+ * Inbound edges to docPath from other docs' Parent-of / Associated
+ * with are PRESERVED from the existing doc_edges rows (not recomputed
+ * from other docs' content). Cross-doc edge freshness becomes
+ * eventually-consistent unless the caller uses:
+ *   - modern write tools (create_child / move_doc / add_association /
+ *     rename_title — SPRINT-141b patches both sides atomically)
+ *   - reconcile (namespace-wide re-derivation)
+ * This matches the SPRINT-116 self-heal + reconcile design intent.
  */
 export async function syncDocEdges(
   db: VaultDatabase,
@@ -221,41 +215,54 @@ export async function syncDocEdges(
   docPath: string,
   newContent: string,
 ): Promise<void> {
+  // TITLES ONLY for resolver — no content payload. ~99% egress reduction.
   const rows = await db.listFiles(namespace, {
-    select: "file_path, content",
+    select: "file_path, title",
     order: "file_path_asc",
   });
 
-  const docs: DocMeta[] = rows.map((r) => {
-    const content = r.content ?? "";
-    return { path: r.file_path, title: deriveTitle(r.file_path, content), content };
-  });
+  const docs: DocMeta[] = rows.map((r) => ({
+    path: r.file_path,
+    // SPRINT-143: prefer the persisted title column; fall back to filename
+    // slug if the doc has no H1 (rare — user-broken doc).
+    title: (r.title as string | undefined | null) ?? filenameSlug(r.file_path),
+    content: "", // OTHER docs contribute NO derived edges; only their titles matter (for the resolver).
+  }));
 
-  const filteredDocs = docs.filter((d) => d.path !== docPath || newContent !== "");
+  // Inject the doc being written WITH its new content so its outgoing
+  // edges get derived. Delete = no content (fine — no from-edges).
+  const filteredDocs = docs.filter((d) => d.path !== docPath);
   if (newContent) {
-    const existing = filteredDocs.find((d) => d.path === docPath);
-    if (existing) {
-      existing.content = newContent;
-      existing.title = deriveTitle(docPath, newContent);
-    } else {
-      filteredDocs.push({ path: docPath, title: deriveTitle(docPath, newContent), content: newContent });
-    }
+    filteredDocs.push({
+      path: docPath,
+      title: deriveTitle(docPath, newContent),
+      content: newContent,
+    });
   }
 
-  const desired = computeDesired(namespace, injectSystemNodes(filteredDocs), docPath);
-  const desiredRows: EdgeRow[] = [...desired.hierMap.values(), ...desired.assocMap.values()];
+  // computeAllEdges will derive edges from docPath's newContent (and
+  // system nodes) since OTHER docs have empty content. Filter to
+  // from-docPath edges — the ONLY edges this sync is authoritative for.
+  const all = computeAllEdges(namespace, injectSystemNodes(filteredDocs));
+  const fromDocPathEdges: EdgeRow[] = [];
+  for (const r of all.hierMap.values()) if (r.from_path === docPath) fromDocPathEdges.push(r);
+  for (const r of all.assocMap.values()) if (r.from_path === docPath) fromDocPathEdges.push(r);
 
-  // Fetch current rows touching docPath (from + to).
+  // Preserve inbound edges to docPath — these come from OTHER docs'
+  // outgoing edges (already persisted in doc_edges from when those docs
+  // were synced). We re-include them so the atomic RPC's DELETE-touching-
+  // docPath + INSERT-desired doesn't lose them.
+  const inboundRows = await db.getEdges(namespace, { to_path: docPath });
+  const inboundFromOthers = inboundRows.filter((r) => r.from_path !== docPath);
+
+  const desiredRows: EdgeRow[] = [...fromDocPathEdges, ...inboundFromOthers];
+
+  // Short-circuit no-op writes.
   const curFrom = await db.getEdges(namespace, { from_path: docPath });
-  const curTo = await db.getEdges(namespace, { to_path: docPath });
-
   const currentMap = new Map<string, EdgeRow>();
-  for (const r of [...curFrom, ...curTo]) currentMap.set(rowKey(r), r);
-
+  for (const r of [...curFrom, ...inboundRows]) currentMap.set(rowKey(r), r);
   const desiredMap = new Map<string, EdgeRow>();
   for (const r of desiredRows) desiredMap.set(rowKey(r), r);
-
-  // Short-circuit no-op writes to avoid the atomic RPC round trip.
   if (currentMap.size === desiredMap.size) {
     let identical = true;
     for (const [k, r] of desiredMap) {

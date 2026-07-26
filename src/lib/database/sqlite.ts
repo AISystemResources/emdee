@@ -40,6 +40,31 @@ export class SqliteDatabase implements VaultDatabase {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.exec(schemaSql());
+    // SPRINT-143 upgrade path: existing DBs (user_version 1) predate
+    // the title column. CREATE TABLE IF NOT EXISTS won't add columns
+    // to an existing table, so manually ALTER + backfill from content,
+    // then bump user_version.
+    const row = this.db.prepare("PRAGMA user_version").get() as { user_version: number };
+    if (row && row.user_version < 2) {
+      // ALTER without a value; existing rows get NULL then backfill.
+      const cols = this.db.prepare("PRAGMA table_info(vault_files)").all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === "title")) {
+        this.db.exec("ALTER TABLE vault_files ADD COLUMN title TEXT");
+      }
+      // Backfill: derive title from H1 (simple regex, matches putFile logic).
+      const rows = this.db
+        .prepare("SELECT namespace, file_path, content FROM vault_files WHERE title IS NULL")
+        .all() as Array<{ namespace: string; file_path: string; content: string }>;
+      const upd = this.db.prepare("UPDATE vault_files SET title = ? WHERE namespace = ? AND file_path = ?");
+      const tx = this.db.transaction((batch: typeof rows) => {
+        for (const r of batch) {
+          const m = (r.content ?? "").match(/^#\s+(.+?)\s*$/m);
+          upd.run(m ? m[1].trim() : null, r.namespace, r.file_path);
+        }
+      });
+      tx(rows);
+      this.db.exec("PRAGMA user_version = 2");
+    }
   }
 
   close(): void {
@@ -49,7 +74,7 @@ export class SqliteDatabase implements VaultDatabase {
   async getFile(ns: string, path: string): Promise<VaultFileRow | null> {
     const row = this.db
       .prepare(
-        "SELECT namespace, file_path, content, updated_at, summary_hash, content_hash_at_summary_write FROM vault_files WHERE namespace = ? AND file_path = ?",
+        "SELECT namespace, file_path, content, title, updated_at, summary_hash, content_hash_at_summary_write FROM vault_files WHERE namespace = ? AND file_path = ?",
       )
       .get(ns, path) as VaultFileRow | undefined;
     return row ?? null;
@@ -61,17 +86,24 @@ export class SqliteDatabase implements VaultDatabase {
     content: string,
     meta?: { summary_hash?: string; content_hash_at_summary_write?: string },
   ): Promise<void> {
+    // SPRINT-143: derive title in-app (SQLite has no regex engine by
+    // default). Mirrors the Postgres GENERATED column: match first H1
+    // line, trim, else NULL. Callers fall back to filename slug when
+    // title is NULL, matching the resolver's behaviour in syncDocEdges.
+    const m = content.match(/^#\s+(.+?)\s*$/m);
+    const title = m ? m[1].trim() : null;
     this.db
       .prepare(
-        `INSERT INTO vault_files (namespace, file_path, content, updated_at, summary_hash, content_hash_at_summary_write)
-         VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?)
+        `INSERT INTO vault_files (namespace, file_path, content, title, updated_at, summary_hash, content_hash_at_summary_write)
+         VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?)
          ON CONFLICT(namespace, file_path) DO UPDATE SET
            content = excluded.content,
+           title = excluded.title,
            updated_at = excluded.updated_at,
            summary_hash = COALESCE(excluded.summary_hash, vault_files.summary_hash),
            content_hash_at_summary_write = COALESCE(excluded.content_hash_at_summary_write, vault_files.content_hash_at_summary_write)`,
       )
-      .run(ns, path, content, meta?.summary_hash ?? null, meta?.content_hash_at_summary_write ?? null);
+      .run(ns, path, content, title, meta?.summary_hash ?? null, meta?.content_hash_at_summary_write ?? null);
   }
 
   async deleteFile(ns: string, path: string): Promise<void> {
@@ -85,7 +117,7 @@ export class SqliteDatabase implements VaultDatabase {
     // SQLite has no PostgREST-style select-column parsing; treat "*" as
     // the full row, otherwise pass through as literal SQL.
     const cols = select === "*"
-      ? "namespace, file_path, content, updated_at, summary_hash, content_hash_at_summary_write"
+      ? "namespace, file_path, content, title, updated_at, summary_hash, content_hash_at_summary_write"
       : select;
     let sql = `SELECT ${cols} FROM vault_files WHERE namespace = ?`;
     const params: unknown[] = [ns];
