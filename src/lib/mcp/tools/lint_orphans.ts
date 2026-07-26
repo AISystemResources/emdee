@@ -1,7 +1,6 @@
 import { loadVaultIndex, readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges } from "../../../core/syncDocEdges";
 import { resolveWikiLink } from "../../../core/resolveLink";
-import { adminClient } from "../../supabase/admin";
 import { cloudDatabase } from "../../database";
 import { SYSTEM_NODES } from "../../system-nodes";
 import type { ToolContext } from "./types";
@@ -67,7 +66,6 @@ export async function lintOrphans(ctx: ToolContext, args: Record<string, unknown
   }
 
   const fix = args.fix === true;
-  const admin = adminClient();
   const db = ctx.db ?? cloudDatabase();
   const namespace = ctx.userId;
 
@@ -164,8 +162,8 @@ export async function lintOrphans(ctx: ToolContext, args: Record<string, unknown
         fixFailed.push({ path, error: "storage read returned null" });
         continue;
       }
-      await deleteDocEdges(admin, namespace, path);
-      await syncDocEdges(admin, namespace, path, content);
+      await deleteDocEdges(db, namespace, path);
+      await syncDocEdges(db, namespace, path, content);
       fixed.push(path);
     } catch (err) {
       fixFailed.push({ path, error: err instanceof Error ? err.message : String(err) });

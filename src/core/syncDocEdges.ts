@@ -8,20 +8,15 @@
 // Suppression mirrors src/core/indexer.ts: hierarchy first; then assocs
 // drop pairs that are already linked hierarchically or share a parent
 // (siblings). Resolution mirrors src/core/resolveLink.ts → pickByLocality.
+//
+// SPRINT-139 chunk B: these functions now take VaultDatabase instead of
+// SupabaseClient. Pagination + atomic-RPC discipline moves into the
+// SupabasePostgresDatabase impl. Callers must supply a VaultDatabase.
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseEdges } from "./parseEdges";
 import { pickByLocality, filenameSlug } from "./resolveLink";
 import { SYSTEM_NODES, missingSystemNodeFiles } from "../lib/system-nodes";
-
-interface EdgeRow {
-  namespace: string;
-  from_path: string;
-  to_path: string;
-  kind: "hierarchy" | "assoc";
-  label: string | null;
-  position: number;
-}
+import type { VaultDatabase, EdgeRow } from "../lib/database/types";
 
 interface DocMeta {
   path: string;
@@ -31,8 +26,6 @@ interface DocMeta {
 
 // Append virtual system nodes to a doc set so [[EMDEE]] / [[VAULT]] etc.
 // resolve in the edge resolver even when those nodes have no stored file.
-// Uses the shared `missingSystemNodeFiles` helper for the file-shape payload,
-// then wraps each result as a DocMeta with the canonical title.
 function injectSystemNodes(docs: DocMeta[]): DocMeta[] {
   const extras: DocMeta[] = missingSystemNodeFiles(docs.map((d) => d.path)).map((f) => {
     const node = SYSTEM_NODES.find((n) => n.path === f.path)!;
@@ -81,27 +74,15 @@ function makeResolver(docs: DocMeta[]) {
 }
 
 interface DesiredEdges {
-  /** Hierarchy rows keyed by `from::to`. */
   hierMap: Map<string, EdgeRow>;
-  /** Assoc rows keyed by `from::to` (already expanded to two rows per pair). */
   assocMap: Map<string, EdgeRow>;
-  /** Dual-parent claims resolved by locality — surfaced so callers can flag vault defects. */
   duplicateParents: Array<{ child: string; kept: string; dropped: string[] }>;
 }
 
-/**
- * Derive every hierarchy + assoc row implied by `docs`. No filter applied —
- * useful for namespace-wide backfill. The single-doc sync path wraps this
- * with a `from_path/to_path === affectedPath` filter (see `computeDesired`).
- */
-function computeAllEdges(
-  namespace: string,
-  docs: DocMeta[],
-): DesiredEdges {
+function computeAllEdges(namespace: string, docs: DocMeta[]): DesiredEdges {
   const resolve = makeResolver(docs);
   const hierMap = new Map<string, EdgeRow>();
 
-  // Pass 1a: parent_of bullets across all docs (authoritative for position).
   for (const d of docs) {
     const bullets = parseEdges(d.content);
     let pos = 0;
@@ -119,7 +100,6 @@ function computeAllEdges(
       });
     }
   }
-  // Pass 1b: child_of bullets fill in asymmetric stragglers.
   for (const d of docs) {
     const bullets = parseEdges(d.content);
     for (const b of bullets) {
@@ -139,12 +119,7 @@ function computeAllEdges(
     }
   }
 
-  // Enforce the doc_edges_one_parent UNIQUE(namespace, to_path) constraint:
-  // when two parents both claim the same child, pick the closer parent by
-  // directory locality. Prior to SPRINT-117 this only lived in the archived
-  // backfill script, so MCP-side backfill + single-doc sync (when the
-  // affected doc was the shared child) both blew up on dup-key. Universal
-  // here so every entry-point derives constraint-safe rows.
+  // Enforce doc_edges_one_parent (SPRINT-117): closer parent by locality wins.
   const byChild = new Map<string, EdgeRow[]>();
   for (const r of hierMap.values()) {
     const arr = byChild.get(r.to_path) ?? [];
@@ -164,7 +139,6 @@ function computeAllEdges(
     duplicateParents.push({ child: toPath, kept: winner.path, dropped });
   }
 
-  // Build pair-set + parents-of for assoc suppression.
   const hierPairs = new Set<string>();
   const parentsOf = new Map<string, Set<string>>();
   for (const r of hierMap.values()) {
@@ -182,7 +156,6 @@ function computeAllEdges(
     return false;
   };
 
-  // Pass 2: assocs, deduped per pair, suppressed by hierarchy + siblings.
   interface AssocPair { a: string; b: string; label: string | null; position: number; }
   const assocPairs = new Map<string, AssocPair>();
   for (const d of docs) {
@@ -212,22 +185,7 @@ function computeAllEdges(
   return { hierMap, assocMap, duplicateParents };
 }
 
-/**
- * Recompute every hierarchy + assoc row in the namespace whose `from_path`
- * OR `to_path` equals `affectedPath`. This is the set of rows that could
- * have changed as a result of editing `affectedPath`. Returns rows the
- * caller will diff against the current DB state.
- *
- * Edges originating from other docs (e.g. another doc's `## Parent of`
- * still mentioning this doc) need to be evaluated against this doc's new
- * title in case it changed — that's why we re-derive all edges touching
- * affectedPath, not just edges declared in its own bullets.
- */
-function computeDesired(
-  namespace: string,
-  docs: DocMeta[],
-  affectedPath: string,
-): DesiredEdges {
+function computeDesired(namespace: string, docs: DocMeta[], affectedPath: string): DesiredEdges {
   const all = computeAllEdges(namespace, docs);
   const filterTouching = <T extends EdgeRow>(map: Map<string, T>) => {
     const out = new Map<string, T>();
@@ -254,67 +212,26 @@ function rowEqual(a: EdgeRow, b: EdgeRow): boolean {
 }
 
 /**
- * Sync the doc_edges rows that touch `docPath` in `namespace` to match
- * the post-write state implied by `newContent`. Loads every other doc
- * in the namespace from `vault_files` (title + path only — no body for
- * those) so the resolver can resolve cross-doc wiki-links.
- *
- * Throws on database errors — the caller (SupabaseStorage.write) lets
- * this propagate so the API PUT returns 500 and the user knows the
- * bucket+cache succeeded but the edges did not.
+ * Sync doc_edges rows touching `docPath` to match `newContent`.
+ * SPRINT-139: takes VaultDatabase; pagination + atomic RPC live in the impl.
  */
 export async function syncDocEdges(
-  admin: SupabaseClient,
+  db: VaultDatabase,
   namespace: string,
   docPath: string,
   newContent: string,
 ): Promise<void> {
-  // Pull every doc in the namespace from vault_files. Bodies of OTHER
-  // docs aren't needed for edge derivation off this doc's content, but
-  // we DO need them: a parent's `## Parent of` bullet declaring [[B]]
-  // produces a hierarchy row even when B itself was just edited.
-  // Cheapest correct path is to read content for every doc and re-run
-  // the whole namespace's edge derivation, filtered down to rows that
-  // touch docPath.
-  //
-  // SPRINT-119 fix: paginate + ORDER BY. Supabase enforces a 1000-row
-  // server-side cap that .select() alone can't lift. Vaults >1000 docs
-  // (Edmund crossed at ~1100) silently truncated the resolver's docs
-  // list — cross-doc wiki-links to any of the missing ~180 docs failed
-  // to resolve, so their hierarchy edges never got INSERTed. Symptom:
-  // an orphan node at sidebar root even though the markdown is
-  // correct. Same pattern SPRINT-117 fixed in backfillNamespace.
-  const PAGE = 1000;
-  const rows: Array<{ file_path: string; content: string }> = [];
-  let pageStart = 0;
-  while (true) {
-    const { data, error: readErr } = await admin
-      .from("vault_files")
-      .select("file_path, content")
-      .eq("namespace", namespace)
-      .order("file_path", { ascending: true })
-      .range(pageStart, pageStart + PAGE - 1);
-    if (readErr) throw new Error(`syncDocEdges: vault_files read failed: ${readErr.message}`);
-    if (!data || data.length === 0) break;
-    rows.push(...(data as Array<{ file_path: string; content: string }>));
-    if (data.length < PAGE) break;
-    pageStart += PAGE;
-  }
-
-  const docs: DocMeta[] = rows.map((r) => {
-    const content = (r.content as string) ?? "";
-    return {
-      path: r.file_path as string,
-      title: deriveTitle(r.file_path as string, content),
-      content,
-    };
+  const rows = await db.listFiles(namespace, {
+    select: "file_path, content",
+    order: "file_path_asc",
   });
 
-  // If docPath is missing from vault_files (deletion path), drop it from
-  // the doc set so resolution doesn't pin to a vanished target.
+  const docs: DocMeta[] = rows.map((r) => {
+    const content = r.content ?? "";
+    return { path: r.file_path, title: deriveTitle(r.file_path, content), content };
+  });
+
   const filteredDocs = docs.filter((d) => d.path !== docPath || newContent !== "");
-  // Ensure the doc we're syncing reflects the new content (vault_files
-  // mirror may or may not have been updated yet depending on call order).
   if (newContent) {
     const existing = filteredDocs.find((d) => d.path === docPath);
     if (existing) {
@@ -328,44 +245,17 @@ export async function syncDocEdges(
   const desired = computeDesired(namespace, injectSystemNodes(filteredDocs), docPath);
   const desiredRows: EdgeRow[] = [...desired.hierMap.values(), ...desired.assocMap.values()];
 
-  // Load current rows that touch docPath (outgoing + inbound).
-  // SPRINT-024 Phase 2 audit: doc_edges reads MUST stay independent of
-  // vault_files — never JOIN them. Any "I need the linked doc's body
-  // alongside the edge" caller should fetch the body separately through
-  // SupabaseStorage.read so a future Postgres-only edge store can drop
-  // the vault_files dependency entirely.
-  const { data: curFrom, error: e1 } = await admin
-    .from("doc_edges")
-    .select("from_path, to_path, kind, label, position")
-    .eq("namespace", namespace)
-    .eq("from_path", docPath);
-  if (e1) throw new Error(`syncDocEdges: doc_edges read (from) failed: ${e1.message}`);
-  const { data: curTo, error: e2 } = await admin
-    .from("doc_edges")
-    .select("from_path, to_path, kind, label, position")
-    .eq("namespace", namespace)
-    .eq("to_path", docPath);
-  if (e2) throw new Error(`syncDocEdges: doc_edges read (to) failed: ${e2.message}`);
+  // Fetch current rows touching docPath (from + to).
+  const curFrom = await db.getEdges(namespace, { from_path: docPath });
+  const curTo = await db.getEdges(namespace, { to_path: docPath });
 
   const currentMap = new Map<string, EdgeRow>();
-  for (const r of [...(curFrom ?? []), ...(curTo ?? [])]) {
-    const row: EdgeRow = {
-      namespace,
-      from_path: r.from_path as string,
-      to_path: r.to_path as string,
-      kind: r.kind as "hierarchy" | "assoc",
-      label: (r.label as string | null) ?? null,
-      position: (r.position as number) ?? 0,
-    };
-    currentMap.set(rowKey(row), row);
-  }
+  for (const r of [...curFrom, ...curTo]) currentMap.set(rowKey(r), r);
 
   const desiredMap = new Map<string, EdgeRow>();
   for (const r of desiredRows) desiredMap.set(rowKey(r), r);
 
-  // Short-circuit if nothing changed. Cheaper than the RPC round-trip
-  // when the write was a no-op edge-wise (e.g., body-only edit that
-  // didn't touch any relation section).
+  // Short-circuit no-op writes to avoid the atomic RPC round trip.
   if (currentMap.size === desiredMap.size) {
     let identical = true;
     for (const [k, r] of desiredMap) {
@@ -375,111 +265,46 @@ export async function syncDocEdges(
     if (identical) return;
   }
 
-  // SPRINT-108 Fix 2: atomic delete+insert via RPC. Replaces the previous
-  // non-atomic PostgREST delete-then-upsert which drifted on upsert
-  // failure (deletes committed, upsert failed → doc lost edges silently).
-  // The RPC does DELETE-touching-doc + INSERT-desired in one transaction:
-  // either both apply or neither. On constraint violation the transaction
-  // rolls back cleanly and the error surfaces here.
-  const { error: rpcErr } = await admin.rpc("sync_doc_edges_atomic", {
-    p_namespace: namespace,
-    p_doc_path: docPath,
-    p_desired: desiredRows,
-  });
-  if (rpcErr) throw new Error(`syncDocEdges: atomic RPC failed: ${rpcErr.message}`);
+  await db.syncEdgesAtomic(namespace, docPath, desiredRows);
 }
 
 /**
  * Wipe and rebuild every doc_edges row for `namespace` from the current
- * `vault_files` snapshot. Idempotent. Use this when:
- *
- * - The namespace was just seeded from `public/` and per-file `syncDocEdges`
- *   calls raced each other (parallel writes → incomplete cross-doc visibility
- *   in vault_files → some cross-doc wiki-links never resolved at sync time).
- * - You need to repair a namespace whose `doc_edges` looks suspiciously sparse.
- *
- * Uses paginated vault_files reads (Supabase enforces a 1000-row server cap)
- * and chunked inserts (500 rows per round trip).
+ * vault_files snapshot. Idempotent.
  */
 export async function backfillNamespace(
-  admin: SupabaseClient,
+  db: VaultDatabase,
   namespace: string,
 ): Promise<{
   docs: number;
   rows: number;
   duplicate_parents: Array<{ child: string; kept: string; dropped: string[] }>;
 }> {
-  const PAGE = 1000;
-  const docs: DocMeta[] = [];
-  let pageStart = 0;
-  while (true) {
-    // SPRINT-117 fix: explicit ORDER BY on paginated read. Without a stable
-    // sort, PostgREST is free to return rows in any order per page, so on
-    // vaults near the 1000-row page boundary the same doc may appear twice
-    // (page 1 tail + page 2 head) OR slip between pages entirely, leaving
-    // its edges out of the rebuild. Non-deterministic between runs.
-    const { data, error } = await admin
-      .from("vault_files")
-      .select("file_path, content")
-      .eq("namespace", namespace)
-      .order("file_path", { ascending: true })
-      .range(pageStart, pageStart + PAGE - 1);
-    if (error) throw new Error(`backfillNamespace: vault_files read failed: ${error.message}`);
-    if (!data || data.length === 0) break;
-    for (const r of data) {
-      const content = (r.content as string) ?? "";
-      docs.push({
-        path: r.file_path as string,
-        title: deriveTitle(r.file_path as string, content),
-        content,
-      });
-    }
-    if (data.length < PAGE) break;
-    pageStart += PAGE;
-  }
+  const rows = await db.listFiles(namespace, {
+    select: "file_path, content",
+    order: "file_path_asc",
+  });
+  const docs: DocMeta[] = rows.map((r) => {
+    const content = r.content ?? "";
+    return { path: r.file_path, title: deriveTitle(r.file_path, content), content };
+  });
 
   const all = computeAllEdges(namespace, injectSystemNodes(docs));
   const edgeRows: EdgeRow[] = [...all.hierMap.values(), ...all.assocMap.values()];
 
-  // Wipe + replace. Clearing first avoids stale rows surviving the upsert
-  // when an edge no longer exists in the new doc set.
-  const { error: delErr } = await admin
-    .from("doc_edges")
-    .delete()
-    .eq("namespace", namespace);
-  if (delErr) throw new Error(`backfillNamespace: clear failed: ${delErr.message}`);
-
-  const CHUNK = 500;
-  for (let i = 0; i < edgeRows.length; i += CHUNK) {
-    const { error: insErr } = await admin
-      .from("doc_edges")
-      .upsert(edgeRows.slice(i, i + CHUNK));
-    if (insErr) throw new Error(`backfillNamespace: insert failed: ${insErr.message}`);
-  }
+  await db.clearEdges(namespace);
+  await db.insertEdges(edgeRows);
 
   return { docs: docs.length, rows: edgeRows.length, duplicate_parents: all.duplicateParents };
 }
 
 /**
- * Delete every edge touching `docPath` in the namespace. Called from
- * SupabaseStorage.delete to keep doc_edges in sync with file removals.
+ * Delete every edge touching `docPath` in the namespace.
  */
 export async function deleteDocEdges(
-  admin: SupabaseClient,
+  db: VaultDatabase,
   namespace: string,
   docPath: string,
 ): Promise<void> {
-  // OR-conditional delete: rows where from_path = X OR to_path = X.
-  const { error: e1 } = await admin
-    .from("doc_edges")
-    .delete()
-    .eq("namespace", namespace)
-    .eq("from_path", docPath);
-  if (e1) throw new Error(`deleteDocEdges: from delete failed: ${e1.message}`);
-  const { error: e2 } = await admin
-    .from("doc_edges")
-    .delete()
-    .eq("namespace", namespace)
-    .eq("to_path", docPath);
-  if (e2) throw new Error(`deleteDocEdges: to delete failed: ${e2.message}`);
+  await db.deleteEdges(namespace, docPath);
 }

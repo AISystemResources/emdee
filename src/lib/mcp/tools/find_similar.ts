@@ -1,4 +1,3 @@
-import { adminClient } from "../../supabase/admin";
 import { cloudDatabase } from "../../database";
 import { readVaultFile } from "./vault";
 import type { ToolContext } from "./types";
