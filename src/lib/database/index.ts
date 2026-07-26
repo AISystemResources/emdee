@@ -12,20 +12,33 @@ import type { VaultDatabase } from "./types";
 
 export type { VaultDatabase, VaultFileRow, EdgeRow, EdgeFilter, ListFilesOptions, SummaryDriftOptions } from "./types";
 
-// ESM-safe require, used to keep the two backends lazily loaded so a
-// pure-local runtime never triggers the Supabase module tree and a pure-
-// cloud runtime never touches better-sqlite3's native binding.
+// ESM-safe require. Two backends stay lazily loaded so a pure-local
+// runtime never triggers the Supabase module tree, and a pure-cloud
+// runtime never touches better-sqlite3's native binding.
 const req = createRequire(import.meta.url);
+
+// SPRINT-140F: when this file runs from source (tsx), sibling
+// `./sqlite` and `./supabase-postgres` resolve fine. When bundled into
+// dist/cli/*.js by esbuild, the siblings don't exist next to the
+// bundle. Fall back to the parallel `dist/lib/database/` compilation
+// of the same file, which build-cli.mjs now emits.
+function requireBackend<T>(name: "sqlite" | "supabase-postgres"): T {
+  try {
+    return req(`./${name}`) as T;
+  } catch {
+    return req(`../lib/database/${name}.js`) as T;
+  }
+}
 
 /** Default cloud-mode database instance — wraps the shared admin client. */
 export function cloudDatabase(): VaultDatabase {
-  const { SupabasePostgresDatabase } = req("./supabase-postgres") as typeof import("./supabase-postgres");
+  const { SupabasePostgresDatabase } = requireBackend<typeof import("./supabase-postgres")>("supabase-postgres");
   const { adminClient } = req("../supabase/admin") as typeof import("../supabase/admin");
   return new SupabasePostgresDatabase(adminClient());
 }
 
 /** Local-mode database. Default path is `<docsDir>/.emdee/vault.db`. */
 export function localDatabase(dbPath: string): VaultDatabase {
-  const { SqliteDatabase } = req("./sqlite") as typeof import("./sqlite");
+  const { SqliteDatabase } = requireBackend<typeof import("./sqlite")>("sqlite");
   return new SqliteDatabase(dbPath);
 }

@@ -11,9 +11,8 @@
 
 import Database from "better-sqlite3";
 import type { Database as SqliteDb } from "better-sqlite3";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type {
   VaultDatabase,
   VaultFileRow,
@@ -22,16 +21,12 @@ import type {
   ListFilesOptions,
   SummaryDriftOptions,
 } from "./types";
+import { SQLITE_SCHEMA } from "./sqlite-schema";
 
-// Locate the schema file relative to this compiled module.
-// __dirname isn't available under ESM; derive from import.meta.url.
-function schemaSql(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  // From src/lib/database/sqlite.ts OR dist/lib/database/sqlite.js, the
-  // schema sits next to us as a .sql file. tsx / esbuild both preserve
-  // the file layout, so a sibling read works in both.
-  return readFileSync(`${here}/sqlite-schema.sql`, "utf-8");
-}
+// SPRINT-140F: schema is inlined via ./sqlite-schema.ts so it survives
+// esbuild bundling into dist/. Previously read via fs sibling lookup,
+// which broke `emdee lint-orphans` (and every local-mode verb) in the
+// npm-installed CLI because the .sql file wasn't next to the bundle.
 
 export class SqliteDatabase implements VaultDatabase {
   private db: SqliteDb;
@@ -39,7 +34,7 @@ export class SqliteDatabase implements VaultDatabase {
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
-    this.db.exec(schemaSql());
+    this.db.exec(SQLITE_SCHEMA);
     // SPRINT-143 upgrade path: existing DBs (user_version 1) predate
     // the title column. CREATE TABLE IF NOT EXISTS won't add columns
     // to an existing table, so manually ALTER + backfill from content,

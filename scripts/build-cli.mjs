@@ -20,6 +20,13 @@ const entries = [
   { in: "src/cli/auth-commands.ts", out: "dist/cli/auth-commands.js" },
   { in: "src/cli/skills-install.ts", out: "dist/cli/skills-install.js" },
   { in: "src/mcp/server.ts", out: "dist/mcp/server.js" },
+  // SPRINT-140F: emit the two VaultDatabase backends as their own
+  // entries so `src/lib/database/index.ts`'s runtime require fallback
+  // (`../lib/database/sqlite.js`) resolves against a real file when
+  // called from a bundled CLI entry. Without this, every local-mode
+  // verb blows up with `Cannot find module './sqlite'`.
+  { in: "src/lib/database/sqlite.ts", out: "dist/lib/database/sqlite.js" },
+  { in: "src/lib/database/supabase-postgres.ts", out: "dist/lib/database/supabase-postgres.js" },
 ];
 
 const commonOptions = {
@@ -38,6 +45,13 @@ const commonOptions = {
     "marked",
     "commander",
     "tsx",
+    // SPRINT-140F: better-sqlite3 is a native module with a `.node`
+    // binding and CJS internals that use `require("fs")`. Bundling it
+    // into an ESM output produces "Dynamic require of 'fs' is not
+    // supported" at runtime. Keep it external so Node resolves it from
+    // the installed dependency tree normally.
+    "better-sqlite3",
+    "bindings",
   ],
   logLevel: "info",
 };
