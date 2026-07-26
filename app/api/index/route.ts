@@ -155,6 +155,42 @@ export async function GET(request: Request) {
     await ensureProfile(userId).catch(() => {});
   }
 
+  // SPRINT-144 (Tier 2 egress fix): ETag preflight. Before paying for
+  // the full-content listing (which egressed ~4 MB per personal-namespace
+  // page load on Edmund's 1224-doc vault), compute a cheap fingerprint
+  // from listMeta (just file_path + updated_at — a few hundred KB max)
+  // and compare against the client's If-None-Match. Repeated loads
+  // without writes return 304 with ~1 KB of headers, no body.
+  //
+  // ETag shape: `"${count}-${maxUpdatedAt}"`. Covers add/delete (count
+  // moves), any edit (max ts moves), rename (rename touches updated_at
+  // via storage.write hook).
+  //
+  // For shared docs (cross-namespace): first-cut ETag ignores share
+  // changes. Rare enough that the trade-off (occasional stale share
+  // view for one page reload) is acceptable. Users can hard-refresh.
+  const includeTrashedFlag = url.searchParams.get("include_trashed") === "true";
+  let etagCandidate: string | null = null;
+  try {
+    const meta = await storage.listMeta(prefix || undefined);
+    const maxUpdated = meta.reduce((mx, m) => (m.updatedAt > mx ? m.updatedAt : mx), "");
+    etagCandidate = `"${meta.length}-${maxUpdated || "empty"}-t${includeTrashedFlag ? "1" : "0"}"`;
+    if (request.headers.get("if-none-match") === etagCandidate) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: etagCandidate,
+          // no-cache = "revalidate with server before using cache" —
+          // enables browser If-None-Match on next request. no-store
+          // (previous behaviour) would kill the caching win entirely.
+          "Cache-Control": ns === "public" ? "public, max-age=0, must-revalidate" : "private, no-cache",
+        },
+      });
+    }
+  } catch {
+    // Fall through — a broken listMeta shouldn't block the full path.
+  }
+
   let listed: Awaited<ReturnType<typeof storage.listWithContent>>;
   try {
     listed = await storage.listWithContent(prefix || undefined);
@@ -428,6 +464,13 @@ export async function GET(request: Request) {
     }
   }
 
-  const headers = ns === "public" ? publicCacheHeaders(ns) : NO_STORE.headers;
+  // SPRINT-144: attach ETag + no-cache so the browser sends If-None-Match
+  // on the next request. Personal namespaces get no-cache (must revalidate
+  // with the server, but 304 is cheap). Public keeps the CDN-friendly
+  // 60s s-maxage since public content is intentionally shared.
+  const headers: Record<string, string> = ns === "public"
+    ? { ...publicCacheHeaders(ns) }
+    : { "Cache-Control": "private, no-cache" };
+  if (etagCandidate) headers.ETag = etagCandidate;
   return Response.json(index, { headers });
 }

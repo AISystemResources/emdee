@@ -44,6 +44,22 @@ test.describe("smoke (anonymous)", () => {
     expect(paths).toContain("EMDEE.md");
   });
 
+  test("/api/index returns 304 when If-None-Match matches (SPRINT-144 ETag cache)", async ({ request, baseURL }) => {
+    // First fetch — grab the ETag.
+    const first = await request.get(`${baseURL ?? ""}/api/index?ns=public`);
+    expect(first.status(), "first fetch is 200").toBe(200);
+    const etag = first.headers()["etag"];
+    expect(etag, "response carries ETag header").toBeTruthy();
+
+    // Second fetch with If-None-Match — should be 304 no body.
+    const second = await request.get(`${baseURL ?? ""}/api/index?ns=public`, {
+      headers: { "if-none-match": etag },
+    });
+    expect(second.status(), "matching If-None-Match returns 304").toBe(304);
+    const secondBody = await second.body();
+    expect(secondBody.length, "304 body is empty").toBe(0);
+  });
+
   test("sign-in route renders the Clerk identifier field", async ({ page }) => {
     const response = await page.goto("/sign-in");
     expect(response, "navigation returned a response").not.toBeNull();
