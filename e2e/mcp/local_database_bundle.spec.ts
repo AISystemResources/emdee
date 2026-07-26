@@ -16,7 +16,7 @@
 
 import { expect, test } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,14 +62,20 @@ test.describe("SqliteDatabase bundling (SPRINT-140F)", () => {
     }
   });
 
-  test("bundled dist/lib/database/sqlite.js is importable as fallback target", async () => {
-    // If build-cli.mjs stops emitting these entries, requireBackend()'s
-    // fallback branch has nothing to require. Rather than dynamically
-    // loading the bundle (which would need a running npm pack), we just
-    // assert the file exists — the fallback path in index.ts uses a
-    // literal require and would fail identically at runtime.
+  test("bundled dist/cli/write-commands.js inlines the sqlite backend", () => {
+    // The 0.5.0/0.5.1 bug was that `createRequire("./sqlite")` in
+    // index.ts wasn't followed by esbuild, so the sqlite backend never
+    // made it into the CLI bundle. With static imports the backend
+    // source shows up directly in the bundle. If someone regresses to
+    // a dynamic dispatch, this string check will fail.
     const repoRoot = path.resolve(__dirname, "..", "..");
-    expect(existsSync(path.join(repoRoot, "dist", "lib", "database", "sqlite.js"))).toBe(true);
-    expect(existsSync(path.join(repoRoot, "dist", "lib", "database", "supabase-postgres.js"))).toBe(true);
+    const bundlePath = path.join(repoRoot, "dist", "cli", "write-commands.js");
+    expect(existsSync(bundlePath)).toBe(true);
+    const bundle = readFileSync(bundlePath, "utf8");
+    // Look for a distinctive fragment from sqlite-schema.ts, proving
+    // the schema (and by extension the SqliteDatabase code path) got
+    // bundled in and doesn't rely on a runtime sibling file.
+    expect(bundle).toContain("vault_files_fts");
+    expect(bundle).toContain("PRAGMA user_version = 2");
   });
 });
