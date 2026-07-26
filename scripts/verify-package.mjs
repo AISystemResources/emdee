@@ -21,6 +21,7 @@ const ALLOWED_PREFIXES = [
   "src/cli/",
   "src/core/",
   "src/lib/cache/",
+  "src/lib/database/",
   "src/lib/mcp/",
   "src/lib/owner/",
   "src/lib/storage/",
