@@ -18,6 +18,7 @@ import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
 import { readCache, writeCacheEntry, isCacheable } from "./cache";
 import type { ToolContext } from "../lib/mcp/tools/types";
+import { localToolContext } from "../lib/mcp/tools/context";
 import { getDoc } from "../lib/mcp/tools/get_doc";
 import { getSummary } from "../lib/mcp/tools/get_summary";
 import { getNeighbors } from "../lib/mcp/tools/get_neighbors";
@@ -258,7 +259,7 @@ async function runStructuredRead(verbName: string, argv: string[]): Promise<void
   if (!cacheHit) {
     result = remote
       ? await callTool(spec.toolName, args)
-      : await spec.toolFn({ mode: "local", docsDir }, args);
+      : await spec.toolFn(localToolContext(docsDir), args);
     if (isCacheable(spec.toolName)) {
       await writeCacheEntry(spec.toolName, args, remote, scope, result);
     }
@@ -355,7 +356,7 @@ async function cmdGetImage(argv: string[]): Promise<void> {
   const args = { doc_path: docPath };
   const result = values.remote
     ? await callTool("get_image", args)
-    : await (getImage as unknown as ToolFn)({ mode: "local", docsDir }, args);
+    : await (getImage as unknown as ToolFn)(localToolContext(docsDir), args);
 
   const content = (result as { content?: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }).content ?? [];
   const meta = content.find((c) => c.type === "text");

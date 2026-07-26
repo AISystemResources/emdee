@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { lintVault } from "@/src/lib/mcp/tools/lint_vault";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -48,7 +49,7 @@ test.describe("lint_vault (SPRINT-101)", () => {
     await writeFile(path.join(docsDir, "BAD-A.md"), NO_SUMMARY, "utf8");
     await writeFile(path.join(docsDir, "BAD-B.md"), ASYMMETRIC, "utf8");
     await writeFile(path.join(docsDir, "CLEAN.md"), CLEAN, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { moveDoc } from "@/src/lib/mcp/tools/move_doc";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -73,7 +74,7 @@ test.describe("move_doc (local-mode tool exercise)", () => {
     await writeFile(path.join(docsDir, "OLD-PARENT.md"), OLD_PARENT_CONTENT, "utf8");
     await writeFile(path.join(docsDir, "NEW-PARENT.md"), NEW_PARENT_CONTENT, "utf8");
     await writeFile(path.join(docsDir, "CHILD.md"), CHILD_CONTENT, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

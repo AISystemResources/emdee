@@ -1,7 +1,7 @@
 import { loadVaultIndex, readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges } from "../../../core/syncDocEdges";
 import { resolveWikiLink } from "../../../core/resolveLink";
-import { cloudDatabase } from "../../database";
+import { ctxNamespace, ensureLocalIndex } from "./context";
 import { SYSTEM_NODES } from "../../system-nodes";
 import type { ToolContext } from "./types";
 
@@ -58,16 +58,10 @@ function suggestSimilar(target: string, allTitles: string[]): string | undefined
 }
 
 export async function lintOrphans(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
-  if (ctx.mode !== "cloud") {
-    return json({
-      error: "cloud_mode_required",
-      hint: "lint_orphans reads doc_edges directly; local mode rebuilds the index on every read and never has orphans in the same sense.",
-    });
-  }
-
   const fix = args.fix === true;
-  const db = ctx.db ?? cloudDatabase();
-  const namespace = ctx.userId;
+  await ensureLocalIndex(ctx);
+  const db = ctx.db;
+  const namespace = ctxNamespace(ctx);
 
   // SPRINT-139: read hierarchy edges via VaultDatabase.getEdges (handles
   // pagination + ordering internally per SPRINT-117 / SPRINT-119).

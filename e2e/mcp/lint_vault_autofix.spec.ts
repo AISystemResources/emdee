@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { lintVaultAutofix } from "@/src/lib/mcp/tools/lint_vault_autofix";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -51,7 +52,7 @@ test.describe("lint_vault_autofix Tier 1 (SPRINT-102)", () => {
     await writeFile(path.join(docsDir, "A.md"), A, "utf8");
     await writeFile(path.join(docsDir, "B.md"), B, "utf8");
     await writeFile(path.join(docsDir, "C.md"), C, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

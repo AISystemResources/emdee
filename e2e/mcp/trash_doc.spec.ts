@@ -11,6 +11,7 @@ import path from "node:path";
 import { trashDoc } from "@/src/lib/mcp/tools/trash_doc";
 import { restoreDoc } from "@/src/lib/mcp/tools/restore_doc";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -63,7 +64,7 @@ test.describe("trash_doc + restore_doc (local-mode)", () => {
     await mkdir(docsDir, { recursive: true });
     await writeFile(path.join(docsDir, "PARENT.md"), PARENT_CONTENT, "utf8");
     await writeFile(path.join(docsDir, "CHILD.md"), CHILD_CONTENT, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

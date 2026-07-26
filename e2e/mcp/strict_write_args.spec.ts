@@ -15,6 +15,7 @@ import { patchSection } from "@/src/lib/mcp/tools/patch_section";
 import { appendSection } from "@/src/lib/mcp/tools/append_section";
 import { createChild } from "@/src/lib/mcp/tools/create_child";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -34,7 +35,7 @@ test.describe("write-tool argument validation (SPRINT-092)", () => {
   test.beforeEach(async () => {
     docsDir = await mkdtemp(path.join(tmpdir(), "emdee-argval-"));
     await writeFile(path.join(docsDir, "ALPHA.md"), ALPHA, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

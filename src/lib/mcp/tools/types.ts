@@ -1,13 +1,15 @@
 import type { VaultStorage } from "../../storage/VaultStorage";
 import type { VaultDatabase } from "../../database/types";
 
-// SPRINT-139 (SIG-032 Phase 1): cloud contexts now carry a VaultDatabase
-// alongside VaultStorage. Callers should prefer ctx.db over
-// adminClient() so future backend swaps happen in one place.
-// `db` is optional during the migration window — tools that don't yet
-// use the abstraction can construct one via cloudDatabase() themselves.
+// SPRINT-139 + SPRINT-140 (SIG-032 Phases 1–2): both local AND cloud
+// contexts carry a VaultDatabase. Local mode → SqliteDatabase; cloud →
+// SupabasePostgresDatabase. Tools should use ctx.db uniformly regardless
+// of mode — the abstraction is the whole point of SIG-032.
+// Local mode uses "local" as the namespace string (single-vault today).
+export const LOCAL_NAMESPACE = "local";
+
 export type ToolContext =
-  | { mode: "local"; docsDir: string }
-  | { mode: "cloud"; storage: VaultStorage; userId: string; db?: VaultDatabase };
+  | { mode: "local"; docsDir: string; db: VaultDatabase }
+  | { mode: "cloud"; storage: VaultStorage; userId: string; db: VaultDatabase };
 
 export type { DocIndex, DocNode, Link } from "../../../core/indexer";

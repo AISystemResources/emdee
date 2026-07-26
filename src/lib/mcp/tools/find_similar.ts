@@ -1,4 +1,4 @@
-import { cloudDatabase } from "../../database";
+import { ctxNamespace, ensureLocalIndex } from "./context";
 import { readVaultFile } from "./vault";
 import type { ToolContext } from "./types";
 
@@ -43,35 +43,25 @@ function deriveSummary(content: string): string {
 }
 
 export async function findSimilar(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
-  if (ctx.mode !== "cloud") {
-    return json({
-      error: "cloud_mode_required",
-      hint: "find_similar depends on Postgres tsvector; local mode has no equivalent index.",
-    });
-  }
-
   const path = typeof args.path === "string" && args.path.length > 0 ? args.path : null;
   if (!path) return json({ error: "path_required" });
 
   const limit = Math.max(1, Math.min(50, Number(args.limit ?? 10)));
 
-  // Read source content — canonical from Storage, so we don't need to
-  // join vault_files here.
+  // Read source content — canonical from Storage.
   const content = await readVaultFile(ctx, path);
   if (content === null) return json({ error: "source_doc_not_found", path });
 
-  // Build query from title + summary + head of body. Truncated to keep
-  // the tsquery reasonable; long queries blow up ts_rank cost.
   const title = deriveTitle(path, content);
   const summary = deriveSummary(content);
   const head = content.slice(0, 2000);
   const queryText = `${title} ${summary} ${head}`.replace(/[^\w\s]/g, " ").slice(0, 4000);
 
-  // SPRINT-139: search through VaultDatabase (backends that don't
-  // support FTS return empty; SupabasePostgres uses tsvector column
-  // from migration 20260725000001).
-  const db = ctx.db ?? cloudDatabase();
-  const rows = await db.searchFiles(ctx.userId, queryText, limit, path);
+  // SPRINT-139 + SPRINT-140: unified DB search. Cloud uses tsvector,
+  // local uses FTS5 — same VaultDatabase.searchFiles surface.
+  await ensureLocalIndex(ctx);
+  const db = ctx.db;
+  const rows = await db.searchFiles(ctxNamespace(ctx), queryText, limit, path);
   const results: SimilarDoc[] = rows.map((r) => {
     const c = r.content ?? "";
     return {

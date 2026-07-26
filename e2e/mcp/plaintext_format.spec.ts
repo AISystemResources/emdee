@@ -14,6 +14,7 @@ import { getDoc } from "@/src/lib/mcp/tools/get_doc";
 import { getSummary } from "@/src/lib/mcp/tools/get_summary";
 import { listDocs } from "@/src/lib/mcp/tools/list_docs";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { localToolContext } from "@/src/lib/mcp/tools/context";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -55,7 +56,7 @@ test.describe("plaintext format opt-in (SPRINT-080)", () => {
     docsDir = await mkdtemp(path.join(tmpdir(), "emdee-plaintext-"));
     await writeFile(path.join(docsDir, "ROOT.md"), ROOT_CONTENT, "utf8");
     await writeFile(path.join(docsDir, "CHILD.md"), CHILD_CONTENT, "utf8");
-    ctx = { mode: "local", docsDir };
+    ctx = localToolContext(docsDir);
   });
 
   test.afterEach(async () => {

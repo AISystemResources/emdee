@@ -1,6 +1,6 @@
 import { readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges, backfillNamespace } from "../../../core/syncDocEdges";
-import { cloudDatabase } from "../../database";
+import { ctxNamespace, ensureLocalIndex } from "./context";
 import type { ToolContext } from "./types";
 
 // SPRINT-108 Fix 3: user-facing repair verb for doc_edges drift.
@@ -32,13 +32,6 @@ function json(value: unknown) {
 }
 
 export async function reconcile(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
-  if (ctx.mode !== "cloud") {
-    return json({
-      error: "cloud_mode_required",
-      hint: "reconcile operates on the cloud doc_edges table; local mode rebuilds the index on every read.",
-    });
-  }
-
   const all = args.all === true;
   const targetPath = typeof args.path === "string" && args.path.length > 0 ? args.path : null;
 
@@ -55,28 +48,25 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
     });
   }
 
-  const db = ctx.db ?? cloudDatabase();
+  await ensureLocalIndex(ctx);
+  const db = ctx.db;
+  const namespace = ctxNamespace(ctx);
 
   if (all) {
-    const result = await backfillNamespace(db, ctx.userId);
+    const result = await backfillNamespace(db, namespace);
     return json({
       ok: true,
       mode: "namespace",
-      namespace: ctx.userId,
+      namespace,
       docs_scanned: result.docs,
       edges_written: result.rows,
-      // SPRINT-117: surface dual-parent claims the dedup pass had to break
-      // (one_parent constraint). Empty list is the healthy case.
       duplicate_parents: result.duplicate_parents,
     });
   }
 
-  // Per-doc mode. Read current Storage content — that's canonical truth.
   const content = await readVaultFile(ctx, targetPath!);
   if (content === null) {
-    // File doesn't exist. Best repair action: delete all doc_edges rows
-    // that reference this path (they're orphaned pointers to a missing doc).
-    await deleteDocEdges(db, ctx.userId, targetPath!);
+    await deleteDocEdges(db, namespace, targetPath!);
     return json({
       ok: true,
       mode: "per-doc",
@@ -86,12 +76,8 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
     });
   }
 
-  // Force-clear all doc_edges rows touching this doc, then let syncDocEdges
-  // rebuild from the current content. syncDocEdges is idempotent w.r.t.
-  // the desired-state set post-SPRINT-108 Fix 2 (atomic RPC), so the sync
-  // will land the correct rows even if they existed before.
-  await deleteDocEdges(db, ctx.userId, targetPath!);
-  await syncDocEdges(db, ctx.userId, targetPath!, content);
+  await deleteDocEdges(db, namespace, targetPath!);
+  await syncDocEdges(db, namespace, targetPath!, content);
 
   return json({
     ok: true,

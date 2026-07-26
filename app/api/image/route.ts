@@ -80,7 +80,8 @@ export async function POST(request: Request) {
   const imageUrl = `${supabaseUrl}/storage/v1/object/public/${IMAGE_BUCKET}/${storagePath}`;
 
   const storage = new SupabaseStorage();
-  const ctx: ToolContext = { mode: "cloud", storage, userId };
+  const { cloudDatabase } = await import("@/src/lib/database");
+  const ctx: ToolContext = { mode: "cloud", storage, userId, db: cloudDatabase() };
 
   const slug = slugify(titleStr) || "image";
   const timeSuffix = ts.slice(11, 19); // HH-MM-SS
