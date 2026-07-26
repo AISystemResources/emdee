@@ -339,6 +339,27 @@ program
   .description("Print the currently logged-in email + namespace.")
   .action(() => shellAuth("whoami"));
 
+// SPRINT-142 (SIG-032 Phase 3): one-shot bidirectional sync.
+program
+  .command("sync")
+  .description("One-shot bidirectional sync between local vault and cloud. Uses version-guards (SPRINT-141). Same-section conflicts preserve the local draft under .emdee/conflicts/ and adopt the cloud version. Not a daemon — run manually or via cron.")
+  .option("-d, --docs <dir>", "docs directory")
+  .option("--dry-run", "Show planned actions without writing anything")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = [];
+    if (opts.docs) extra.push("--docs", path.resolve(process.cwd(), opts.docs));
+    if (opts.dryRun) extra.push("--dry-run");
+    if (opts.json) extra.push("--json");
+    const exec = resolveExecutor("src/cli/sync-command.ts");
+    const child = spawn(
+      exec.cmd,
+      [...exec.args, ...extra],
+      { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
+    );
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
 // SPRINT-094: install the EMDEE Claude Code skills into ~/.claude/skills/
 program
   .command("skills-install")
