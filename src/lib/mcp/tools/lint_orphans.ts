@@ -2,6 +2,7 @@ import { loadVaultIndex, readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges } from "../../../core/syncDocEdges";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import { adminClient } from "../../supabase/admin";
+import { cloudDatabase } from "../../database";
 import { SYSTEM_NODES } from "../../system-nodes";
 import type { ToolContext } from "./types";
 
@@ -67,27 +68,13 @@ export async function lintOrphans(ctx: ToolContext, args: Record<string, unknown
 
   const fix = args.fix === true;
   const admin = adminClient();
+  const db = ctx.db ?? cloudDatabase();
   const namespace = ctx.userId;
 
-  // Pull every hierarchy edge in the namespace. Paginate + ORDER BY —
-  // same pagination discipline as SPRINT-117 / SPRINT-119.
-  const PAGE = 1000;
-  const inboundHier = new Set<string>();
-  let pageStart = 0;
-  while (true) {
-    const { data, error } = await admin
-      .from("doc_edges")
-      .select("to_path")
-      .eq("namespace", namespace)
-      .eq("kind", "hierarchy")
-      .order("to_path", { ascending: true })
-      .range(pageStart, pageStart + PAGE - 1);
-    if (error) throw new Error(`lint_orphans: doc_edges read failed: ${error.message}`);
-    if (!data || data.length === 0) break;
-    for (const r of data) inboundHier.add(r.to_path as string);
-    if (data.length < PAGE) break;
-    pageStart += PAGE;
-  }
+  // SPRINT-139: read hierarchy edges via VaultDatabase.getEdges (handles
+  // pagination + ordering internally per SPRINT-117 / SPRINT-119).
+  const hierEdges = await db.getEdges(namespace, { kind: "hierarchy" });
+  const inboundHier = new Set(hierEdges.map((e) => e.to_path));
 
   // Build the same index the indexer would build — this is our reference
   // for what edges SHOULD exist per markdown truth.

@@ -1,4 +1,5 @@
 import { adminClient } from "../../supabase/admin";
+import { cloudDatabase } from "../../database";
 import { readVaultFile } from "./vault";
 import type { ToolContext } from "./types";
 
@@ -67,26 +68,16 @@ export async function findSimilar(ctx: ToolContext, args: Record<string, unknown
   const head = content.slice(0, 2000);
   const queryText = `${title} ${summary} ${head}`.replace(/[^\w\s]/g, " ").slice(0, 4000);
 
-  const admin = adminClient();
-  // Use PostgREST's textSearch — invokes @@ against content_tsv (the
-  // generated column added in migration 20260725000001). websearch type
-  // is the most forgiving parser (OR semantics on unquoted tokens).
-  // PostgREST doesn't expose ts_rank as an orderable expression, so we
-  // fetch matches then return them in the order Postgres returns.
-  const { data: rows, error } = await admin
-    .from("vault_files")
-    .select("file_path, content")
-    .eq("namespace", ctx.userId)
-    .textSearch("content_tsv", queryText, { type: "websearch", config: "english" })
-    .neq("file_path", path)
-    .limit(limit);
-  if (error) throw new Error(`find_similar: ${error.message}`);
-
-  const results: SimilarDoc[] = (rows ?? []).map((r) => {
-    const c = (r.content as string) ?? "";
+  // SPRINT-139: search through VaultDatabase (backends that don't
+  // support FTS return empty; SupabasePostgres uses tsvector column
+  // from migration 20260725000001).
+  const db = ctx.db ?? cloudDatabase();
+  const rows = await db.searchFiles(ctx.userId, queryText, limit, path);
+  const results: SimilarDoc[] = rows.map((r) => {
+    const c = r.content ?? "";
     return {
-      path: r.file_path as string,
-      title: deriveTitle(r.file_path as string, c),
+      path: r.file_path,
+      title: deriveTitle(r.file_path, c),
       summary: deriveSummary(c),
       rank: 0,
     };
