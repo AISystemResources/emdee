@@ -2,6 +2,15 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path";
 import type { VaultFile, VaultStorage } from "./VaultStorage";
 
+function deriveTitleFromContent(content: string): string {
+  const m = content.match(/^#\s+(.+?)\s*$/m);
+  return m ? m[1].trim() : "";
+}
+function deriveSummaryFromContent(content: string): string {
+  const m = content.match(/^>\s+(.+?)\s*$/m);
+  return m ? m[1].trim() : "";
+}
+
 /**
  * Filesystem-backed vault used in local development. Paths are relative to
  * `rootDir`. Used by /api/index, /api/doc, etc. when `EMDEE_DOCS` is set so
@@ -46,6 +55,27 @@ export class FilesystemStorage implements VaultStorage {
   /** FS already lists metadata without bodies — listMeta is an alias. */
   async listMeta(prefix?: string): Promise<VaultFile[]> {
     return this.list(prefix);
+  }
+
+  /**
+   * SPRINT-146a: metadata + title + summary derived per-file from disk.
+   * No cache column here — we just read the file and extract on the fly.
+   * FS is single-tenant + typically small so this is fine.
+   */
+  async listMetadata(prefix?: string): Promise<VaultFile[]> {
+    const listed = await this.list(prefix);
+    return Promise.all(
+      listed.map(async (f) => {
+        const content = (await this.read(f.path)) ?? "";
+        return {
+          path: f.path,
+          content: "",
+          updatedAt: f.updatedAt,
+          title: deriveTitleFromContent(content),
+          summary: deriveSummaryFromContent(content),
+        };
+      }),
+    );
   }
 
   async listWithContent(prefix?: string): Promise<VaultFile[]> {
