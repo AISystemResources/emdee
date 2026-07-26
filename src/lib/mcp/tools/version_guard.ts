@@ -34,6 +34,24 @@ export interface StaleContentConflict {
  * If `expected` is empty/undefined, skips the check — backwards-compat
  * with pre-141a callers.
  */
+/**
+ * Multi-doc variant (SPRINT-141b). Checks each supplied hash in order;
+ * first mismatch short-circuits and returns its conflict object. Any
+ * check with an empty/undefined `expected` is skipped. Same conflict
+ * shape as the single-doc guard — the caller knows which doc failed
+ * because the conflict carries `path`.
+ */
+export async function guardMulti(
+  ctx: ToolContext,
+  checks: Array<{ path: string; expected: string | undefined }>,
+): Promise<StaleContentConflict | null> {
+  for (const c of checks) {
+    const r = await guardDocContentHash(ctx, c.path, c.expected);
+    if (r) return r;
+  }
+  return null;
+}
+
 export async function guardDocContentHash(
   ctx: ToolContext,
   path: string,
