@@ -3,7 +3,7 @@ import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./v
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: ["source_path", "subgroup_heading", "new_doc_title", "new_doc_path", "summary", "expected_source_content_hash"],
@@ -182,7 +182,7 @@ function buildIntermediateDoc(title: string, summary: string, sourceTitle: strin
  * the visual grouping into a structural one. Detection lives in lint
  * (`subgroup_materialization_candidate`).
  */
-export async function materializeSubgroup(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _materializeSubgroup(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const sourcePath = String(args.source_path ?? "");
@@ -278,3 +278,5 @@ export async function materializeSubgroup(ctx: ToolContext, args: Record<string,
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
+
+export const materializeSubgroup = withHashDeprecation(_materializeSubgroup, ["expected_source_content_hash"]);

@@ -7,7 +7,7 @@ import type { LintVaultContext } from "./lint";
 import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardMulti } from "./version_guard";
+import { guardMulti, withHashDeprecation } from "./version_guard";
 
 const ARG_SPEC = {
   allowed: [
@@ -263,7 +263,7 @@ function json(value: unknown) {
  * bullet), then new parent (add bullet). Partial failure leaves the graph
  * asymmetric; retry is safe — every helper has idempotency built in.
  */
-export async function moveDoc(
+async function _moveDoc(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ): Promise<unknown> {
@@ -458,3 +458,5 @@ export async function moveDoc(
     old_parent_of_hash: hashBody(oldParentPatch.newSectionBody),
   });
 }
+
+export const moveDoc = withHashDeprecation(_moveDoc, ["expected_child_content_hash", "expected_old_parent_content_hash", "expected_new_parent_content_hash"]);

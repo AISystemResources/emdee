@@ -11,7 +11,7 @@ import {
 } from "./sections";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -47,7 +47,7 @@ function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
-export async function appendSection(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _appendSection(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const rel = String(args.path);
@@ -123,3 +123,5 @@ export async function appendSection(ctx: ToolContext, args: Record<string, unkno
     section_id: newIdx >= 0 ? sectionId(target.heading, newIdx) : undefined,
   });
 }
+
+export const appendSection = withHashDeprecation(_appendSection, ["expected_content_hash"]);

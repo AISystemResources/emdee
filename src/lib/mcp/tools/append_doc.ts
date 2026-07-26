@@ -4,7 +4,7 @@ import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
-import { guardDocContentHash } from "./version_guard";
+import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -40,7 +40,7 @@ function hashBody(body: string): string {
  * right primitive. The body may include its own `##` headings to introduce
  * new sections at the end.
  */
-export async function appendDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+async function _appendDoc(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const argErr = validateArgs(args, ARG_SPEC);
   if (argErr) return json(argErr);
   const rel = String(args.path);
@@ -72,3 +72,5 @@ export async function appendDoc(ctx: ToolContext, args: Record<string, unknown>)
   await writeVaultFile(ctx, rel, newContent);
   return json({ ok: true, content_hash: hashBody(body.trim()) });
 }
+
+export const appendDoc = withHashDeprecation(_appendDoc, ["expected_content_hash"]);
