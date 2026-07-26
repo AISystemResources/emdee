@@ -15,6 +15,13 @@ export interface VaultFileRow {
   namespace: string;
   file_path: string;
   content: string;
+  /**
+   * H1 title. Populated by a Postgres GENERATED column on cloud; the
+   * SQLite backend derives it in-app at putFile time. NULL when the
+   * doc has no `^# ` heading — callers should fall back to the
+   * filename slug in that case. See SPRINT-143.
+   */
+  title?: string | null;
   updated_at?: string;
   summary_hash?: string | null;
   content_hash_at_summary_write?: string | null;

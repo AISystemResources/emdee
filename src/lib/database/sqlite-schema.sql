@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS vault_files (
   namespace TEXT NOT NULL,
   file_path TEXT NOT NULL,
   content TEXT NOT NULL DEFAULT '',
+  -- SPRINT-143: persisted H1 title so syncDocEdges doesn't pull the
+  -- content column on every write. SQLite backend derives it in-app at
+  -- putFile time (no regex engine here — plain JS extract). Postgres
+  -- side uses a GENERATED column (migration 20260726120000).
+  title TEXT,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   summary_hash TEXT,
   content_hash_at_summary_write TEXT,
@@ -69,4 +74,4 @@ CREATE TRIGGER IF NOT EXISTS vault_files_fts_au AFTER UPDATE ON vault_files BEGI
 END;
 
 -- Schema-version pragma for future migrations.
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
