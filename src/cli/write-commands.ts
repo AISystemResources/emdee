@@ -245,6 +245,7 @@ const VERBS: Record<string, VerbSpec> = {
       "old-path": { type: "string" },
       "new-title": { type: "string" },
       "new-path": { type: "string" },
+      "expected-hash": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -253,6 +254,7 @@ const VERBS: Record<string, VerbSpec> = {
       };
       const newPath = optionalString(v["new-path"]);
       if (newPath) args.new_path = newPath;
+      if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
       return args;
     },
   },

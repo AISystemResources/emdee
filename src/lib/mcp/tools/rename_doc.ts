@@ -3,9 +3,10 @@ import { validatePath, readVaultFile, writeVaultFile, deleteVaultFile, loadVault
 import { adminClient } from "../../supabase/admin";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { guardDocContentHash } from "./version_guard";
 
 const ARG_SPEC = {
-  allowed: ["old_path", "new_title", "new_path"],
+  allowed: ["old_path", "new_title", "new_path", "expected_content_hash"],
   required: ["old_path", "new_title"],
 } as const;
 
@@ -91,6 +92,13 @@ export async function renameDoc(ctx: ToolContext, args: Record<string, unknown>)
 
   const oldContent = await readVaultFile(ctx, oldPath);
   if (oldContent === null) return json({ error: "source_not_found", path: oldPath });
+
+  // SPRINT-141c: guard the source doc if the caller supplied a hash.
+  // Downstream wiki-link rewrites aren't guarded — bulk rewrite is
+  // inherently advisory across N docs (see sprint spec).
+  const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
+  const conflict = await guardDocContentHash(ctx, oldPath, expected);
+  if (conflict) return json(conflict);
 
   const oldTitle = deriveTitle(oldContent, oldPath);
 

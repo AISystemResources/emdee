@@ -526,12 +526,14 @@ program
   .requiredOption("--old-path <path>", "Existing doc path")
   .requiredOption("--new-title <title>", "New H1 title")
   .option("--new-path <path>", "Override the derived new path")
+  .option("--expected-hash <hash>", "Optional source doc_content_hash — rename rejected on mismatch (SPRINT-141c). Downstream wiki-link rewrites are NOT guarded.")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
     const extra = argsFromOpts(opts, {
       oldPath: "--old-path", newTitle: "--new-title", newPath: "--new-path",
+      expectedHash: "--expected-hash",
       remote: "--remote", json: "--json",
     });
     shellWrite("rename-doc", opts, extra);
