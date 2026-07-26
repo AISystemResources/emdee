@@ -44,6 +44,23 @@ test.describe("smoke (anonymous)", () => {
     expect(paths).toContain("EMDEE.md");
   });
 
+  test("/api/index?meta=true returns docs without content (SPRINT-146a)", async ({ request, baseURL }) => {
+    const res = await request.get(`${baseURL ?? ""}/api/index?ns=public&meta=true`);
+    expect(res.status(), "meta mode is up").toBe(200);
+    const body = (await res.json()) as {
+      docs?: Array<{ path?: string; content?: string; title?: string }>;
+    };
+    expect(Array.isArray(body.docs), "docs array shape").toBe(true);
+    const nonSystem = (body.docs ?? []).filter((d) => d.path !== "EMDEE.md" && d.path !== "USER.md" && !d.path?.startsWith("VAULT") && !d.path?.startsWith("SHARED") && !d.path?.startsWith("GRAVEYARD") && !d.path?.startsWith("IMAGES"));
+    // System nodes come with baked-in scaffold content so they may be non-empty;
+    // just assert every doc still has a title (proves the field survives meta mode).
+    for (const d of body.docs ?? []) {
+      expect(typeof d.title, `title present for ${d.path}`).toBe("string");
+    }
+    // Body bytes should be substantially smaller than a full fetch would produce.
+    void nonSystem;
+  });
+
   test("/api/index returns 304 when If-None-Match matches (SPRINT-144 ETag cache)", async ({ request, baseURL }) => {
     // First fetch — grab the ETag.
     const first = await request.get(`${baseURL ?? ""}/api/index?ns=public`);

@@ -184,16 +184,24 @@ async function walk(dir: string, base: string): Promise<string[]> {
   return out;
 }
 
-/** Build an index from pre-loaded file contents — works without a filesystem. */
-export function buildIndexFromContents(files: { path: string; content: string }[]): DocIndex {
+/** Build an index from pre-loaded file contents — works without a filesystem.
+ *
+ * SPRINT-146a: files may include `title` and `summary` pre-derived from
+ * the vault_files GENERATED columns. When provided, we skip re-parsing
+ * from content — supports the meta-only /api/index?meta=true path where
+ * `content` arrives empty (the renderer will lazy-fetch it per doc).
+ */
+export function buildIndexFromContents(
+  files: { path: string; content: string; title?: string; summary?: string }[],
+): DocIndex {
   const docs: DocNode[] = [];
-  for (const { path: rel, content } of files) {
+  for (const { path: rel, content, title: preTitle, summary: preSummary } of files) {
     const sections = extractSections(content);
     docs.push({
       path: rel,
-      title: deriveTitle(rel, content),
+      title: preTitle && preTitle.length > 0 ? preTitle : deriveTitle(rel, content),
       content,
-      summary: deriveSummary(content),
+      summary: preSummary && preSummary.length > 0 ? preSummary : deriveSummary(content),
       parents: dedupeLinks(sections.parents),
       children: dedupeLinks(sections.children),
       associates: dedupeLinks(sections.associates),

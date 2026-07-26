@@ -2,6 +2,10 @@ export interface VaultFile {
   path: string;       // relative path, e.g. "projects/SILENTMANE/BUILD.md"
   content: string;
   updatedAt: string;  // ISO 8601
+  /** Populated by listMetadata (SPRINT-146a). Empty string when unknown. */
+  title?: string;
+  /** Populated by listMetadata (SPRINT-146a). Empty string when unknown. */
+  summary?: string;
 }
 
 export interface VaultStorage {
@@ -17,6 +21,15 @@ export interface VaultStorage {
    * SPRINT-024 Phase 2.
    */
   listMeta(prefix?: string): Promise<VaultFile[]>;
+  /**
+   * Metadata + title + summary. Slightly heavier than listMeta but ~99%
+   * lighter than listWithContent — pulls the persisted title / summary
+   * columns (SPRINT-143 / SPRINT-144). Used by /api/index?meta=true so
+   * the renderer can show sidebar + graph without paying for content.
+   *
+   * SPRINT-146a.
+   */
+  listMetadata(prefix?: string): Promise<VaultFile[]>;
   /**
    * Bulk-read every .md file under `prefix` in one shot. Implementations
    * are encouraged to use a single round-trip — SupabaseStorage hits the

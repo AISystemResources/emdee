@@ -191,9 +191,16 @@ export async function GET(request: Request) {
     // Fall through — a broken listMeta shouldn't block the full path.
   }
 
+  // SPRINT-146a: ?meta=true lets the renderer fetch (path, title, summary,
+  // edges) without paying for content. Default stays full-content to
+  // preserve backwards compatibility for every existing caller (including
+  // the current renderer, until it opts in in a follow-up).
+  const metaOnly = url.searchParams.get("meta") === "true";
   let listed: Awaited<ReturnType<typeof storage.listWithContent>>;
   try {
-    listed = await storage.listWithContent(prefix || undefined);
+    listed = metaOnly
+      ? await storage.listMetadata(prefix || undefined)
+      : await storage.listWithContent(prefix || undefined);
   } catch {
     listed = [];
   }
@@ -238,6 +245,10 @@ export async function GET(request: Request) {
   let files = listed.map((f) => ({
     path: prefix ? f.path.slice(prefix.length) : f.path,
     content: f.content,
+    // SPRINT-146a: propagate pre-derived title / summary from listMetadata
+    // through to the indexer so meta mode doesn't need content to work.
+    title: f.title,
+    summary: f.summary,
   }));
 
   // SPRINT-057 (SIG-008): filter out trashed docs from the renderer's view.
@@ -268,7 +279,9 @@ export async function GET(request: Request) {
   // customised a node (written it via MCP) see their stored version instead.
   // Public namespace gets EMDEE injected so visitors see the vault root.
   if (!isLocal) {
-    files.push(...missingSystemNodeFiles(files.map((f) => f.path)));
+    for (const sn of missingSystemNodeFiles(files.map((f) => f.path))) {
+      files.push({ ...sn, title: undefined, summary: undefined });
+    }
   }
 
   // Strip leftover fixture/demo files from the public namespace so visitors
@@ -279,6 +292,8 @@ export async function GET(request: Request) {
     files.push({
       path: "USER.md",
       content: "# USER\n\n> Your personal node — sign in to create your own vault.\n\n## Child of\n\n* [[EMDEE]]\n",
+      title: undefined,
+      summary: undefined,
     });
   }
 

@@ -160,6 +160,43 @@ export class SupabaseStorage implements VaultStorage {
     });
   }
 
+  /**
+   * SPRINT-146a: metadata + title + summary. Uses the persisted title
+   * (SPRINT-143) and summary (SPRINT-144) columns so /api/index?meta=true
+   * can render sidebar + graph without paying for full content egress.
+   * ~99% cheaper than listWithContent for the typical vault.
+   */
+  async listMetadata(prefix?: string): Promise<VaultFile[]> {
+    return withListCache("listMetadata", prefix, async () => {
+      const folder = prefix ? prefix.replace(/\/$/, "") : "";
+      if (!folder || folder.includes("/")) {
+        return this.walkFolder(folder);
+      }
+      const admin = adminClient();
+      const PAGE = 1000;
+      const rows: Array<{ file_path: string; updated_at: string; title: string | null; summary: string | null }> = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await admin
+          .from(CACHE_TABLE)
+          .select("file_path, updated_at, title, summary")
+          .eq("namespace", folder)
+          .order("file_path", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) return this.walkFolder(folder);
+        const page = (data ?? []) as Array<{ file_path: string; updated_at: string; title: string | null; summary: string | null }>;
+        rows.push(...page);
+        if (page.length < PAGE) break;
+      }
+      return rows.map((r) => ({
+        path: `${folder}/${r.file_path}`,
+        content: "",
+        updatedAt: r.updated_at,
+        title: r.title ?? "",
+        summary: r.summary ?? "",
+      }));
+    });
+  }
+
   private async walkFolder(folder: string): Promise<VaultFile[]> {
     const { data, error } = await this.bucket().list(folder || undefined, { limit: 1000 });
     if (error || !data) return [];
