@@ -229,6 +229,109 @@ async function propagateShareToNewPath(
 }
 
 /**
+ * SPRINT-163: when the OWNER writes a new doc in their own namespace,
+ * check if that doc falls under any existing share_root and auto-add
+ * doc_shares rows for every grantee. Without this, cascading shares
+ * only cover descendants that existed AT SHARE-TIME — new docs added
+ * later become invisible to the grantee (Sim Yee's DOUBLELEAD
+ * PRODUCTION/MARKETING/OPERATION hubs went missing because they were
+ * added after her initial DL share).
+ *
+ * Sibling-directory heuristic: walk up the new doc's path components,
+ * and at the first ancestor dir that has any share rows in the owner's
+ * namespace (via path_prefix LIKE `${dir}/%`), pull those shares'
+ * share_roots + grantees and propagate. Multiple ORM round-trips but
+ * bounded by path depth (typically 4-6). Deepest-match-wins so a
+ * nested share (e.g. edmund/projects/doublelead/production/*) is
+ * preferred over the outer one.
+ *
+ * Best-effort — a failure here is logged by the caller but doesn't
+ * fail the underlying write.
+ */
+export async function propagateOwnerWriteToShares(
+  ownerId: string,
+  newPath: string,
+): Promise<void> {
+  const admin = adminClient();
+  const parts = newPath.split("/");
+  if (parts.length < 2) return;
+
+  let matches: Array<{ share_root: string | null; grantee_id: string; permission: "read" | "write" }> = [];
+  for (let i = parts.length - 1; i > 0; i--) {
+    const dir = parts.slice(0, i).join("/");
+    const { data } = await admin
+      .from("doc_shares")
+      .select("share_root, grantee_id, permission")
+      .eq("owner_id", ownerId)
+      .not("share_root", "is", null)
+      .like("path_prefix", `${dir}/%`);
+    if (data && data.length > 0) {
+      matches = data as typeof matches;
+      break;
+    }
+  }
+  if (matches.length === 0) return;
+
+  const inserts = buildOwnerSharePropagationInserts(matches, newPath, ownerId);
+  if (inserts.length === 0) return;
+  const { error } = await admin
+    .from("doc_shares")
+    .upsert(inserts, { onConflict: "owner_id,path_prefix,grantee_id" });
+  if (error) throw new Error(error.message);
+}
+
+export interface OwnerShareMatch {
+  share_root: string | null;
+  grantee_id: string;
+  permission: "read" | "write";
+}
+
+export interface OwnerShareInsert {
+  owner_id: string;
+  grantee_id: string;
+  path_prefix: string;
+  permission: "read" | "write";
+  share_root: string;
+}
+
+/**
+ * SPRINT-163: pure dedup + upgrade logic for share propagation.
+ * Exported so it can be unit-tested without needing a live Supabase
+ * connection. Rules:
+ * - One insert per (grantee, share_root) pair.
+ * - When the same grantee has both read and write access via different
+ *   share_roots, `write` wins (upgrade).
+ * - Rows with null share_root are dropped (only cascading shares
+ *   propagate).
+ */
+export function buildOwnerSharePropagationInserts(
+  matches: OwnerShareMatch[],
+  newPath: string,
+  ownerId: string,
+): OwnerShareInsert[] {
+  const byKey = new Map<string, OwnerShareInsert>();
+  for (const r of matches) {
+    if (!r.share_root) continue;
+    const key = `${r.grantee_id}::${r.share_root}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (r.permission === "write" && existing.permission === "read") {
+        existing.permission = "write";
+      }
+      continue;
+    }
+    byKey.set(key, {
+      owner_id: ownerId,
+      grantee_id: r.grantee_id,
+      path_prefix: newPath,
+      permission: r.permission,
+      share_root: r.share_root,
+    });
+  }
+  return Array.from(byKey.values());
+}
+
+/**
  * SPRINT-035: module-scope `loadVaultIndex` memo. Replaces the per-ctx
  * WeakMap (which was empty per-request because the MCP HTTP route
  * allocates a fresh ToolContext per call — see
@@ -413,6 +516,20 @@ export async function writeVaultFile(ctx: ToolContext, rel: string, content: str
       return;
     }
     await ctx.storage.write(`${ctx.userId}/${rel}`, content);
+    // SPRINT-163: if this doc falls under any of the owner's active
+    // share_roots, auto-add doc_shares rows for every grantee so they
+    // see the new doc in context. Prevents the partial-tree orphan bug
+    // where an owner adds children to a shared subtree after the
+    // initial share and grantees never see them.
+    // Best-effort — logged but doesn't fail the write.
+    try {
+      await propagateOwnerWriteToShares(ctx.userId, rel);
+    } catch (e) {
+      console.error(
+        `owner-write share propagation failed for ${ctx.userId}/${rel}:`,
+        e,
+      );
+    }
   } finally {
     // Bust the per-request memo whether the write succeeded or threw —
     // a partial write may still have committed bucket content, and
