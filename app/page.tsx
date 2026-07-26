@@ -93,6 +93,7 @@ export default async function Home() {
       {/* FRONTAL — the higher-order thinking. Hero. */}
       <section className="cerebral-section cerebral-hero">
         <span className="cerebral-lobe">Frontal Lobe</span>
+        <BrainDiagram />
         <h1 className="cerebral-h1">
           Your <em>Second Brain</em>,<br />
           for you and your AI.
@@ -119,6 +120,20 @@ export default async function Home() {
       <section className="cerebral-section">
         <span className="cerebral-lobe">Occipital Lobe</span>
         <h2 className="cerebral-h2">What is a Second Brain, and why does it need to be AI-safe?</h2>
+
+        {/* SPRINT-150b — the name is the promise. E-M-D-E-E hides `.md` at
+             its heart: everything you write is a plain markdown file. */}
+        <div className="cerebral-emdee-reveal" aria-label="EMDEE — because everything you write is a .md file">
+          <span className="cerebral-emdee-small">e</span>
+          <span className="cerebral-emdee-md">M</span>
+          <span className="cerebral-emdee-md">D</span>
+          <span className="cerebral-emdee-small">e</span>
+          <span className="cerebral-emdee-small">e</span>
+          <span className="cerebral-emdee-caption">
+            The <code>.md</code> is right there in the name. Everything you write is a plain markdown file.
+          </span>
+        </div>
+
         <div className="cerebral-prose">
           <p>
             A Second Brain is where you offload the thoughts, ideas, references, and
@@ -307,5 +322,65 @@ function FaqItem({ q, a }: { q: string; a: string }) {
       <summary>{q}</summary>
       <p>{a}</p>
     </details>
+  );
+}
+
+// SPRINT-150b — signature hero moment. Line-drawn brain in the brand
+// palette, restrained — no animation, no gradient tricks. The typography
+// (Fraunces italic on "Second Brain") stays the star of the hero; the
+// brain sits above it as an emblem, not a spectacle. Lobes correspond
+// to the anatomical labels used as section eyebrows.
+function BrainDiagram() {
+  return (
+    <svg
+      className="cerebral-brain"
+      viewBox="0 0 240 200"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      role="presentation"
+    >
+      {/* Outer brain outline — a soft, cortex-like silhouette. */}
+      <path
+        d="M 60 50
+           C 40 50, 25 65, 25 90
+           C 25 105, 30 118, 40 128
+           C 38 145, 50 160, 70 162
+           C 80 175, 105 178, 120 170
+           C 135 178, 160 175, 170 162
+           C 190 160, 202 145, 200 128
+           C 210 118, 215 105, 215 90
+           C 215 65, 200 50, 180 50
+           C 175 42, 160 38, 148 45
+           C 138 38, 122 38, 120 48
+           C 118 38, 102 38, 92 45
+           C 80 38, 65 42, 60 50 Z"
+        fill="none"
+        stroke="var(--fg)"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      {/* Cortical folds — hand-drawn curves that suggest gyri without being literal. */}
+      <path d="M 55 78 C 65 72, 78 78, 85 90" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 95 65 C 102 75, 110 78, 118 72" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 130 68 C 138 78, 148 80, 155 72" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 165 80 C 175 76, 185 82, 190 92" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 60 108 C 75 100, 92 108, 100 118" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 140 118 C 150 108, 168 100, 180 108" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 78 135 C 90 130, 105 138, 118 132" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <path d="M 122 132 C 135 138, 150 130, 162 135" fill="none" stroke="var(--fg)" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      {/* Central fissure — the divide between hemispheres, in brand pink. */}
+      <path
+        d="M 120 50 C 120 80, 118 110, 122 140 C 120 155, 118 168, 120 170"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      {/* Small pink accent dots at the label attach points — hint at synapses. */}
+      <circle cx="72" cy="80" r="3" fill="var(--accent)" />
+      <circle cx="168" cy="80" r="3" fill="var(--accent)" />
+      <circle cx="72" cy="130" r="3" fill="var(--accent)" />
+      <circle cx="168" cy="130" r="3" fill="var(--accent)" />
+    </svg>
   );
 }

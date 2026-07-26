@@ -2933,3 +2933,70 @@ a.sidebar-footer-btn { text-decoration: none; }
     transform: none;
   }
 }
+
+/* SPRINT-150b — signature moments -------------------------- */
+
+/* Line-drawn brain in the hero. Restrained: no animation, no gradient
+ * tricks. The typography stays the star; this sits above it as an emblem. */
+.cerebral-brain {
+  width: 96px;
+  height: 80px;
+  display: block;
+  margin: 0 auto 1.75rem;
+  color: var(--fg);
+}
+
+/* eMDee typographic reveal. The name is the promise — `.md` is right
+ * there in the middle of E-M-D-E-E. Rendered once, in the OCCIPITAL
+ * ("What is EMDEE?") section, where explaining the name lands hardest. */
+.cerebral-emdee-reveal {
+  display: flex;
+  align-items: baseline;
+  gap: 0.05em;
+  margin: 2rem 0 2.5rem;
+  padding: 2.25rem 2rem;
+  background: var(--accent-soft);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+}
+.cerebral-emdee-small {
+  font-size: clamp(3rem, 7vw, 5rem);
+  color: var(--muted);
+  font-weight: 400;
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 40;
+  transform: translateY(0.05em);
+}
+.cerebral-emdee-md {
+  font-size: clamp(5rem, 11vw, 8rem);
+  color: var(--accent);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 80, "WONK" 1;
+}
+.cerebral-emdee-caption {
+  flex-basis: 100%;
+  margin-top: 1.25rem;
+  font-family: var(--font-sans);
+  font-size: 0.98rem;
+  color: var(--fg);
+  text-align: center;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+.cerebral-emdee-caption code {
+  font-family: var(--font-mono);
+  background: var(--panel);
+  color: var(--accent-deep);
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.92em;
+  border: 1px solid var(--border);
+}
