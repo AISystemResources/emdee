@@ -49,6 +49,17 @@ body {
   letter-spacing: 1.8px;
   text-transform: uppercase;
   flex: 1;
+  /* SPRINT-149a: acts as a link to `/` — kill link styling here. */
+  color: inherit;
+  text-decoration: none;
+}
+/* SPRINT-149a: EMDEE brand text in sidebar h1 is a Link to homepage. */
+.sidebar h1 .brand-link {
+  color: inherit;
+  text-decoration: none;
+}
+.sidebar h1 .brand-link:hover {
+  opacity: 0.7;
 }
 .mobile-hamburger {
   background: transparent;

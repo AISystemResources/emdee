@@ -1125,11 +1125,14 @@ export function App({ namespace }: { namespace: string }) {
             <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
         </button>
-        <span className="mobile-title">EMDEE</span>
+        <Link href="/" className="mobile-title">EMDEE</Link>
       </div>
       <div className="sidebar-wrap" data-open={mobileSidebarOpen} style={{ "--sidebar-width": sidebarWidth + "px" } as React.CSSProperties}>
         <aside className="sidebar" data-collapsed={sidebarCollapsed}>
-          <h1>EMDEE</h1>
+          {/* SPRINT-149a: EMDEE brand in sidebar links back to the homepage. */}
+          <h1>
+            <Link href="/" className="brand-link">EMDEE</Link>
+          </h1>
           <div className="sidebar-tree">
             {index === null ? (
               <span className="sidebar-loading">Loading…</span>
