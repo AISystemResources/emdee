@@ -1,0 +1,46 @@
+name: Auto-update PRs behind main
+
+# Fires whenever main advances. Any open PR targeting main that has
+# gone BEHIND is auto-refreshed via `gh pr update-branch`. GitHub then
+# re-runs the required checks; if they stay green and auto-merge is
+# armed, the PR merges without a human touching "Update branch".
+#
+# Origin: after the 0.5.0 release (PR #153) merged, PR #150 sat in
+# BEHIND state with auto-merge armed and did nothing. This closes
+# that failure mode.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-behind:
+    name: Update BEHIND PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh open PRs that are behind main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Listing open PRs targeting main..."
+          prs=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --state open \
+            --json number,mergeStateStatus,headRefName \
+            --jq '.[] | select(.mergeStateStatus == "BEHIND") | .number')
+
+          if [ -z "$prs" ]; then
+            echo "No BEHIND PRs. Nothing to do."
+            exit 0
+          fi
+
+          for pr in $prs; do
+            echo "Updating PR #$pr..."
+            gh pr update-branch "$pr" --repo "$GITHUB_REPOSITORY" || echo "  (skipped: could not update #$pr)"
+          done
