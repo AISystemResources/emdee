@@ -62,20 +62,28 @@ test.describe("SqliteDatabase bundling (SPRINT-140F)", () => {
     }
   });
 
-  test("bundled dist/cli/write-commands.js inlines the sqlite backend", () => {
+  test("index.ts uses static imports for both backends (no dynamic require)", () => {
     // The 0.5.0/0.5.1 bug was that `createRequire("./sqlite")` in
-    // index.ts wasn't followed by esbuild, so the sqlite backend never
-    // made it into the CLI bundle. With static imports the backend
-    // source shows up directly in the bundle. If someone regresses to
-    // a dynamic dispatch, this string check will fail.
+    // index.ts wasn't followed by esbuild — the sqlite backend never
+    // made it into the CLI bundle. The webpack retry (SPRINT-140F v1)
+    // then broke on the createRequire fallback too. Guard the fix by
+    // asserting the source uses static ESM imports; if anyone
+    // reintroduces dynamic dispatch, this fails at test time instead
+    // of at a user's `emdee lint-orphans` invocation.
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const bundlePath = path.join(repoRoot, "dist", "cli", "write-commands.js");
-    expect(existsSync(bundlePath)).toBe(true);
-    const bundle = readFileSync(bundlePath, "utf8");
-    // Look for a distinctive fragment from sqlite-schema.ts, proving
-    // the schema (and by extension the SqliteDatabase code path) got
-    // bundled in and doesn't rely on a runtime sibling file.
-    expect(bundle).toContain("vault_files_fts");
-    expect(bundle).toContain("PRAGMA user_version = 2");
+    const src = readFileSync(path.join(repoRoot, "src", "lib", "database", "index.ts"), "utf8");
+
+    expect(src).toMatch(/^\s*import\s+\{\s*SqliteDatabase\s*\}\s+from\s+["']\.\/sqlite["']/m);
+    expect(src).toMatch(/^\s*import\s+\{\s*SupabasePostgresDatabase\s*\}\s+from\s+["']\.\/supabase-postgres["']/m);
+    expect(src).not.toMatch(/createRequire/);
+    expect(src).not.toMatch(/req\(["']\.\/sqlite["']\)/);
+  });
+
+  test("sqlite.ts uses the inlined schema string, not a filesystem read", () => {
+    const repoRoot = path.resolve(__dirname, "..", "..");
+    const src = readFileSync(path.join(repoRoot, "src", "lib", "database", "sqlite.ts"), "utf8");
+
+    expect(src).toMatch(/import\s+\{\s*SQLITE_SCHEMA\s*\}\s+from\s+["']\.\/sqlite-schema["']/);
+    expect(src).not.toMatch(/readFileSync\s*\(\s*[^)]*sqlite-schema\.sql/);
   });
 });
