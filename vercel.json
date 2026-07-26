@@ -8,5 +8,11 @@
       "agents": false,
       "dev": false
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/auto-heal-namespaces",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }
