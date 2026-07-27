@@ -31,3 +31,4 @@ export { moveDoc } from "./move_doc";
 export { trashDoc } from "./trash_doc";
 export { restoreDoc } from "./restore_doc";
 export { getImage } from "./get_image";
+export { uploadImage } from "./upload_image";
