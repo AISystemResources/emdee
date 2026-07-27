@@ -71,7 +71,12 @@ export async function uploadImage(ctx: ToolContext, args: Record<string, unknown
   if (imageBuffer.length === 0) return json({ error: "image_data decoded to empty buffer" });
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const filename = `${ts}.${ext(mediaType)}`;
+  // Prefer a slugified title in the storage filename so uploads are
+  // recognisable in Supabase / URLs. Fall back to timestamp when no
+  // title given. Timestamp suffix on the slug keeps collisions rare
+  // (upsert: false rejects same-key writes).
+  const baseName = titleArg ? `${slugify(titleArg)}-${ts.slice(0, 10)}` : ts;
+  const filename = `${baseName}.${ext(mediaType)}`;
   const storagePath = `${ctx.userId}/${filename}`;
 
   const { error: uploadErr } = await adminClient()
@@ -93,7 +98,7 @@ export async function uploadImage(ctx: ToolContext, args: Record<string, unknown
         .resize({ width: RASTER_WIDTH, withoutEnlargement: false })
         .png()
         .toBuffer();
-      const pngPath = `${ctx.userId}/${ts}.png`;
+      const pngPath = `${ctx.userId}/${baseName}.png`;
       const { error: pngUploadErr } = await adminClient()
         .storage
         .from(IMAGE_BUCKET)
