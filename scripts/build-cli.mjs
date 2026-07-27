@@ -45,6 +45,11 @@ const commonOptions = {
     // the installed dependency tree normally.
     "better-sqlite3",
     "bindings",
+    // SPRINT-169: sharp is a native module (libvips binding) whose
+    // CJS internals `require("child_process")` via detect-libc. Same
+    // failure mode as better-sqlite3 if bundled into ESM.
+    "sharp",
+    "detect-libc",
   ],
   logLevel: "info",
 };
