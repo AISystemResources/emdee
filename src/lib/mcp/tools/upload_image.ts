@@ -122,7 +122,10 @@ export async function uploadImage(ctx: ToolContext, args: Record<string, unknown
   // link. Falls back to the uploaded original otherwise.
   const embedUrl = pngUrl ?? imageUrl;
   const svgSourceLink = pngUrl ? `\n[SVG source](${imageUrl})\n` : "";
-  const docContent = `# ${title}\n\n> ${summary}\n\n![${title}](${embedUrl})\n${svgSourceLink}\n## Notes\n\n`;
+  // Full canonical scaffold — IMAGES parent edge is what makes the doc
+  // appear under the IMAGES virtual node in the sidebar. Without it the
+  // doc is orphaned at top-level.
+  const docContent = `# ${title}\n\n> ${summary}\n\n![${title}](${embedUrl})\n${svgSourceLink}\n## Child of\n\n- [[IMAGES]]\n\n## Parent of\n\n## Associated with\n\n## Notes\n\n`;
 
   await writeVaultFile(ctx, docPath, docContent);
 
