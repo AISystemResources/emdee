@@ -11,18 +11,15 @@
 name: migration-drift
 
 on:
+  # Runs on every PR / push to main so the required-check contract on
+  # `main` always gets a reported status. A path filter here would leave
+  # non-migration PRs with a permanent "Expected — Waiting for status"
+  # since GitHub never reports skipped/filtered checks. The job
+  # short-circuits internally when the diff doesn't touch migrations.
   pull_request:
-    paths:
-      - "supabase/migrations/**"
-      - "scripts/check-migration-drift.mjs"
-      - ".github/workflows/migration-drift.yml"
   push:
     branches:
       - main
-    paths:
-      - "supabase/migrations/**"
-      - "scripts/check-migration-drift.mjs"
-      - ".github/workflows/migration-drift.yml"
   workflow_dispatch:
 
 jobs:
@@ -41,11 +38,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect migration-relevant changes
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            changed=$(git diff --name-only "$base" "$head")
+          else
+            changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" || git show --name-only --pretty=format: "${{ github.sha }}")
+          fi
+          echo "changed files:"
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(supabase/migrations/|scripts/check-migration-drift\.mjs$|\.github/workflows/migration-drift\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No migration-relevant changes — skipping drift check (reporting success)."
+          fi
 
       - name: Setup Node
+        if: steps.filter.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
 
       - name: Run migration-drift check
+        if: steps.filter.outputs.run == 'true'
         run: node scripts/check-migration-drift.mjs
