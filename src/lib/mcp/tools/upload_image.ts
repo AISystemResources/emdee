@@ -4,7 +4,16 @@ import type { ToolContext } from "./types";
 
 const IMAGE_BUCKET = "vault-images";
 
-const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+// SPRINT-168: added image/svg+xml so Claude Code agents can upload
+// generated diagrams inline. SVG is text-encoded, small, and modern
+// browsers + markdown renderers embed it natively.
+const SUPPORTED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+] as const;
 type SupportedMediaType = (typeof SUPPORTED_TYPES)[number];
 
 function ext(mediaType: SupportedMediaType): string {
@@ -13,6 +22,7 @@ function ext(mediaType: SupportedMediaType): string {
     "image/png": "png",
     "image/gif": "gif",
     "image/webp": "webp",
+    "image/svg+xml": "svg",
   };
   return map[mediaType];
 }
