@@ -594,6 +594,29 @@ program
   });
 
 // -----------------------------------------------------------------------
+// SPRINT-168: upload an image file to the vault + create markdown doc.
+// -----------------------------------------------------------------------
+
+program
+  .command("upload-image")
+  .description("Upload an image file (jpg/png/gif/webp/svg) to the vault. Creates a doc referencing the uploaded image + returns its URL. Cloud-only.")
+  .requiredOption("--file <path>", "Local path to the image file to upload")
+  .option("--title <text>", "H1 title of the created doc (default: 'Image YYYY-MM-DD')")
+  .option("--description <text>", "Blockquote summary of the doc")
+  .option("--path <path>", "Vault path for the doc (default: images/<slug>.md)")
+  .option("--media-type <type>", "Explicit media type (default: inferred from file extension)")
+  .option("--remote", "Route through emdee.tech (required — upload is cloud-only)")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      file: "--file", title: "--title", description: "--description",
+      path: "--path", mediaType: "--media-type",
+      remote: "--remote", json: "--json",
+    });
+    shellWrite("upload-image", opts, extra);
+  });
+
+// -----------------------------------------------------------------------
 // SPRINT-091 chunk 3: full-file writes + lifecycle.
 // -----------------------------------------------------------------------
 
