@@ -35,6 +35,7 @@ import { lintOrphans } from "../lib/mcp/tools/lint_orphans";
 import { batchGetSummary, batchGetDoc } from "../lib/mcp/tools/batch_get";
 import { findSimilar } from "../lib/mcp/tools/find_similar";
 import { getDoc } from "../lib/mcp/tools/get_doc";
+import { uploadImage } from "../lib/mcp/tools/upload_image";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -465,6 +466,53 @@ const VERBS: Record<string, VerbSpec> = {
       const args: Record<string, unknown> = { path: asString(v.path) };
       const lim = optionalString(v.limit);
       if (lim) args.limit = Number(lim);
+      return args;
+    },
+  },
+  // SPRINT-168: upload an image file to the vault's Supabase Storage
+  // bucket + create an accompanying markdown doc that references it.
+  // Reads the file, base64-encodes, infers media type from extension
+  // (or accepts explicit --media-type override), and shells to the
+  // uploadImage tool. Cloud-only; the tool refuses local mode.
+  "upload-image": {
+    toolName: "upload_image",
+    toolFn: uploadImage as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      file: { type: "string" },
+      title: { type: "string" },
+      description: { type: "string" },
+      path: { type: "string" },
+      "media-type": { type: "string" },
+    },
+    buildArgs: (v) => {
+      const filePath = asString(v.file);
+      if (!filePath) throw new Error("upload-image requires --file <path-to-image>");
+      const buf = readFileSync(filePath);
+      const inferMediaType = (p: string): string => {
+        const ext = p.toLowerCase().split(".").pop() ?? "";
+        const map: Record<string, string> = {
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          gif: "image/gif",
+          webp: "image/webp",
+          svg: "image/svg+xml",
+        };
+        return map[ext] ?? "";
+      };
+      const mediaType = optionalString(v["media-type"]) ?? inferMediaType(filePath);
+      if (!mediaType) throw new Error(`upload-image can't infer media_type from ${filePath} — pass --media-type explicitly`);
+      const args: Record<string, unknown> = {
+        image_data: buf.toString("base64"),
+        media_type: mediaType,
+      };
+      const title = optionalString(v.title);
+      if (title) args.title = title;
+      const desc = optionalString(v.description);
+      if (desc) args.description = desc;
+      const p = optionalString(v.path);
+      if (p) args.path = p;
       return args;
     },
   },
