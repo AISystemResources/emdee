@@ -605,6 +605,7 @@ program
   .option("--description <text>", "Blockquote summary of the doc")
   .option("--path <path>", "Vault path for the doc (default: images/<slug>.md)")
   .option("--media-type <type>", "Explicit media type (default: inferred from file extension)")
+  .option("--no-rasterize", "SPRINT-169: skip SVG→PNG rasterisation (SVG-only upload)")
   .option("--remote", "Route through emdee.tech (required — upload is cloud-only)")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
@@ -613,6 +614,9 @@ program
       path: "--path", mediaType: "--media-type",
       remote: "--remote", json: "--json",
     });
+    // Commander turns --no-rasterize into opts.rasterize=false; default
+    // is true. Only forward when explicitly negated.
+    if (opts.rasterize === false) extra.push("--no-rasterize");
     shellWrite("upload-image", opts, extra);
   });
 
