@@ -484,6 +484,7 @@ const VERBS: Record<string, VerbSpec> = {
       description: { type: "string" },
       path: { type: "string" },
       "media-type": { type: "string" },
+      "no-rasterize": { type: "boolean" },
     },
     buildArgs: (v) => {
       const filePath = asString(v.file);
@@ -513,6 +514,10 @@ const VERBS: Record<string, VerbSpec> = {
       if (desc) args.description = desc;
       const p = optionalString(v.path);
       if (p) args.path = p;
+      // SPRINT-169: SVG auto-rasterises by default. --no-rasterize
+      // keeps only the SVG (for cases where you don't want a PNG
+      // sibling — e.g. static blog embeds where SVG renders fine).
+      if (v["no-rasterize"] === true) args.rasterize = false;
       return args;
     },
   },
