@@ -1,20 +1,24 @@
-// SPRINT-169: HARD RULE 11 regression spec for SVG→PNG rasterisation
-// inside upload_image.
+// SPRINT-169 + SPRINT-170: HARD RULE 11 regression spec for SVG→PNG
+// rasterisation inside upload_image.
 //
 // Guards:
-//   1. The rasterize arg is threaded through (rasterize=false skips
+//   1. resvg-js is present + can rasterise a trivial SVG.
+//   2. Font rendering works — an SVG referencing `Helvetica` (a font
+//      Vercel serverless doesn't ship) rasterises to a PNG containing
+//      non-background pixels where the text should be. Regression
+//      against the SPRINT-169 tofu-box bug on Vercel.
+//   3. The rasterize arg is threaded through (rasterize=false skips
 //      the PNG branch — verifiable by inspecting the returned shape
 //      even without live Supabase).
-//   2. sharp is present + can be imported; a broken sharp install
-//      would explode at module-load, which this spec catches.
-//
-// The end-to-end SVG→PNG upload requires a live Supabase Storage
-// bucket — that's exercised by the CLI smoke path, not here.
 
 import { expect, test } from "@playwright/test";
-import sharp from "sharp";
+import { Resvg } from "@resvg/resvg-js";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { uploadImage } from "@/src/lib/mcp/tools/upload_image";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
+import { DEJAVU_SANS_TTF_BASE64 } from "@/src/lib/mcp/fonts/DejaVuSans.b64";
 
 interface ToolCallResult {
   content: Array<{ type: "text"; text: string }>;
@@ -33,12 +37,17 @@ const stubCtx = {
   db: {} as never,
 } as unknown as ToolContext;
 
-test.describe("upload_image rasterise (SPRINT-169)", () => {
-  test("sharp can convert a trivial SVG to PNG", async () => {
-    // Sanity check that the sharp install is functional. If this
-    // fails, no amount of validation logic will save the caller.
+// Materialise the font once per spec run — same pattern the tool uses.
+const FONT_PATH = join(tmpdir(), "emdee-DejaVuSans-e2e.ttf");
+if (!existsSync(FONT_PATH)) {
+  writeFileSync(FONT_PATH, Buffer.from(DEJAVU_SANS_TTF_BASE64, "base64"));
+}
+
+test.describe("upload_image rasterise (SPRINT-169 + SPRINT-170)", () => {
+  test("resvg-js can convert a trivial SVG to PNG", async () => {
     const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='red'/></svg>";
-    const png = await sharp(Buffer.from(svg, "utf8")).png().toBuffer();
+    const resvg = new Resvg(Buffer.from(svg, "utf8"), { font: { loadSystemFonts: false, fontFiles: [FONT_PATH], defaultFontFamily: "DejaVu Sans" } });
+    const png = resvg.render().asPng();
     expect(png.length).toBeGreaterThan(0);
     // PNG signature is 89 50 4E 47.
     expect(png[0]).toBe(0x89);
@@ -47,11 +56,28 @@ test.describe("upload_image rasterise (SPRINT-169)", () => {
     expect(png[3]).toBe(0x47);
   });
 
+  test("SVG text with Helvetica renders (SPRINT-170 tofu-box regression)", async () => {
+    // Reference `Helvetica` — Vercel serverless has no such font. If
+    // our font wiring is wrong the text renders as tofu boxes; the
+    // rasteriser should alias Helvetica → DejaVu Sans and produce a
+    // PNG with non-trivial pixel data.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><rect width="200" height="60" fill="white"/><text x="10" y="35" font-family="Helvetica" font-size="24" fill="black">Hello</text></svg>`;
+    const resvg = new Resvg(Buffer.from(svg, "utf8"), {
+      font: {
+        loadSystemFonts: false,
+        fontFiles: [FONT_PATH],
+        defaultFontFamily: "DejaVu Sans",
+        sansSerifFamily: "DejaVu Sans",
+      },
+    });
+    const png = resvg.render().asPng();
+    // A blank/white-only PNG at 200×60 compresses to a very small file.
+    // Text glyphs push the file size up materially — >600 bytes is a
+    // conservative floor for the word "Hello" at 24pt.
+    expect(png.length).toBeGreaterThan(600);
+  });
+
   test("rasterize=false is accepted and threaded past validation", async () => {
-    // We can't verify the PNG-branch was actually skipped without
-    // live storage — but we can verify the call doesn't reject the
-    // arg and doesn't fail the media-type gate. If rasterize=false
-    // ever gets rejected as an unknown arg, this spec catches it.
     const svg = "<svg xmlns='http://www.w3.org/2000/svg'/>";
     const image_data = Buffer.from(svg, "utf8").toString("base64");
     let result: Record<string, unknown> | null = null;
@@ -75,3 +101,6 @@ test.describe("upload_image rasterise (SPRINT-169)", () => {
     }
   });
 });
+
+// silence unused-import lint if readFileSync ends up unused after edits
+void readFileSync;

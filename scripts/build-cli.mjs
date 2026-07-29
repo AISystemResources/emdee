@@ -45,11 +45,12 @@ const commonOptions = {
     // the installed dependency tree normally.
     "better-sqlite3",
     "bindings",
-    // SPRINT-169: sharp is a native module (libvips binding) whose
-    // CJS internals `require("child_process")` via detect-libc. Same
-    // failure mode as better-sqlite3 if bundled into ESM.
-    "sharp",
-    "detect-libc",
+    // SPRINT-170: @resvg/resvg-js is a native napi module (Rust binding
+    // to resvg). Same class as better-sqlite3 — must stay external so
+    // Node resolves the platform-specific prebuilt binary at runtime.
+    // Replaces sharp for SVG→PNG rasterisation (sharp/libvips couldn't
+    // find fonts on Vercel serverless; resvg-js takes explicit bytes).
+    "@resvg/resvg-js",
   ],
   logLevel: "info",
 };
