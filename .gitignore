@@ -61,3 +61,4 @@ supabase/.temp/
 
 # SPRINT-129: pre-compiled CLI bundles (rebuilt on npm publish)
 dist/
+OCC-RACE-*.png
