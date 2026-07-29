@@ -2,20 +2,6 @@ import { loadVaultIndex } from "./vault";
 import type { DocIndex, DocNode, Link, ToolContext } from "./types";
 import { getPrevNextSiblings } from "../../../core/siblings";
 import { resolveWikiLink } from "../../../core/resolveLink";
-import { signGraphEmbed } from "../../graphEmbedKey";
-
-// SPRINT-172: signed URL for the graph embed endpoint. Renders a
-// deterministic HTML page server-side — Claude just wraps it in a
-// minimal <iframe> artifact instead of regenerating HTML/CSS every
-// turn (huge token savings + consistent visual).
-function buildGraphEmbedUrl(ns: string, path: string): string | null {
-  const exp = Math.floor(Date.now() / 1000) + 3600; // 1h
-  const sig = signGraphEmbed(ns, path, exp);
-  if (!sig) return null;
-  const host = process.env.NEXT_PUBLIC_APP_URL ?? "https://emdee.tech";
-  const q = new URLSearchParams({ ns, path, exp: String(exp), sig });
-  return `${host}/api/graph-embed?${q.toString()}`;
-}
 
 function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -23,10 +9,29 @@ function json(value: unknown) {
 
 interface NeighborRef { path: string; title: string; summary: string; note: string; }
 
+// SPRINT-172: bounded ego graph (focal + 1-hop). Cytoscape.js-compatible
+// element list. Returned inline so Claude can render an Artifact from
+// data it already has in-context — claude.ai's Artifact security model
+// refuses to embed external URLs (see LEARNINGS).
+interface GraphElement { data: { id?: string; source?: string; target?: string; label: string; kind?: "focal" | "parent" | "child" | "associated" } }
+
+function buildGraphElements(focal: DocNode, parents: NeighborRef[], children: NeighborRef[], associated: NeighborRef[]): GraphElement[] {
+  const els: GraphElement[] = [{ data: { id: focal.path, label: focal.title, kind: "focal" } }];
+  const seen = new Set<string>([focal.path]);
+  const push = (n: NeighborRef, kind: "parent" | "child" | "associated", edgeLabel: string) => {
+    if (seen.has(n.path)) return;
+    seen.add(n.path);
+    els.push({ data: { id: n.path, label: n.title, kind } });
+    els.push({ data: { source: focal.path, target: n.path, label: edgeLabel } });
+  };
+  for (const p of parents) push(p, "parent", "child of");
+  for (const c of children) push(c, "child", "parent of");
+  for (const a of associated) push(a, "associated", "associated");
+  return els;
+}
+
 function buildNeighbors(idx: DocIndex, focal: DocNode) {
   const byPath = new Map(idx.docs.map((d) => [d.path, d]));
-  // Locality-aware resolver: bullets like `[[DAY1]]` are disambiguated
-  // by the focal's path when two docs share the title or slug.
   const resolve = (t: string) => byPath.get(t) ?? resolveWikiLink(idx, t, focal.path);
   const refFor = (n: DocNode, note: string): NeighborRef => ({ path: n.path, title: n.title, summary: n.summary, note });
 
@@ -35,7 +40,6 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
   const declaredAssoc = new Map<string, NeighborRef>();
   for (const l of focal.parents) { const n = resolve(l.title); if (n) declaredParents.set(n.path, refFor(n, l.note)); }
   for (const l of focal.children) { const n = resolve(l.title); if (n) declaredChildren.set(n.path, refFor(n, l.note)); }
-  // Compute focal's parent paths once for the sibling check below.
   const focalParentPaths = new Set(
     focal.parents
       .map((l) => resolve(l.title)?.path)
@@ -44,11 +48,7 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
   for (const l of focal.associates) {
     const n = resolve(l.title);
     if (!n) continue;
-    // Hierarchy beats associate — if the target is already a parent or
-    // child of this focal, drop the assoc entry.
     if (declaredParents.has(n.path) || declaredChildren.has(n.path)) continue;
-    // Sibling beats associate — if the target shares one of this focal's
-    // parents, the relationship is already conveyed by the hierarchy.
     if (focalParentPaths.size > 0) {
       const candidateParentPaths = n.parents
         .map((pl) => resolve(pl.title)?.path)
@@ -75,10 +75,6 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
     .filter((d) => d.path !== focal.path && !declared.has(d.path) && d.mentions.some((m) => m.toLowerCase() === focalTitleLower))
     .map((d) => ({ path: d.path, title: d.title, summary: d.summary }));
 
-  // Prev/next sibling — shared helper. Uses the parent's `## Parent of`
-  // bullet order, augmented with any other doc whose primary parent
-  // matches focal's primary parent (catches asymmetric edges where the
-  // child declared `Child of` but the parent didn't reciprocate).
   let prev_sibling: { path: string; title: string; summary: string } | null = null;
   let next_sibling: { path: string; title: string; summary: string } | null = null;
   const { prevPath, nextPath } = getPrevNextSiblings(idx, focal.path);
@@ -91,14 +87,19 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
     if (n) next_sibling = { path: n.path, title: n.title, summary: n.summary };
   }
 
+  const parents = [...declaredParents.values()];
+  const children = [...declaredChildren.values()];
+  const associated = [...declaredAssoc.values()];
+
   return {
     path: focal.path, title: focal.title, summary: focal.summary,
-    parents: [...declaredParents.values()],
-    children: [...declaredChildren.values()],
-    associated: [...declaredAssoc.values()],
+    parents,
+    children,
+    associated,
     mentioned_in: mentionedIn,
     prev_sibling,
     next_sibling,
+    graph: { elements: buildGraphElements(focal, parents, children, associated) },
   };
 }
 
@@ -106,10 +107,5 @@ export async function getNeighbors(ctx: ToolContext, args: Record<string, unknow
   const idx = await loadVaultIndex(ctx);
   const focal = idx.docs.find((d) => d.path === String(args.path));
   if (!focal) throw new Error(`no such doc: ${args.path}`);
-  const base = buildNeighbors(idx, focal);
-  // Attach a signed URL to the pre-rendered graph embed. Claude wraps
-  // this in an <iframe> artifact — cheap and consistent vs. having
-  // Claude regenerate Cytoscape HTML/CSS every render.
-  const graphUrl = ctx.mode === "cloud" ? buildGraphEmbedUrl(ctx.userId, focal.path) : null;
-  return json(graphUrl ? { ...base, interactive_graph_url: graphUrl } : base);
+  return json(buildNeighbors(idx, focal));
 }
