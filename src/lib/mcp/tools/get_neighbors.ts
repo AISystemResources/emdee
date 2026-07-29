@@ -77,6 +77,27 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
     if (n) next_sibling = { path: n.path, title: n.title, summary: n.summary };
   }
 
+  // SPRINT-172: Cytoscape-elements ego graph. Focal + 1-hop neighbours,
+  // typed edges. Small enough (5–15 nodes) to render cleanly in a
+  // chat-pane artifact. Clients that don't render skip this field; the
+  // structured data above stays authoritative.
+  const nodes: Array<{ data: { id: string; label: string; kind: string; summary?: string } }> = [
+    { data: { id: focal.path, label: focal.title, kind: "focal", summary: focal.summary } },
+  ];
+  const edges: Array<{ data: { source: string; target: string; label: string } }> = [];
+  for (const p of declaredParents.values()) {
+    nodes.push({ data: { id: p.path, label: p.title, kind: "parent", summary: p.summary } });
+    edges.push({ data: { source: focal.path, target: p.path, label: "child_of" } });
+  }
+  for (const c of declaredChildren.values()) {
+    nodes.push({ data: { id: c.path, label: c.title, kind: "child", summary: c.summary } });
+    edges.push({ data: { source: focal.path, target: c.path, label: "parent_of" } });
+  }
+  for (const a of declaredAssoc.values()) {
+    nodes.push({ data: { id: a.path, label: a.title, kind: "associated", summary: a.summary } });
+    edges.push({ data: { source: focal.path, target: a.path, label: "associated" } });
+  }
+
   return {
     path: focal.path, title: focal.title, summary: focal.summary,
     parents: [...declaredParents.values()],
@@ -85,6 +106,8 @@ function buildNeighbors(idx: DocIndex, focal: DocNode) {
     mentioned_in: mentionedIn,
     prev_sibling,
     next_sibling,
+    graph: { elements: [...nodes, ...edges] },
+    render_hint: "graph.elements is a Cytoscape.js-compatible ego graph (focal + 1-hop neighbours). Render as an interactive HTML artifact with Cytoscape.js when the user asks to visualise or explore the doc's relationships.",
   };
 }
 
