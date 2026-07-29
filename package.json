@@ -49,6 +49,7 @@
   "dependencies": {
     "@clerk/nextjs": "^7.3.3",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@resvg/resvg-js": "^2.6.2",
     "@sparticuz/chromium": "^149.0.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",

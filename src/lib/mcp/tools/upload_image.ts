@@ -1,7 +1,20 @@
-import sharp from "sharp";
+import { Resvg } from "@resvg/resvg-js";
+import { writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { adminClient } from "../../supabase/admin";
 import { writeVaultFile } from "./vault";
 import type { ToolContext } from "./types";
+import { DEJAVU_SANS_TTF_BASE64 } from "../fonts/DejaVuSans.b64";
+
+// SPRINT-170: resvg-js's JS API only accepts font FILE PATHS, not
+// buffers — so materialise the embedded font to a temp file once at
+// module init. Node's tmpdir is writable on Vercel serverless (`/tmp`),
+// on the CLI (OS temp), and locally. Written idempotently.
+const DEJAVU_SANS_PATH = join(tmpdir(), "emdee-DejaVuSans.ttf");
+if (!existsSync(DEJAVU_SANS_PATH)) {
+  writeFileSync(DEJAVU_SANS_PATH, Buffer.from(DEJAVU_SANS_TTF_BASE64, "base64"));
+}
 
 const IMAGE_BUCKET = "vault-images";
 
@@ -94,10 +107,21 @@ export async function uploadImage(ctx: ToolContext, args: Record<string, unknown
   let rasterErr: string | null = null;
   if (mediaType === "image/svg+xml" && rasterize) {
     try {
-      const pngBuffer = await sharp(imageBuffer)
-        .resize({ width: RASTER_WIDTH, withoutEnlargement: false })
-        .png()
-        .toBuffer();
+      // SPRINT-170: swap sharp (libvips) → resvg-js. Sharp on Vercel
+      // produced tofu boxes because libvips can't resolve Helvetica/Arial;
+      // resvg-js takes explicit font bytes and doesn't touch the system.
+      const resvg = new Resvg(imageBuffer, {
+        fitTo: { mode: "width", value: RASTER_WIDTH },
+        font: {
+          loadSystemFonts: false,
+          fontFiles: [DEJAVU_SANS_PATH],
+          defaultFontFamily: "DejaVu Sans",
+          serifFamily: "DejaVu Sans",
+          sansSerifFamily: "DejaVu Sans",
+          monospaceFamily: "DejaVu Sans",
+        },
+      });
+      const pngBuffer = resvg.render().asPng();
       const pngPath = `${ctx.userId}/${baseName}.png`;
       const { error: pngUploadErr } = await adminClient()
         .storage
