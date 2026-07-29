@@ -1,19 +1,18 @@
-import { createHmac } from "node:crypto";
 import { loadVaultIndex } from "./vault";
 import type { DocIndex, DocNode, Link, ToolContext } from "./types";
 import { getPrevNextSiblings } from "../../../core/siblings";
 import { resolveWikiLink } from "../../../core/resolveLink";
+import { signGraphEmbed } from "../../graphEmbedKey";
 
 // SPRINT-172: signed URL for the graph embed endpoint. Renders a
 // deterministic HTML page server-side — Claude just wraps it in a
 // minimal <iframe> artifact instead of regenerating HTML/CSS every
 // turn (huge token savings + consistent visual).
 function buildGraphEmbedUrl(ns: string, path: string): string | null {
-  const secret = process.env.GRAPH_EMBED_SECRET;
-  if (!secret) return null;
-  const host = process.env.NEXT_PUBLIC_APP_URL ?? "https://emdee.tech";
   const exp = Math.floor(Date.now() / 1000) + 3600; // 1h
-  const sig = createHmac("sha256", secret).update(`${ns}:${path}:${exp}`).digest("hex");
+  const sig = signGraphEmbed(ns, path, exp);
+  if (!sig) return null;
+  const host = process.env.NEXT_PUBLIC_APP_URL ?? "https://emdee.tech";
   const q = new URLSearchParams({ ns, path, exp: String(exp), sig });
   return `${host}/api/graph-embed?${q.toString()}`;
 }

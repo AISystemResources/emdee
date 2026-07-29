@@ -14,27 +14,14 @@
 // - Blast radius on leak — titles + summaries of one doc's 1-hop
 //   neighbourhood. No doc bodies, no vault dump.
 
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { SupabaseStorage } from "@/src/lib/storage/SupabaseStorage";
 import { cloudDatabase } from "@/src/lib/database";
 import { loadVaultIndex } from "@/src/lib/mcp/tools/vault";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import { resolveWikiLink } from "@/src/core/resolveLink";
+import { verifyGraphEmbed } from "@/src/lib/graphEmbedKey";
 
 export const dynamic = "force-dynamic";
-
-const GRAPH_EMBED_SECRET = process.env.GRAPH_EMBED_SECRET ?? "";
-
-function verifySignature(ns: string, path: string, exp: number, sig: string): boolean {
-  if (!GRAPH_EMBED_SECRET) return false;
-  const expected = createHmac("sha256", GRAPH_EMBED_SECRET)
-    .update(`${ns}:${path}:${exp}`)
-    .digest("hex");
-  const a = Buffer.from(expected, "hex");
-  const b = Buffer.from(sig, "hex");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 interface EgoNode { id: string; label: string; kind: "focal" | "parent" | "child" | "associated"; summary: string }
 interface EgoEdge { source: string; target: string; label: string }
@@ -157,9 +144,6 @@ function renderHtml(focalTitle: string, elements: string): string {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  if (!GRAPH_EMBED_SECRET) {
-    return new Response("graph embed disabled (GRAPH_EMBED_SECRET unset)", { status: 503 });
-  }
   const url = new URL(request.url);
   const ns = url.searchParams.get("ns") ?? "";
   const path = url.searchParams.get("path") ?? "";
@@ -172,7 +156,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) {
     return new Response("link expired", { status: 410 });
   }
-  if (!verifySignature(ns, path, exp, sig)) {
+  if (!verifyGraphEmbed(ns, path, exp, sig)) {
     return new Response("invalid signature", { status: 403 });
   }
   const ego = await buildEgoGraph(ns, path);
