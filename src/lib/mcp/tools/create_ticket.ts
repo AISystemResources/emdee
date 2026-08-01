@@ -54,7 +54,7 @@ export async function createTicket(ctx: ToolContext, args: Record<string, unknow
       priority: priority as Priority,
       payload,
     })
-    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at")
+    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at, first_resolved_at")
     .single();
 
   if (error) return json({ error: "insert_failed", detail: error.message });
