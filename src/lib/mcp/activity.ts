@@ -199,6 +199,48 @@ export const ACTIVITY_ROUTING: Record<string, ActivityRouting> = {
       return typeof r.b_path === "string" ? { b_path: r.b_path } : {};
     },
   },
+  // ── Tickets (SPRINT-173) ────────────────────────────────────────────────
+  // Tickets aren't vault docs — doc_path stays null; args_summary carries
+  // the pillar/type/status/priority tags so the activity pulse still
+  // conveys who did what.
+  create_ticket: {
+    tool_name: "create_ticket",
+    action_kind: "write",
+    doc_path: () => null,
+    args_summary: (a) => {
+      const r = asRecord(a);
+      const out: Record<string, unknown> = {};
+      if (typeof r.pillar === "string") out.pillar = r.pillar;
+      if (typeof r.type === "string") out.type = r.type;
+      if (typeof r.priority === "string") out.priority = r.priority;
+      return out;
+    },
+  },
+  list_tickets: {
+    tool_name: "list_tickets",
+    action_kind: "read",
+    doc_path: () => null,
+    args_summary: (a) => {
+      const r = asRecord(a);
+      const out: Record<string, unknown> = {};
+      if (typeof r.pillar === "string") out.pillar = r.pillar;
+      if (typeof r.status === "string") out.status = r.status;
+      return out;
+    },
+  },
+  update_ticket: {
+    tool_name: "update_ticket",
+    action_kind: "write",
+    doc_path: () => null,
+    args_summary: (a) => {
+      const r = asRecord(a);
+      const out: Record<string, unknown> = {};
+      if (typeof r.id === "string") out.id = r.id;
+      if (typeof r.status === "string") out.status = r.status;
+      if (typeof r.priority === "string") out.priority = r.priority;
+      return out;
+    },
+  },
 };
 
 /**

@@ -36,6 +36,9 @@ import { batchGetSummary, batchGetDoc } from "../lib/mcp/tools/batch_get";
 import { findSimilar } from "../lib/mcp/tools/find_similar";
 import { getDoc } from "../lib/mcp/tools/get_doc";
 import { uploadImage } from "../lib/mcp/tools/upload_image";
+import { createTicket } from "../lib/mcp/tools/create_ticket";
+import { listTickets } from "../lib/mcp/tools/list_tickets";
+import { updateTicket } from "../lib/mcp/tools/update_ticket";
 import { readFileSync } from "node:fs";
 import { callTool, unwrapText } from "./remote-client";
 import { NeedsLoginError } from "./auth";
@@ -518,6 +521,88 @@ const VERBS: Record<string, VerbSpec> = {
       // keeps only the SVG (for cases where you don't want a PNG
       // sibling — e.g. static blog embeds where SVG renders fine).
       if (v["no-rasterize"] === true) args.rasterize = false;
+      return args;
+    },
+  },
+  // SPRINT-173: cross-project ticket queue verbs. All three are cloud-only —
+  // tickets live in Supabase, not the vault filesystem. --payload takes a
+  // JSON string; malformed JSON is caught here and reported early so the
+  // CLI failure is legible before the tool would return invalid_payload.
+  "create-ticket": {
+    toolName: "create_ticket",
+    toolFn: createTicket as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      pillar: { type: "string" },
+      type: { type: "string" },
+      priority: { type: "string" },
+      payload: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {
+        pillar: asString(v.pillar),
+        type: asString(v.type),
+      };
+      const priority = optionalString(v.priority);
+      if (priority) args.priority = priority;
+      const payloadStr = optionalString(v.payload);
+      if (payloadStr) {
+        try {
+          args.payload = JSON.parse(payloadStr);
+        } catch (e) {
+          throw new Error(`--payload must be valid JSON: ${(e as Error).message}`);
+        }
+      }
+      return args;
+    },
+  },
+  "list-tickets": {
+    toolName: "list_tickets",
+    toolFn: listTickets as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      pillar: { type: "string" },
+      status: { type: "string" },
+      limit: { type: "string" },
+      offset: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = {};
+      const pillar = optionalString(v.pillar);
+      if (pillar) args.pillar = pillar;
+      const status = optionalString(v.status);
+      if (status) args.status = status;
+      const lim = optionalString(v.limit);
+      if (lim) args.limit = Number(lim);
+      const off = optionalString(v.offset);
+      if (off) args.offset = Number(off);
+      return args;
+    },
+  },
+  "update-ticket": {
+    toolName: "update_ticket",
+    toolFn: updateTicket as unknown as ToolFn,
+    parse: {
+      ...COMMON,
+      id: { type: "string" },
+      status: { type: "string" },
+      priority: { type: "string" },
+      payload: { type: "string" },
+    },
+    buildArgs: (v) => {
+      const args: Record<string, unknown> = { id: asString(v.id) };
+      const status = optionalString(v.status);
+      if (status) args.status = status;
+      const priority = optionalString(v.priority);
+      if (priority) args.priority = priority;
+      const payloadStr = optionalString(v.payload);
+      if (payloadStr) {
+        try {
+          args.payload = JSON.parse(payloadStr);
+        } catch (e) {
+          throw new Error(`--payload must be valid JSON: ${(e as Error).message}`);
+        }
+      }
       return args;
     },
   },

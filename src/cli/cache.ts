@@ -34,6 +34,7 @@ const CACHEABLE_TOOLS = new Set<string>([
   "lint_doc",
   "lint_vault",
   "find_similar",
+  "list_tickets",
 ]);
 
 function cacheDir(): string {

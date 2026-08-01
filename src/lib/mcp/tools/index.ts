@@ -32,3 +32,6 @@ export { trashDoc } from "./trash_doc";
 export { restoreDoc } from "./restore_doc";
 export { getImage } from "./get_image";
 export { uploadImage } from "./upload_image";
+export { createTicket } from "./create_ticket";
+export { listTickets } from "./list_tickets";
+export { updateTicket } from "./update_ticket";

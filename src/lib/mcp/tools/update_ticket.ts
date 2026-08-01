@@ -1,0 +1,79 @@
+import { adminClient } from "../../supabase/admin";
+import type { ToolContext } from "./types";
+
+// SPRINT-173: cross-project ticket queue — update verb.
+// Cloud-only. Any of status / priority / payload may be updated in a
+// single call; at least one must be present. updated_at is always
+// refreshed; resolved_at flips to now() the first time status becomes
+// 'done' (and back to null if the ticket is reopened).
+
+const STATUSES = ["open", "in_progress", "done", "blocked"] as const;
+const PRIORITIES = ["low", "medium", "high"] as const;
+
+function json(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+export async function updateTicket(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
+  if (ctx.mode !== "cloud") {
+    return json({ error: "cloud_mode_required" });
+  }
+
+  const id = typeof args.id === "string" ? args.id.trim() : "";
+  if (id.length === 0) return json({ error: "id_required" });
+
+  const patch: Record<string, unknown> = {};
+
+  if (args.status !== undefined && args.status !== null) {
+    const status = typeof args.status === "string" ? args.status.toLowerCase() : "";
+    if (!(STATUSES as readonly string[]).includes(status)) {
+      return json({ error: "invalid_status", allowed: STATUSES });
+    }
+    patch.status = status;
+    // Resolution stamp mirrors status: only 'done' sets it; every other
+    // state (including 'blocked') clears it so a reopened-then-reclosed
+    // ticket gets a fresh resolved_at.
+    patch.resolved_at = status === "done" ? new Date().toISOString() : null;
+  }
+
+  if (args.priority !== undefined && args.priority !== null) {
+    const priority = typeof args.priority === "string" ? args.priority.toLowerCase() : "";
+    if (!(PRIORITIES as readonly string[]).includes(priority)) {
+      return json({ error: "invalid_priority", allowed: PRIORITIES });
+    }
+    patch.priority = priority;
+  }
+
+  if (args.payload !== undefined && args.payload !== null) {
+    const rec = asRecord(args.payload);
+    if (!rec) return json({ error: "invalid_payload", hint: "payload must be a JSON object" });
+    patch.payload = rec;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return json({ error: "no_updatable_fields", hint: "pass at least one of status / priority / payload" });
+  }
+
+  patch.updated_at = new Date().toISOString();
+
+  const { data, error } = await adminClient()
+    .from("tickets")
+    .update(patch)
+    .eq("id", id)
+    .eq("namespace", ctx.userId)
+    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at")
+    .single();
+
+  if (error) {
+    // Postgrest returns PGRST116 when .single() sees zero rows — treat
+    // as not_found so the caller can distinguish it from a real DB
+    // failure.
+    if (error.code === "PGRST116") return json({ error: "ticket_not_found", id });
+    return json({ error: "update_failed", detail: error.message });
+  }
+  return json({ ok: true, ticket: data });
+}
