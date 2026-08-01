@@ -34,9 +34,10 @@ export async function updateTicket(ctx: ToolContext, args: Record<string, unknow
       return json({ error: "invalid_status", allowed: STATUSES });
     }
     patch.status = status;
-    // Resolution stamp mirrors status: only 'done' sets it; every other
-    // state (including 'blocked') clears it so a reopened-then-reclosed
-    // ticket gets a fresh resolved_at.
+    // resolved_at reflects the MOST RECENT close: set on 'done', cleared
+    // on any other transition. first_resolved_at (SPRINT-176) is stamped
+    // exactly once by the trigger `tickets_first_resolved_at_stamp` and
+    // is never touched from tool code — reopen→reclose preserves it.
     patch.resolved_at = status === "done" ? new Date().toISOString() : null;
   }
 
@@ -65,7 +66,7 @@ export async function updateTicket(ctx: ToolContext, args: Record<string, unknow
     .update(patch)
     .eq("id", id)
     .eq("namespace", ctx.userId)
-    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at")
+    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at, first_resolved_at")
     .single();
 
   if (error) {

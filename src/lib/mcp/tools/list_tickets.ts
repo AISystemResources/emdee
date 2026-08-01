@@ -50,7 +50,7 @@ export async function listTickets(ctx: ToolContext, args: Record<string, unknown
 
   let query = adminClient()
     .from("tickets")
-    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at")
+    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at, first_resolved_at")
     .eq("namespace", ctx.userId);
   if (pillarFilter) query = query.eq("pillar", pillarFilter);
   if (statusFilter) query = query.eq("status", statusFilter);
