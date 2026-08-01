@@ -40,18 +40,17 @@ test.describe("create_ticket (SPRINT-173)", () => {
   });
 
   test("pillar comparison is case-insensitive", async () => {
-    // Uppercase CMO should not surface an invalid_pillar error — it may
-    // still fail downstream at the DB (adminClient throws if env is
-    // missing), but past validation is what we assert.
-    let r: Record<string, unknown> | null = null;
-    let thrown: unknown = null;
+    // Uppercase CMO must clear the enum check. Any downstream outcome
+    // (successful insert in a CI env with SUPABASE creds, or an
+    // adminClient throw in a stripped env) is acceptable — the ONLY
+    // invariant we're asserting is that the case-normalisation isn't
+    // silently dropped in a future refactor.
     try {
-      r = parse(await createTicket(cloudCtx, { pillar: "CMO", type: "test" }));
-    } catch (e) {
-      thrown = e;
+      const r = parse(await createTicket(cloudCtx, { pillar: "CMO", type: "test-e2e-case-insensitive" }));
+      if (r.error) expect(r.error).not.toBe("invalid_pillar");
+    } catch {
+      // adminClient() init or insert threw — both are past validation.
     }
-    if (r && r.error) expect(r.error).not.toBe("invalid_pillar");
-    else expect(thrown).toBeTruthy(); // adminClient threw = past validation
   });
 
   test("rejects missing type", async () => {

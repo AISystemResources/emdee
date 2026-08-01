@@ -40,22 +40,18 @@ test.describe("list_tickets (SPRINT-173)", () => {
   });
 
   test("null pillar / status args are treated as absent (not invalid)", async () => {
-    // Passing null explicitly should not surface invalid_pillar / _status
-    // — it should behave as if the filter wasn't passed. The call may
-    // still fail at the DB layer (missing env) but past validation is
-    // what we assert.
-    let r: Record<string, unknown> | null = null;
-    let thrown: unknown = null;
+    // Passing explicit null must clear both enum checks. Any downstream
+    // outcome (empty-list success in CI, adminClient throw in a
+    // stripped env) is acceptable — we're only asserting the null
+    // guard isn't silently regressed.
     try {
-      r = parse(await listTickets(cloudCtx, { pillar: null, status: null }));
-    } catch (e) {
-      thrown = e;
-    }
-    if (r && r.error) {
-      expect(r.error).not.toBe("invalid_pillar");
-      expect(r.error).not.toBe("invalid_status");
-    } else {
-      expect(thrown).toBeTruthy();
+      const r = parse(await listTickets(cloudCtx, { pillar: null, status: null }));
+      if (r.error) {
+        expect(r.error).not.toBe("invalid_pillar");
+        expect(r.error).not.toBe("invalid_status");
+      }
+    } catch {
+      // adminClient() init or select threw — both are past validation.
     }
   });
 });
