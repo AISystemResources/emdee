@@ -1056,6 +1056,73 @@ program
     shellWrite("reconcile", opts, extra);
   });
 
+// SPRINT-173: cross-project ticket queue. Three top-level verbs that
+// mirror the MCP tools — Claude Code drops through the CLI for token
+// efficiency (a shell call is cheaper than an MCP round-trip), while
+// external CMO/CPO/COO/CEO agents can hit the same tools via /api/mcp.
+program
+  .command("create-ticket")
+  .description("Enqueue a ticket for one of the four pillar agents (CMO/CPO/COO/CEO). Cloud-only.")
+  .requiredOption("--pillar <pillar>", "cmo | cpo | coo | ceo")
+  .requiredOption("--type <type>", "Free-form event tag, e.g. whatsapp_inbound, pr_opened")
+  .option("--priority <priority>", "low | medium | high (default medium)")
+  .option("--payload <json>", "JSON object of signal data")
+  .option("--remote", "Route through emdee.tech (default when config.default_mode=remote)")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      pillar: "--pillar",
+      type: "--type",
+      priority: "--priority",
+      payload: "--payload",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("create-ticket", opts, extra);
+  });
+
+program
+  .command("list-tickets")
+  .description("List tickets in your queue, newest first. Filter by pillar and/or status. Cloud-only.")
+  .option("--pillar <pillar>", "cmo | cpo | coo | ceo")
+  .option("--status <status>", "open | in_progress | done | blocked")
+  .option("--limit <n>", "Max rows, 1–200 (default 50)")
+  .option("--offset <k>", "Rows to skip (default 0)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      pillar: "--pillar",
+      status: "--status",
+      limit: "--limit",
+      offset: "--offset",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("list-tickets", opts, extra);
+  });
+
+program
+  .command("update-ticket")
+  .description("Patch a ticket's status / priority / payload by id. Setting status=done stamps resolved_at. Cloud-only.")
+  .requiredOption("--id <uuid>", "Ticket UUID from create-ticket")
+  .option("--status <status>", "open | in_progress | done | blocked")
+  .option("--priority <priority>", "low | medium | high")
+  .option("--payload <json>", "JSON object (replaces existing payload)")
+  .option("--remote", "Route through emdee.tech")
+  .option("--json", "Machine-parseable output")
+  .action((opts) => {
+    const extra = argsFromOpts(opts, {
+      id: "--id",
+      status: "--status",
+      priority: "--priority",
+      payload: "--payload",
+      remote: "--remote",
+      json: "--json",
+    });
+    shellWrite("update-ticket", opts, extra);
+  });
+
 // SPRINT-124: config subcommand — inspect, set, or init the user
 // config at ~/.emdee/config.json. Keeps the config surface discoverable
 // (no docs-diving to figure out what keys exist).
