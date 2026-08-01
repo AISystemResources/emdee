@@ -27,7 +27,13 @@ export default defineConfig({
     // Force cloud-mode so e2e runs against the same code path production uses.
     // Without this, a developer's local `EMDEE_DOCS=./docs` would skip the
     // Clerk OAuth gate and a smoke test for that gate would never fire.
-    env: { EMDEE_DOCS: "" },
+    //
+    // SPRINT-177: inject a well-known token for the owner-metrics spec.
+    // Self-contained — no GitHub secret needed.
+    env: {
+      EMDEE_DOCS: "",
+      OWNER_METRICS_TOKEN: "e2e-owner-metrics-token-do-not-use-in-prod",
+    },
   },
   globalSetup: "./e2e/global-setup.ts",
 });
