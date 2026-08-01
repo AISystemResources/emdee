@@ -1,11 +1,12 @@
 // SPRINT-177: owner-only aggregate metrics for whatelz.ai's founder
-// cockpit. Auth is a single shared Bearer token (OWNER_METRICS_TOKEN
-// env var). NEVER share this endpoint with any customer surface —
-// aggregate-across-all-tenants data.
+// cockpit. Auth is a single shared Bearer token whose SHA-256 hash is
+// stored in `public.internal_secrets` (kind='owner_metrics'). NEVER
+// share this endpoint with any customer surface — aggregate-across-
+// all-tenants data.
 
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 import { collectOwnerMetrics } from "@/src/lib/owner-metrics";
+import { verifyInternalSecret } from "@/src/lib/internal-secrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,24 +24,17 @@ const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 60;
 const buckets = new Map<string, number[]>();
 
-function rateLimitOk(token: string): boolean {
+function rateLimitOk(bucketKey: string): boolean {
   const now = Date.now();
   const cutoff = now - WINDOW_MS;
-  const timestamps = (buckets.get(token) ?? []).filter((t) => t > cutoff);
+  const timestamps = (buckets.get(bucketKey) ?? []).filter((t) => t > cutoff);
   if (timestamps.length >= MAX_REQUESTS) {
-    buckets.set(token, timestamps);
+    buckets.set(bucketKey, timestamps);
     return false;
   }
   timestamps.push(now);
-  buckets.set(token, timestamps);
+  buckets.set(bucketKey, timestamps);
   return true;
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
 }
 
 function jsonWithHeaders(body: unknown, status: number, extra?: Record<string, string>): NextResponse {
@@ -52,11 +46,11 @@ function jsonWithHeaders(body: unknown, status: number, extra?: Record<string, s
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const expected = process.env.OWNER_METRICS_TOKEN;
   const provided = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!expected || !provided || !constantTimeEqual(expected, provided)) {
+  if (!(await verifyInternalSecret("owner_metrics", provided))) {
     return jsonWithHeaders({ error: "unauthorized" }, 401);
   }
+  // Bucket key = the token itself (only ever one active token per kind).
   if (!rateLimitOk(provided)) {
     return jsonWithHeaders({ error: "rate_limited" }, 429, { "Retry-After": "60" });
   }
