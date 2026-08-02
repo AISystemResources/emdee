@@ -22,13 +22,14 @@ export async function OPTIONS(): Promise<Response> {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const clerkId = await clerkIdFromOAuthToken(request);
-  if (!clerkId) {
+  const principal = await clerkIdFromOAuthToken(request);
+  if (!principal) {
     return Response.json(
       { error: "unauthorized", error_description: "invalid or expired token" },
       { status: 401, headers: { ...CORS_HEADERS, "Cache-Control": "no-store" } },
     );
   }
+  const clerkId = principal.clerkId;
 
   let email: string | null = null;
   try {

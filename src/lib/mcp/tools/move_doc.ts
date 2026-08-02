@@ -8,6 +8,7 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardMulti, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: [
@@ -289,6 +290,19 @@ async function _moveDoc(
   validatePath(childPath);
   validatePath(newParentPath);
   if (oldParentPathArg) validatePath(oldParentPathArg);
+  // SPRINT-178: child, new parent, and (when disambiguated) old parent
+  // all get Parent-of / Child-of writes. Every path must fall within
+  // scope-granted write prefixes.
+  {
+    const childScopeErr = scopeCheckPathWrite(ctx, childPath);
+    if (childScopeErr) return childScopeErr;
+    const newParentScopeErr = scopeCheckPathWrite(ctx, newParentPath);
+    if (newParentScopeErr) return newParentScopeErr;
+    if (oldParentPathArg) {
+      const oldParentScopeErr = scopeCheckPathWrite(ctx, oldParentPathArg);
+      if (oldParentScopeErr) return oldParentScopeErr;
+    }
+  }
 
   const childContent = await readVaultFile(ctx, childPath);
   if (childContent === null) return json({ error: "child_not_found", path: childPath });

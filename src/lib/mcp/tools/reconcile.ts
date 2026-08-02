@@ -2,6 +2,7 @@ import { readVaultFile } from "./vault";
 import { syncDocEdges, deleteDocEdges, backfillNamespace } from "../../../core/syncDocEdges";
 import { ctxNamespace, ensureLocalIndex } from "./context";
 import type { ToolContext } from "./types";
+import { scopeCheckPathWrite, scopeCheckUnrestrictedWrite } from "../scopes";
 
 // SPRINT-108 Fix 3: user-facing repair verb for doc_edges drift.
 //
@@ -46,6 +47,16 @@ export async function reconcile(ctx: ToolContext, args: Record<string, unknown>)
       error: "path_and_all_conflict",
       hint: "use either --path or --all, not both",
     });
+  }
+
+  // SPRINT-178: `--all` is a namespace-wide rebuild → elevated scope
+  // (bare docs:write or mcp). Per-path mode gets a normal path-write check.
+  if (all) {
+    const scopeErr = scopeCheckUnrestrictedWrite(ctx, "reconcile");
+    if (scopeErr) return scopeErr;
+  } else if (targetPath) {
+    const scopeErr = scopeCheckPathWrite(ctx, targetPath);
+    if (scopeErr) return scopeErr;
   }
 
   await ensureLocalIndex(ctx);

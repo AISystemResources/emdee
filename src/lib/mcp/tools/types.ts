@@ -10,6 +10,16 @@ export const LOCAL_NAMESPACE = "local";
 
 export type ToolContext =
   | { mode: "local"; docsDir: string; db: VaultDatabase }
-  | { mode: "cloud"; storage: VaultStorage; userId: string; db: VaultDatabase };
+  | {
+      mode: "cloud";
+      storage: VaultStorage;
+      userId: string;
+      db: VaultDatabase;
+      // SPRINT-178: OAuth scope claim (space-separated per RFC 6749 §3.3)
+      // carried from the token that authorised this request. Enforcement
+      // helpers live in src/lib/mcp/scopes.ts. Legacy tokens all carry
+      // `"mcp"` (full-access superuser).
+      scope: string;
+    };
 
 export type { DocIndex, DocNode, Link } from "../../../core/indexer";

@@ -4,6 +4,7 @@ import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["path", "original_parent_path", "expected_content_hash"],
@@ -62,6 +63,8 @@ async function _trashDoc(
   if (!docPath) return json({ error: "path required" });
   validatePath(docPath);
   if (explicitParent) validatePath(explicitParent);
+  const scopeErr = scopeCheckPathWrite(ctx, docPath); // SPRINT-178
+  if (scopeErr) return scopeErr;
 
   const content = await readVaultFile(ctx, docPath);
   if (content === null) return json({ error: "doc_not_found", path: docPath });

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getClient, storeAuthCode } from "@/src/lib/supabase/oauth";
+import { describeScope, parseScopes, LEGACY_FULL_ACCESS } from "@/src/lib/mcp/scopes";
 
 export const dynamic = "force-dynamic";
 
@@ -75,13 +76,43 @@ export default async function AuthorizePage({ searchParams }: Props) {
           </p>
         </div>
 
-        <div style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "16px 20px", marginBottom: 28 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 10px" }}>This will allow:</p>
-          <ul style={{ margin: 0, padding: "0 0 0 18px", fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
-            <li>Read all docs in your vault</li>
-            <li>Create and edit docs in your vault</li>
-          </ul>
-        </div>
+        {(() => {
+          // SPRINT-178: consent UI renders each requested scope claim as
+          // a plain-English line via describeScope(). Highlights
+          // dangerous scopes (full-access `mcp`, bare `docs:write`) with
+          // an amber warning block. Unknown scope claims render as
+          // "unrecognised — will not grant access" so the user knows
+          // to push back rather than silently authorise nothing.
+          const requestedScope = scope ?? LEGACY_FULL_ACCESS;
+          const scopes = parseScopes(requestedScope);
+          const descriptions = (scopes.length > 0 ? scopes : [LEGACY_FULL_ACCESS]).map(describeScope);
+          const anyDangerous = descriptions.some((d) => d.dangerous);
+
+          return (
+            <>
+              {anyDangerous && (
+                <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "#78350f", margin: "0 0 4px", letterSpacing: "0.02em" }}>
+                    ⚠️ ELEVATED ACCESS REQUESTED
+                  </p>
+                  <p style={{ fontSize: 12, color: "#78350f", margin: 0, lineHeight: 1.5 }}>
+                    Approve only for a trusted local CLI. Cloud routines should request narrower scopes.
+                  </p>
+                </div>
+              )}
+              <div style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "16px 20px", marginBottom: 28 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 10px" }}>This will allow:</p>
+                <ul style={{ margin: 0, padding: "0 0 0 18px", fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
+                  {descriptions.map((d) => (
+                    <li key={d.scope} style={{ color: d.dangerous ? "#92400e" : (d.known ? "#374151" : "#b91c1c") }}>
+                      {d.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          );
+        })()}
 
         <div style={{ display: "flex", gap: 12 }}>
           <form action={deny} style={{ flex: 1 }}>

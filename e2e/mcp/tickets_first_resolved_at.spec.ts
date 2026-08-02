@@ -33,6 +33,7 @@ const cloudCtx = {
   userId: NAMESPACE,
   storage: {} as never,
   db: {} as never,
+  scope: "mcp",
 } as unknown as ToolContext;
 
 test.describe("tickets.first_resolved_at trigger (SPRINT-176)", () => {
@@ -88,5 +89,56 @@ test.describe("tickets.first_resolved_at trigger (SPRINT-176)", () => {
     // callers can't tell "unresolved" apart from "field missing from projection."
     expect(Object.prototype.hasOwnProperty.call(ticket, "first_resolved_at")).toBe(true);
     expect(Object.prototype.hasOwnProperty.call(ticket, "resolved_at")).toBe(true);
+  });
+
+  // ── SPRINT-178: update_ticket pillar-mismatch scope enforcement ──────
+  //
+  // update_ticket fetches the ticket's pillar first, then checks the
+  // caller's scope against `tickets:<pillar>:update`. Requires live DB
+  // (fetch is unavoidable). If the inner check is ever removed, this
+  // test (the deny path especially) fails — regression guard.
+
+  test("SPRINT-178: scoped token updating a ticket on mismatched pillar denies with scope_denied", async () => {
+    // First create a cmo ticket using the mcp superuser stub.
+    const created = parse(await createTicket(cloudCtx, {
+      pillar: "cmo",
+      type: "test-e2e-scope-update-deny",
+    }));
+    expect(created.ok).toBe(true);
+    const id = (created.ticket as Record<string, unknown>).id as string;
+
+    // Now try to update it with a scope that only grants tickets:cpo:update.
+    const cpoOnlyCtx = {
+      mode: "cloud",
+      userId: NAMESPACE,
+      storage: {} as never,
+      db: {} as never,
+      scope: "tickets:cpo:update",
+    } as unknown as ToolContext;
+    const r = parse(await updateTicket(cpoOnlyCtx, { id, status: "done" }));
+    expect(r.error).toBe("scope_denied");
+    expect(r.required).toBe("tickets:cmo:update");
+    expect(r.tool).toBe("update_ticket");
+    expect(r.pillar).toBe("cmo");
+  });
+
+  test("SPRINT-178: scoped token updating a ticket on matched pillar clears the scope gate", async () => {
+    const created = parse(await createTicket(cloudCtx, {
+      pillar: "cmo",
+      type: "test-e2e-scope-update-allow",
+    }));
+    expect(created.ok).toBe(true);
+    const id = (created.ticket as Record<string, unknown>).id as string;
+
+    const cmoOnlyCtx = {
+      mode: "cloud",
+      userId: NAMESPACE,
+      storage: {} as never,
+      db: {} as never,
+      scope: "tickets:cmo:update",
+    } as unknown as ToolContext;
+    const r = parse(await updateTicket(cmoOnlyCtx, { id, status: "done" }));
+    expect(r.ok).toBe(true);
+    if (r.error) expect(r.error).not.toBe("scope_denied");
   });
 });

@@ -2,6 +2,7 @@ import { validatePath } from "./vault";
 import { readTrashedState, writeTrashedState } from "../../trash/state";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = { allowed: ["path"], required: ["path"] } as const;
 
@@ -22,6 +23,8 @@ export async function restoreDoc(
   const docPath = String(args.path ?? "");
   if (!docPath) return json({ error: "path required" });
   validatePath(docPath);
+  const scopeErr = scopeCheckPathWrite(ctx, docPath); // SPRINT-178
+  if (scopeErr) return scopeErr;
 
   const state = await readTrashedState(ctx);
   const entry = state[docPath];

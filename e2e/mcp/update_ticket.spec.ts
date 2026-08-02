@@ -19,6 +19,7 @@ const cloudCtx = {
   userId: "user_test",
   storage: {} as never,
   db: {} as never,
+  scope: "mcp",
 } as unknown as ToolContext;
 
 test.describe("update_ticket (SPRINT-173)", () => {

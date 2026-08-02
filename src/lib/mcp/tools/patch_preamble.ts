@@ -4,6 +4,7 @@ import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { scopeCheckPathWrite } from "../scopes";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -96,6 +97,8 @@ export async function patchPreamble(ctx: ToolContext, args: Record<string, unkno
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+  const scopeErr = scopeCheckPathWrite(ctx, rel); // SPRINT-178
+  if (scopeErr) return scopeErr;
   const body = String(args.body ?? "");
   const expected = String(args.expected_content_hash ?? "");
   if (!expected) throw new Error("expected_content_hash required");

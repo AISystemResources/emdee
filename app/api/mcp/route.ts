@@ -11,6 +11,7 @@ import {
   createTicket, listTickets, updateTicket,
 } from "@/src/lib/mcp/tools/index";
 import { logMcpActivity } from "@/src/lib/mcp/activity";
+import { assertToolScope, ScopeDeniedError } from "@/src/lib/mcp/scopes";
 import pkg from "@/package.json";
 
 export const dynamic = "force-dynamic";
@@ -132,6 +133,29 @@ Shared docs:
     if (ctx.mode === "cloud") {
       void logMcpActivity(ctx.userId, ctx.userId, name, a);
     }
+    // SPRINT-178: dispatcher-level scope check. Runs BEFORE any tool
+    // logic. Legacy `mcp` tokens short-circuit; scoped tokens get the
+    // classification check (READ vs PATH_WRITE vs BULK_WRITE vs TICKET).
+    // Per-path / per-pillar checks happen inside the respective tools.
+    try {
+      assertToolScope(ctx, name);
+    } catch (e) {
+      if (e instanceof ScopeDeniedError) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              error: "scope_denied",
+              required: e.required,
+              tool: e.tool,
+              path: e.path,
+              pillar: e.pillar,
+            }),
+          }],
+        };
+      }
+      throw e;
+    }
     switch (name) {
       case "list_docs":         return await listDocs(ctx, a) as CallToolResult;
       case "list_summary_drift": return await listSummaryDrift(ctx, a) as CallToolResult;
@@ -194,12 +218,18 @@ async function handleMcp(request: Request): Promise<Response> {
   }
 
   // Cloud: require OAuth bearer token
-  const clerkId = await clerkIdFromOAuthToken(request);
-  if (!clerkId) return bearerChallenge(origin);
+  const principal = await clerkIdFromOAuthToken(request);
+  if (!principal) return bearerChallenge(origin);
 
   const storage = new SupabaseStorage();
   const { cloudDatabase } = await import("@/src/lib/database");
-  const ctx: ToolContext = { mode: "cloud", storage, userId: clerkId, db: cloudDatabase() };
+  const ctx: ToolContext = {
+    mode: "cloud",
+    storage,
+    userId: principal.clerkId,
+    db: cloudDatabase(),
+    scope: principal.scope,
+  };
   const server = buildMcpServer(ctx);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);

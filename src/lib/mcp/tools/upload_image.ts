@@ -6,6 +6,7 @@ import { adminClient } from "../../supabase/admin";
 import { writeVaultFile } from "./vault";
 import type { ToolContext } from "./types";
 import { DEJAVU_SANS_TTF_BASE64 } from "../fonts/DejaVuSans.b64";
+import { scopeCheckPathWrite } from "../scopes";
 
 // SPRINT-170: resvg-js's JS API only accepts font FILE PATHS, not
 // buffers — so materialise the embedded font to a temp file once at
@@ -141,6 +142,10 @@ export async function uploadImage(ctx: ToolContext, args: Record<string, unknown
   const summary = description || "Image stored in vault";
   const docSlug = titleArg ? slugify(titleArg) : ts.slice(0, 10);
   const docPath = pathArg ?? `images/${docSlug}.md`;
+  // SPRINT-178: the final doc path (whether caller-supplied or default
+  // images/<slug>.md) must fall within scope-granted write prefixes.
+  const scopeErr = scopeCheckPathWrite(ctx, docPath);
+  if (scopeErr) return scopeErr;
 
   // Doc embeds PNG when we have one (social-safe), with an SVG source
   // link. Falls back to the uploaded original otherwise.

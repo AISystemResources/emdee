@@ -1,5 +1,6 @@
 import { adminClient } from "../../supabase/admin";
 import type { ToolContext } from "./types";
+import { hasScope } from "../scopes";
 
 // SPRINT-173: cross-project ticket queue — update verb.
 // Cloud-only. Any of status / priority / payload may be updated in a
@@ -57,6 +58,24 @@ export async function updateTicket(ctx: ToolContext, args: Record<string, unknow
 
   if (Object.keys(patch).length === 0) {
     return json({ error: "no_updatable_fields", hint: "pass at least one of status / priority / payload" });
+  }
+
+  // SPRINT-178: pillar-specific scope check. Fetch the ticket first
+  // (namespace-scoped) so we know its pillar, then verify the token
+  // carries `tickets:<pillar>:update`. Costs one extra round-trip;
+  // acceptable because tickets are low-volume and this is the safe-
+  // by-default posture.
+  const { data: existing, error: fetchErr } = await adminClient()
+    .from("tickets")
+    .select("pillar")
+    .eq("id", id)
+    .eq("namespace", ctx.userId)
+    .maybeSingle();
+  if (fetchErr) return json({ error: "fetch_failed", detail: fetchErr.message });
+  if (!existing) return json({ error: "ticket_not_found", id });
+  const required = `tickets:${existing.pillar}:update`;
+  if (!hasScope(ctx.scope, required)) {
+    return json({ error: "scope_denied", required, tool: "update_ticket", pillar: existing.pillar });
   }
 
   patch.updated_at = new Date().toISOString();

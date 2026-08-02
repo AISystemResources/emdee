@@ -2,6 +2,7 @@ import { deleteVaultFile, loadVaultIndex, readVaultFile, validatePath } from "./
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = { allowed: ["path", "expected_content_hash"], required: ["path"] } as const;
 
@@ -25,6 +26,8 @@ async function _deleteDoc(ctx: ToolContext, args: Record<string, unknown>): Prom
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+  const scopeErr = scopeCheckPathWrite(ctx, rel); // SPRINT-178
+  if (scopeErr) return scopeErr;
 
   const content = await readVaultFile(ctx, rel);
   if (content === null) {

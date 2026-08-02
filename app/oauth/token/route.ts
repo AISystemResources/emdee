@@ -27,14 +27,17 @@ export async function POST(request: Request) {
   if (!code || !redirect_uri || !client_id || !code_verifier) return tokenError("invalid_request", "missing required parameters", 400);
 
   try {
-    const token = await exchangeCode({ code, clientId: client_id, redirectUri: redirect_uri, codeVerifier: code_verifier });
-    if (!token) return tokenError("invalid_grant", "code is invalid, expired, or already used", 400);
+    const result = await exchangeCode({ code, clientId: client_id, redirectUri: redirect_uri, codeVerifier: code_verifier });
+    if (!result) return tokenError("invalid_grant", "code is invalid, expired, or already used", 400);
 
     return Response.json({
-      access_token: token,
+      access_token: result.token,
       token_type: "Bearer",
       expires_in: TOKEN_TTL_SECONDS,
-      scope: "mcp",
+      // SPRINT-178: echo the actual granted scope per RFC 6749 §5.1
+      // instead of hardcoding "mcp". Clients can inspect this to know
+      // what they were granted (may be narrower than what was requested).
+      scope: result.scope,
     });
   } catch (err) {
     return tokenError("server_error", (err as Error).message, 500);
