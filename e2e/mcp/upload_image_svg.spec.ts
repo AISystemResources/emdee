@@ -36,6 +36,7 @@ const stubCtx = {
   userId: "user_test",
   storage: {} as never,
   db: {} as never,
+  scope: "mcp",
 } as unknown as ToolContext;
 
 test.describe("upload_image (SPRINT-168)", () => {

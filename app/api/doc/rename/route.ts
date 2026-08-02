@@ -32,7 +32,9 @@ export async function POST(request: Request) {
     const { userId } = await auth();
     if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
     const { cloudDatabase } = await import("@/src/lib/database");
-    ctx = { mode: "cloud", storage: new SupabaseStorage(), userId, db: cloudDatabase() };
+    // Clerk-authenticated route (not OAuth bearer) — scope not applicable,
+    // default to legacy full-access.
+    ctx = { mode: "cloud", storage: new SupabaseStorage(), userId, db: cloudDatabase(), scope: "mcp" };
   }
 
   try {

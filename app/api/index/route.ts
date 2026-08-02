@@ -260,7 +260,9 @@ export async function GET(request: Request) {
   if (!includeTrashed) {
     const trashCtx: ToolContext = isLocal
       ? (await import("@/src/lib/mcp/tools/context")).localToolContext(process.env.EMDEE_DOCS ?? "")
-      : { mode: "cloud", storage, userId: ns, db: cloudDatabase() };
+      // Read-only trash-list lookup for a namespace-scoped index render.
+      // Not user-authenticated; scope not applicable.
+      : { mode: "cloud", storage, userId: ns, db: cloudDatabase(), scope: "mcp" };
     try {
       const trashed = await listTrashedPaths(trashCtx);
       if (trashed.size > 0) {

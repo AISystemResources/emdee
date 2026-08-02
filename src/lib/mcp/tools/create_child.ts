@@ -9,6 +9,7 @@ import type { LintWarning } from "./lint";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["parent_path", "title", "body", "summary", "child_path", "gate_on_warnings", "expected_parent_content_hash"],
@@ -199,6 +200,13 @@ async function _createChild(ctx: ToolContext, args: Record<string, unknown>): Pr
         return dir === "." ? fname : `${dir}/${fname}`;
       })();
   validatePath(childPath);
+
+  // SPRINT-178: both parent (Parent-of patch) and child (new doc write)
+  // paths must fall within scope-granted write prefixes.
+  const parentScopeErr = scopeCheckPathWrite(ctx, parentPath);
+  if (parentScopeErr) return parentScopeErr;
+  const childScopeErr = scopeCheckPathWrite(ctx, childPath);
+  if (childScopeErr) return childScopeErr;
 
   // SPRINT-055 (SIG-004): explicit child_path must be uppercase — mirrors
   // write_doc's refusal. Title-derived paths go through sanitizeFilename

@@ -6,6 +6,7 @@ import { isUppercaseFilename, normalizeFilenameInPath } from "./filename";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["path", "content", "gate_on_warnings", "expected_content_hash"],
@@ -47,6 +48,11 @@ async function _writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promi
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+
+  // SPRINT-178: refuse writes outside scope-granted path prefixes (mcp
+  // superuser + bare docs:write short-circuit).
+  const scopeErr = scopeCheckPathWrite(ctx, rel);
+  if (scopeErr) return scopeErr;
 
   // SPRINT-055 (SIG-004): refuse non-uppercase filenames at the entry point.
   // Cheaper than letting them in and lint-warning later — keeps the on-disk

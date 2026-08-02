@@ -4,6 +4,7 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["source_path", "subgroup_heading", "new_doc_title", "new_doc_path", "summary", "expected_source_content_hash"],
@@ -214,6 +215,12 @@ async function _materializeSubgroup(ctx: ToolContext, args: Record<string, unkno
         return dir === "." ? fname : `${dir}/${fname}`;
       })();
   validatePath(newDocPath);
+  // SPRINT-178: both source (rewritten in place) and the new intermediate
+  // doc's path must fall within scope-granted write prefixes.
+  const sourceScopeErr = scopeCheckPathWrite(ctx, sourcePath);
+  if (sourceScopeErr) return sourceScopeErr;
+  const newDocScopeErr = scopeCheckPathWrite(ctx, newDocPath);
+  if (newDocScopeErr) return newDocScopeErr;
 
   const sub = extractSubgroup(sourceContent, subgroupHeading);
   if (!sub) return json({ error: "subgroup_not_found", heading: subgroupHeading });

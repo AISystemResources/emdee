@@ -4,6 +4,7 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import { ctxNamespace, ensureLocalIndex } from "./context";
 import { SYSTEM_NODES } from "../../system-nodes";
 import type { ToolContext } from "./types";
+import { scopeCheckUnrestrictedWrite } from "../scopes";
 
 // SPRINT-120: detect + auto-fix orphan nodes (docs with no incoming
 // hierarchy edge in doc_edges). Two failure modes surface as orphans:
@@ -59,6 +60,15 @@ function suggestSimilar(target: string, allTitles: string[]): string | undefined
 
 export async function lintOrphans(ctx: ToolContext, args: Record<string, unknown>): Promise<unknown> {
   const fix = args.fix === true;
+  // SPRINT-178: --fix runs per-doc reconciles across the namespace.
+  // Because affected doc paths are discovered dynamically (not caller-
+  // supplied), per-path scope checks aren't tractable — require
+  // unrestricted docs:write instead. Read-only mode (default) passes
+  // through since it doesn't mutate.
+  if (fix) {
+    const scopeErr = scopeCheckUnrestrictedWrite(ctx, "lint_orphans --fix");
+    if (scopeErr) return scopeErr as unknown;
+  }
   await ensureLocalIndex(ctx);
   const db = ctx.db;
   const namespace = ctxNamespace(ctx);

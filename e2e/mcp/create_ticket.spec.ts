@@ -24,7 +24,20 @@ const cloudCtx = {
   userId: "user_test",
   storage: {} as never,
   db: {} as never,
+  scope: "mcp",
 } as unknown as ToolContext;
+
+// SPRINT-178: helper for constructing a cloud ctx with a specific
+// (non-superuser) scope for pillar-mismatch coverage.
+function cloudCtxWithScope(scope: string): ToolContext {
+  return {
+    mode: "cloud",
+    userId: "user_test",
+    storage: {} as never,
+    db: {} as never,
+    scope,
+  } as unknown as ToolContext;
+}
 
 test.describe("create_ticket (SPRINT-173)", () => {
   test("local mode is refused with cloud_mode_required", async () => {
@@ -89,5 +102,36 @@ test.describe("create_ticket (SPRINT-173)", () => {
       payload: "not-json",
     }));
     expect(r.error).toBe("invalid_payload");
+  });
+
+  // ── SPRINT-178: pillar-mismatch scope enforcement ─────────────────────
+  //
+  // A scoped token can only create tickets on the pillar its scope
+  // grants. If the inner `if (!hasScope(...)) return scope_denied` block
+  // in create_ticket.ts is ever deleted by accident, these two tests
+  // (the deny-path especially) fail — turns silent security regression
+  // into red CI.
+
+  test("SPRINT-178: scoped token creating on mismatched pillar denies with scope_denied", async () => {
+    const ctx = cloudCtxWithScope("tickets:cmo:create");
+    const r = parse(await createTicket(ctx, { pillar: "cpo", type: "test-scope" }));
+    expect(r.error).toBe("scope_denied");
+    expect(r.required).toBe("tickets:cpo:create");
+    expect(r.tool).toBe("create_ticket");
+    expect(r.pillar).toBe("cpo");
+  });
+
+  test("SPRINT-178: scoped token creating on matched pillar clears the scope gate", async () => {
+    // Matching-pillar scope must pass the scope check. Downstream DB
+    // insert may fail (no SUPABASE creds locally, adminClient throws)
+    // OR succeed (CI env) — both are past validation; the ONLY invariant
+    // we're asserting is that scope_denied is NOT the error.
+    const ctx = cloudCtxWithScope("tickets:cmo:create");
+    try {
+      const r = parse(await createTicket(ctx, { pillar: "cmo", type: "test-e2e-scope-match" }));
+      if (r.error) expect(r.error).not.toBe("scope_denied");
+    } catch {
+      // adminClient threw = past validation. Fine.
+    }
   });
 });

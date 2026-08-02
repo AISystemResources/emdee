@@ -3,6 +3,7 @@ import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./v
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["source_path", "rewrite_source_content", "extracts", "expected_content_hash"],
@@ -62,6 +63,17 @@ async function _splitDoc(ctx: ToolContext, args: Record<string, unknown>): Promi
       return json({ error: "each extract requires { path, content }" });
     }
     validatePath(e.path);
+  }
+  // SPRINT-178: source (rewritten in place) + every extract (new doc)
+  // must fall within scope-granted write prefixes. Check all before any
+  // write so a scope failure never leaves the vault half-split.
+  {
+    const sourceScopeErr = scopeCheckPathWrite(ctx, sourcePath);
+    if (sourceScopeErr) return sourceScopeErr;
+    for (const e of extracts) {
+      const extractScopeErr = scopeCheckPathWrite(ctx, e.path);
+      if (extractScopeErr) return extractScopeErr;
+    }
   }
 
   const index = await loadVaultIndex(ctx);

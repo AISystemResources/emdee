@@ -9,6 +9,7 @@ import { resolveWikiLink } from "../../../core/resolveLink";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardMulti, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
   allowed: ["a_path", "b_path", "label", "gate_on_warnings", "expected_a_content_hash", "expected_b_content_hash"],
@@ -152,6 +153,12 @@ async function _addAssociation(ctx: ToolContext, args: Record<string, unknown>):
   if (aPath === bPath) return json({ error: "self_association", path: aPath });
   validatePath(aPath);
   validatePath(bPath);
+  // SPRINT-178: both sides get their `## Associated with` patched, so
+  // both must fall within scope-granted write prefixes.
+  const aScopeErr = scopeCheckPathWrite(ctx, aPath);
+  if (aScopeErr) return aScopeErr;
+  const bScopeErr = scopeCheckPathWrite(ctx, bPath);
+  if (bScopeErr) return bScopeErr;
 
   const aContent = await readVaultFile(ctx, aPath);
   if (aContent === null) return json({ error: "a_not_found", path: aPath });

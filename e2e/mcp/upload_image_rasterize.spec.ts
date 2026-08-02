@@ -35,6 +35,7 @@ const stubCtx = {
   userId: "user_test",
   storage: {} as never,
   db: {} as never,
+  scope: "mcp",
 } as unknown as ToolContext;
 
 // Materialise the font once per spec run — same pattern the tool uses.

@@ -81,7 +81,9 @@ export async function POST(request: Request) {
 
   const storage = new SupabaseStorage();
   const { cloudDatabase } = await import("@/src/lib/database");
-  const ctx: ToolContext = { mode: "cloud", storage, userId, db: cloudDatabase() };
+  // Clerk-authenticated route (not OAuth bearer) — scope not applicable,
+  // default to legacy full-access.
+  const ctx: ToolContext = { mode: "cloud", storage, userId, db: cloudDatabase(), scope: "mcp" };
 
   const slug = slugify(titleStr) || "image";
   const timeSuffix = ts.slice(11, 19); // HH-MM-SS

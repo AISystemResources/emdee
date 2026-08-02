@@ -267,12 +267,23 @@ async function verifyPkce(codeChallenge: string, codeVerifier: string): Promise<
   return base64url === codeChallenge;
 }
 
+/**
+ * SPRINT-178: `exchangeCode` now returns both the raw token and the scope
+ * that was stored on it. The `/oauth/token` response echoes the actual
+ * scope back to the client per RFC 6749 §5.1, letting them confirm
+ * what they were granted (which may be narrower than what they requested).
+ */
+export interface ExchangeCodeResult {
+  token: string;
+  scope: string;
+}
+
 export async function exchangeCode(params: {
   code: string;
   clientId: string;
   redirectUri: string;
   codeVerifier: string;
-}): Promise<string | null> {
+}): Promise<ExchangeCodeResult | null> {
   const supabase = adminClient();
   const { data: row } = await supabase
     .from("oauth_codes")
@@ -297,29 +308,54 @@ export async function exchangeCode(params: {
   const hash = await hashToken(token);
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
+  // Scope stored on the auth code was chosen by the client at /authorize
+  // time and confirmed by the user at consent. Fallback to legacy "mcp"
+  // for the vanishingly rare row missing scope (predates SPRINT-178).
+  const scope: string = typeof row.scope === "string" && row.scope.length > 0 ? row.scope : "mcp";
+
   const { error } = await supabase.from("oauth_tokens").insert({
     token_hash: hash,
     client_id: params.clientId,
     clerk_id: row.clerk_id,
-    scope: row.scope,
+    scope,
     expires_at: expiresAt,
   });
   if (error) throw new Error(error.message);
-  return token;
+  return { token, scope };
 }
 
-/** Resolve an OAuth bearer token to a clerk_id. Returns null if invalid/expired. */
-export async function clerkIdFromOAuthToken(req: Request): Promise<string | null> {
+/**
+ * Resolve an OAuth bearer token to `{ clerkId, scope }`. Returns null
+ * if the token is absent, unknown, or expired.
+ *
+ * SPRINT-178: the return type widened from `string | null` to include
+ * scope. Every existing prod token carries `scope='mcp'` (verified
+ * 2026-08-02), so the default falls back to that literal for tokens
+ * missing the column value — legacy full-access remains the safe
+ * default.
+ */
+export interface OAuthTokenPrincipal {
+  clerkId: string;
+  scope: string;
+}
+
+export async function clerkIdFromOAuthToken(req: Request): Promise<OAuthTokenPrincipal | null> {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const hash = await hashToken(token);
   const { data } = await adminClient()
     .from("oauth_tokens")
-    .select("clerk_id, expires_at")
+    .select("clerk_id, scope, expires_at")
     .eq("token_hash", hash)
     .maybeSingle();
   if (!data) return null;
   if (new Date(data.expires_at) < new Date()) return null;
-  return data.clerk_id;
+  return {
+    clerkId: data.clerk_id,
+    // Empty / null scope on the DB row is treated as legacy full-access.
+    // This should not happen in practice (default is 'mcp') but guards
+    // against future edge cases.
+    scope: typeof data.scope === "string" && data.scope.length > 0 ? data.scope : "mcp",
+  };
 }

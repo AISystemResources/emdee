@@ -12,6 +12,7 @@ import {
 } from "./sections";
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
+import { scopeCheckPathWrite } from "../scopes";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -38,6 +39,8 @@ export async function patchSection(ctx: ToolContext, args: Record<string, unknow
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+  const scopeErr = scopeCheckPathWrite(ctx, rel); // SPRINT-178
+  if (scopeErr) return scopeErr;
   const headingArg = args.heading !== undefined ? String(args.heading).trim() : "";
   const sectionIdArg = args.section_id !== undefined ? String(args.section_id).trim() : "";
   const body = String(args.body ?? "");

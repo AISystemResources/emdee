@@ -1,5 +1,6 @@
 import { adminClient } from "../../supabase/admin";
 import type { ToolContext } from "./types";
+import { hasScope } from "../scopes";
 
 // SPRINT-173: cross-project ticket queue — create verb.
 // Cloud-only: tickets live in Postgres, not the vault filesystem, so
@@ -27,6 +28,13 @@ export async function createTicket(ctx: ToolContext, args: Record<string, unknow
   const pillar = typeof args.pillar === "string" ? args.pillar.toLowerCase() : "";
   if (!(PILLARS as readonly string[]).includes(pillar)) {
     return json({ error: "invalid_pillar", allowed: PILLARS });
+  }
+
+  // SPRINT-178: pillar-specific scope check. mcp superuser passes; a
+  // token with tickets:<pillar>:create can only create on that pillar.
+  const required = `tickets:${pillar}:create`;
+  if (!hasScope(ctx.scope, required)) {
+    return json({ error: "scope_denied", required, tool: "create_ticket", pillar });
   }
 
   const type = typeof args.type === "string" ? args.type.trim() : "";

@@ -12,6 +12,7 @@ import {
 import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
+import { scopeCheckPathWrite } from "../scopes";
 
 const CROSS_DOC_CODES = new Set([
   "asymmetric_parent_edge",
@@ -52,6 +53,8 @@ async function _appendSection(ctx: ToolContext, args: Record<string, unknown>): 
   if (argErr) return json(argErr);
   const rel = String(args.path);
   validatePath(rel);
+  const scopeErr = scopeCheckPathWrite(ctx, rel); // SPRINT-178
+  if (scopeErr) return scopeErr;
   const expected = args.expected_content_hash !== undefined ? String(args.expected_content_hash) : undefined;
   const conflict = await guardDocContentHash(ctx, rel, expected);
   if (conflict) return json(conflict);
