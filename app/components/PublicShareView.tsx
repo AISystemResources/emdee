@@ -149,7 +149,7 @@ export function PublicShareView({ publication, index, isSignedIn }: Props) {
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  const docTree = useMemo(() => buildDocTree(index), [index]);
+  const { roots: docTree } = useMemo(() => buildDocTree(index), [index]);
   const byPath = useMemo(() => {
     const m = new Map<string, DocNode>();
     for (const d of index.docs) m.set(d.path, d);
