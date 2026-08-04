@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import type { DocIndex, DocNode } from "@/src/core/indexer";
+import { SYSTEM_NODE_PATHS } from "@/src/lib/system-nodes";
 
 export interface TreeNode {
   doc: DocNode;
@@ -8,12 +9,28 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
+export interface BuiltTree {
+  roots: TreeNode[];
+  orphans: TreeNode[];
+}
+
 /**
- * Build a hierarchical TreeNode list from a DocIndex via the indexer's
- * hierarchy edges. Roots are docs with no parent; cycles are broken by a
- * visited-set so each path appears at most once.
+ * Build the hierarchical view of the vault from `index.edges`, splitting
+ * top-level nodes into two buckets:
+ *
+ *   - `roots`   — system nodes (EMDEE / VAULT / SHARED / GRAVEYARD / IMAGES),
+ *                 the vault entry, plus anything whose declared parent is
+ *                 itself absent (structural roots).
+ *   - `orphans` — everything else with no incoming hierarchy edge. These
+ *                 are what SPRINT-120's `lint_orphans` flags: docs whose
+ *                 `## Child of` never made it into `doc_edges`. Surfacing
+ *                 them in a dedicated bucket keeps the tree stable and
+ *                 makes the drift visible.
+ *
+ * The `roots` bucket is what the sidebar draws under the vault entry;
+ * the `orphans` bucket is pinned at the top when non-empty.
  */
-export function buildDocTree(index: DocIndex): TreeNode[] {
+export function buildDocTree(index: DocIndex): BuiltTree {
   const childrenOf = new Map<string, string[]>();
   const hasParent = new Set<string>();
   for (const e of index.edges) {
@@ -47,9 +64,15 @@ export function buildDocTree(index: DocIndex): TreeNode[] {
     return { doc, depth, children };
   };
 
-  const rootPaths = sortPaths(
-    index.docs.map((d) => d.path).filter((p) => !hasParent.has(p))
-  );
+  const parentless = index.docs.map((d) => d.path).filter((p) => !hasParent.has(p));
+
+  // Anchor the tree at the vault entry + system nodes. Everything else
+  // parentless is an orphan — a doc whose declared parent didn't resolve.
+  const systemRoots = new Set<string>(SYSTEM_NODE_PATHS);
+  const isTrueRoot = (p: string) => systemRoots.has(p) || p === index.entry;
+  const rootPaths = sortPaths(parentless.filter(isTrueRoot));
+  const orphanPaths = sortPaths(parentless.filter((p) => !isTrueRoot(p)));
+
   if (index.entry && rootPaths.includes(index.entry)) {
     const i = rootPaths.indexOf(index.entry);
     rootPaths.splice(i, 1);
@@ -61,20 +84,27 @@ export function buildDocTree(index: DocIndex): TreeNode[] {
     const node = walk(p, 0);
     if (node) roots.push(node);
   }
+  const orphans: TreeNode[] = [];
+  for (const p of orphanPaths) {
+    const node = walk(p, 0);
+    if (node) orphans.push(node);
+  }
+  // Any doc reachable neither from a system root nor an orphan (should be
+  // rare — a cycle-only cluster) still surfaces as an orphan so we don't
+  // lose it silently.
   for (const d of index.docs) {
     if (!visited.has(d.path)) {
-      roots.push({ doc: d, depth: 0, children: [] });
+      orphans.push({ doc: d, depth: 0, children: [] });
       visited.add(d.path);
     }
   }
-  return roots;
+  return { roots, orphans };
 }
 
 /**
- * Longest "X — " prefix shared by every title in a sibling group, computed
- * segment-by-segment. Strips noise like "ATLAS — " from a flat list of
- * ["ATLAS", "ATLAS — BUILD", "ATLAS — CONTEXT"] so the tree shows
- * ["ATLAS", "BUILD", "CONTEXT"].
+ * Longest "X — " prefix shared by every title in a sibling group. Strips
+ * noise like "ATLAS — " from ["ATLAS — BUILD", "ATLAS — CONTEXT"] so the
+ * tree shows ["BUILD", "CONTEXT"].
  */
 function siblingsCommonPrefix(titles: string[]): string | null {
   if (titles.length < 2) return null;
@@ -90,19 +120,41 @@ function siblingsCommonPrefix(titles: string[]): string | null {
   return segs[0].slice(0, i).join(" — ") + " — ";
 }
 
+/**
+ * Under a parent titled `03-DOUBLELEAD`, sibling titles like
+ * `DOUBLELEAD — 01-CONTEXT` should shed the `DOUBLELEAD — ` prefix even
+ * though the parent's title carries the numeric `03-`. The stripping
+ * candidates are:
+ *   - the sibling group's common prefix (existing)
+ *   - the parent title verbatim + " — "
+ *   - the parent title with any leading `\d+-` trimmed + " — "
+ * Each candidate is tried longest-first; the first match wins.
+ */
 function displayTitle(title: string, parentTitle: string | null, siblingPrefix: string | null): string {
-  let out = title;
+  const candidates: string[] = [];
   if (parentTitle) {
     const segments = parentTitle.split(" — ");
     for (let i = segments.length; i > 0; i--) {
-      const prefix = segments.slice(0, i).join(" — ") + " — ";
-      if (out.startsWith(prefix)) { out = out.slice(prefix.length); break; }
+      candidates.push(segments.slice(0, i).join(" — ") + " — ");
     }
+    const numTrimmed = parentTitle.replace(/^\d+-/, "");
+    if (numTrimmed !== parentTitle) candidates.push(numTrimmed + " — ");
   }
-  if (siblingPrefix && out.startsWith(siblingPrefix)) {
-    out = out.slice(siblingPrefix.length);
+  if (siblingPrefix) candidates.push(siblingPrefix);
+  candidates.sort((a, b) => b.length - a.length);
+  for (const prefix of candidates) {
+    if (title.startsWith(prefix)) return title.slice(prefix.length);
   }
-  return out;
+  return title;
+}
+
+/**
+ * Split a title into a dim numeric prefix (`01-`, `02-`) and the semantic
+ * remainder. Keeps rows visually anchored on the meaningful name.
+ */
+function splitNumericPrefix(title: string): { prefix: string; body: string } {
+  const m = title.match(/^(\d+-)(.+)$/);
+  return m ? { prefix: m[1], body: m[2] } : { prefix: "", body: title };
 }
 
 interface DocTreeProps {
@@ -117,10 +169,6 @@ interface DocTreeProps {
 
 export function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed, onSelect, onToggle }: DocTreeProps) {
   const activeRowRef = useRef<HTMLButtonElement | null>(null);
-  // When the active doc changes (graph click, prev/next, deep link),
-  // scroll the matching row into view. `inline: "nearest"` also brings
-  // deeply-nested rows into the horizontal viewport so the leaf label is
-  // visible past the indent.
   useEffect(() => {
     if (!activeRowRef.current) return;
     activeRowRef.current.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -131,32 +179,29 @@ export function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed,
   const siblingPrefix = siblingsCommonPrefix(nodes.map((n) => n.doc.title));
   return (
     <ul className="doc-tree" data-root={isRoot}>
-      {!isRoot && (
-        <button
-          className="tree-vline"
-          onClick={() => onToggle(parentPath!)}
-          aria-label="Collapse branch"
-          type="button"
-        />
-      )}
-      {nodes.map((n, i) => {
+      {nodes.map((n) => {
         const hasChildren = n.children.length > 0;
         const isCollapsed = collapsed.has(n.doc.path);
         const isActive = n.doc.path === activePath;
+        const shown = displayTitle(n.doc.title, parentTitle, siblingPrefix);
+        const { prefix, body } = splitNumericPrefix(shown);
         return (
-          <li
-            key={n.doc.path}
-            className={`doc-tree-item${i === nodes.length - 1 ? " is-last" : ""}`}
-          >
-            {!isRoot && (
+          <li key={n.doc.path} className="doc-tree-item">
+            <div
+              className="doc-tree-row-wrap"
+              style={{ "--depth": n.depth } as React.CSSProperties}
+            >
               <button
-                className="tree-hline"
-                onClick={() => onToggle(parentPath!)}
-                aria-label="Collapse branch"
+                className="doc-tree-chevron"
+                onClick={() => hasChildren && onToggle(n.doc.path)}
+                aria-label={hasChildren ? (isCollapsed ? "Expand" : "Collapse") : undefined}
                 type="button"
-              />
-            )}
-            <div className="doc-tree-row-wrap">
+                data-collapsed={isCollapsed}
+                data-leaf={!hasChildren}
+                tabIndex={hasChildren ? 0 : -1}
+              >
+                {hasChildren ? "›" : ""}
+              </button>
               <button
                 ref={isActive ? activeRowRef : undefined}
                 className="doc-tree-row"
@@ -166,20 +211,11 @@ export function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed,
                 }}
                 data-active={isActive}
                 type="button"
+                title={n.doc.title}
               >
-                {displayTitle(n.doc.title, parentTitle, siblingPrefix)}
+                {prefix && <span className="doc-tree-prefix">{prefix}</span>}
+                <span className="doc-tree-label">{body}</span>
               </button>
-              {hasChildren && (
-                <button
-                  className="doc-tree-chevron"
-                  onClick={() => onToggle(n.doc.path)}
-                  aria-label={isCollapsed ? "Expand" : "Collapse"}
-                  type="button"
-                  data-collapsed={isCollapsed}
-                >
-                  ›
-                </button>
-              )}
             </div>
             {hasChildren && !isCollapsed && (
               <DocTree
@@ -196,5 +232,59 @@ export function DocTree({ nodes, parentPath, parentTitle, activePath, collapsed,
         );
       })}
     </ul>
+  );
+}
+
+interface OrphanBucketProps {
+  orphans: TreeNode[];
+  open: boolean;
+  onToggle: () => void;
+  activePath: string | null;
+  collapsed: Set<string>;
+  onSelect: (path: string) => void;
+  onToggleNode: (path: string) => void;
+}
+
+/**
+ * Pinned bucket at the top of the sidebar. Only rendered when there are
+ * orphans; expanded on click. The count is the whole story — an operator
+ * seeing "⚠ Orphaned · 3" knows something needs mending.
+ */
+export function OrphanBucket({
+  orphans,
+  open,
+  onToggle,
+  activePath,
+  collapsed,
+  onSelect,
+  onToggleNode,
+}: OrphanBucketProps) {
+  if (orphans.length === 0) return null;
+  return (
+    <div className="doc-tree-orphans" data-open={open}>
+      <button
+        className="doc-tree-orphans-header"
+        onClick={onToggle}
+        type="button"
+        aria-expanded={open}
+      >
+        <span className="doc-tree-orphans-icon" aria-hidden="true">⚠</span>
+        <span className="doc-tree-orphans-label">Orphaned · {orphans.length}</span>
+        <span className="doc-tree-orphans-chevron" data-open={open} aria-hidden="true">›</span>
+      </button>
+      {open && (
+        <div className="doc-tree-orphans-body">
+          <DocTree
+            nodes={orphans}
+            parentPath={null}
+            parentTitle={null}
+            activePath={activePath}
+            collapsed={collapsed}
+            onSelect={onSelect}
+            onToggle={onToggleNode}
+          />
+        </div>
+      )}
+    </div>
   );
 }

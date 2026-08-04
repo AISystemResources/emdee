@@ -6,7 +6,7 @@ import { GraphView } from "./GraphView";
 import { DocEditor } from "./DocEditor";
 import { ShareModal } from "./ShareModal";
 import { DownloadModal } from "./DownloadModal";
-import { DocTree, buildDocTree, type TreeNode } from "./DocTree";
+import { DocTree, OrphanBucket, buildDocTree, type TreeNode } from "./DocTree";
 import type { DocIndex, DocNode } from "@/src/core/indexer";
 import { getPrevNextSiblings } from "@/src/core/siblings";
 import { resolveWikiLink } from "@/src/core/resolveLink";
@@ -93,6 +93,20 @@ export function App({ namespace }: { namespace: string }) {
   const localEdit = useRef(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const collapsedInitialized = useRef(false);
+  // SPRINT-179: sidebar-footer "Connect" group. Default closed once the
+  // user has connected (they don't need the setup boxes taking permanent
+  // space); state persists across reloads.
+  const [connectOpen, setConnectOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("emdee_sidebar_connect_open") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("emdee_sidebar_connect_open", connectOpen ? "1" : "0");
+  }, [connectOpen]);
+  // SPRINT-179: orphan bucket. Collapsed by default — the count is the
+  // signal; the operator opens it to act.
+  const [orphansOpen, setOrphansOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return 260;
@@ -622,10 +636,11 @@ export function App({ namespace }: { namespace: string }) {
   // Shared docs arrive with `__shared:<owner>:<path>` paths and a synthetic
   // `SHARED.md → <shareRoot>` edge per share group, so buildDocTree puts
   // them under SHARED naturally — no client-side graft required.
-  const docTree = useMemo(
-    () => (index ? buildDocTree(index) : []),
-    [index]
-  );
+  const { docTree, orphanTree } = useMemo(() => {
+    if (!index) return { docTree: [] as TreeNode[], orphanTree: [] as TreeNode[] };
+    const built = buildDocTree(index);
+    return { docTree: built.roots, orphanTree: built.orphans };
+  }, [index]);
 
   // Collapse all parent nodes on first load; leave user-driven toggles alone after that.
   useEffect(() => {
@@ -1204,18 +1219,42 @@ export function App({ namespace }: { namespace: string }) {
             {index === null ? (
               <span className="sidebar-loading">Loading…</span>
             ) : (
-              <DocTree
-                nodes={docTree}
-                parentPath={null}
-                parentTitle={null}
-                activePath={activePath}
-                collapsed={collapsed}
-                onSelect={selectDoc}
-                onToggle={toggleCollapsed}
-              />
+              <>
+                <OrphanBucket
+                  orphans={orphanTree}
+                  open={orphansOpen}
+                  onToggle={() => setOrphansOpen((v) => !v)}
+                  activePath={activePath}
+                  collapsed={collapsed}
+                  onSelect={selectDoc}
+                  onToggleNode={toggleCollapsed}
+                />
+                <DocTree
+                  nodes={docTree}
+                  parentPath={null}
+                  parentTitle={null}
+                  activePath={activePath}
+                  collapsed={collapsed}
+                  onSelect={selectDoc}
+                  onToggle={toggleCollapsed}
+                />
+              </>
             )}
           </div>
-          {canSync && (
+          <div className="sidebar-footer">
+            {(canSync || isOwnNamespace || isPublicNamespace) && (
+              <div className="sidebar-connect-group" data-open={connectOpen}>
+                <button
+                  className="sidebar-connect-toggle"
+                  onClick={() => setConnectOpen((v) => !v)}
+                  type="button"
+                  aria-expanded={connectOpen}
+                >
+                  <span>Connect</span>
+                  <span className="sidebar-connect-chevron" data-open={connectOpen} aria-hidden="true">›</span>
+                </button>
+                {connectOpen && (<>
+                  {canSync && (
             <div className="connect-section">
               <span className="pat-label">Cloud Account</span>
               {cloudUserId ? (
@@ -1336,7 +1375,9 @@ export function App({ namespace }: { namespace: string }) {
               <a href={`/${user?.id}`} className="signin-btn">Go to my workspace</a>
             </div>
           )}
-          <div className="sidebar-footer">
+                </>)}
+              </div>
+            )}
             {isAdmin && (
               <>
                 <a
