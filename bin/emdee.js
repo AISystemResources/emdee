@@ -408,6 +408,7 @@ program
   .option("--heading <heading>", "H2 heading text (without ##)")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
   .option("--no-auto-hash", "Disable OCC auto-hydration (SPRINT-160)")
+  .option("--force-relationship-write", "Escape hatch for patching a Child of / Parent of / Associated with section — SPRINT-180 hard-refuses by default. Prefer move-doc / create-child / add-association.")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -416,6 +417,7 @@ program
       path: "--path", body: "--body", expectedHash: "--expected-hash",
       sectionId: "--section-id", heading: "--heading", gateOn: "--gate-on",
       noAutoHash: "--no-auto-hash",
+      forceRelationshipWrite: "--force-relationship-write",
       remote: "--remote", json: "--json",
     });
     shellWrite("patch-section", opts, extra);
