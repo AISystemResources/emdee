@@ -44,11 +44,26 @@ export function buildDocTree(index: DocIndex): BuiltTree {
   const byPath = new Map<string, DocNode>();
   for (const d of index.docs) byPath.set(d.path, d);
 
+  // SPRINT-183: three-tier sort so `99-ARCHIVE`-style sinks to the bottom
+  // of every sibling group. Tiers:
+  //   0 — numeric-prefixed with num < 99 (sort by num asc, then title)
+  //   1 — no numeric prefix (sort by title, alpha)
+  //   2 — numeric-prefixed with num >= 99 (sort by num asc, then title)
+  // Matches Edmund's convention of using 01/02/... for content and 99
+  // for archive/deprecated.
+  const sortKey = (title: string): [number, number, string] => {
+    const m = title.match(/^(\d+)-/);
+    if (!m) return [1, 0, title.toLowerCase()];
+    const n = parseInt(m[1], 10);
+    return [n >= 99 ? 2 : 0, n, title.toLowerCase()];
+  };
   const sortPaths = (paths: string[]) =>
     [...paths].sort((a, b) => {
-      const ta = byPath.get(a)?.title ?? a;
-      const tb = byPath.get(b)?.title ?? b;
-      return ta.localeCompare(tb);
+      const ka = sortKey(byPath.get(a)?.title ?? a);
+      const kb = sortKey(byPath.get(b)?.title ?? b);
+      if (ka[0] !== kb[0]) return ka[0] - kb[0];
+      if (ka[1] !== kb[1]) return ka[1] - kb[1];
+      return ka[2].localeCompare(kb[2]);
     });
 
   const visited = new Set<string>();
