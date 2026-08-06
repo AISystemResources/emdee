@@ -83,6 +83,7 @@ const VERBS: Record<string, VerbSpec> = {
       body: { type: "string" },
       "expected-hash": { type: "string" },
       "gate-on": { type: "string", multiple: true },
+      "force-relationship-write": { type: "boolean" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -93,6 +94,7 @@ const VERBS: Record<string, VerbSpec> = {
       if (v["section-id"]) args.section_id = v["section-id"];
       if (v.heading) args.heading = v.heading;
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
+      if (v["force-relationship-write"]) args.force_relationship_write = true;
       return args;
     },
   },
@@ -537,6 +539,8 @@ const VERBS: Record<string, VerbSpec> = {
       type: { type: "string" },
       priority: { type: "string" },
       payload: { type: "string" },
+      "assigned-agent-id": { type: "string" },
+      "sender-agent-id": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -553,6 +557,10 @@ const VERBS: Record<string, VerbSpec> = {
           throw new Error(`--payload must be valid JSON: ${(e as Error).message}`);
         }
       }
+      const assignedAgentId = optionalString(v["assigned-agent-id"]);
+      if (assignedAgentId) args.assigned_agent_id = assignedAgentId;
+      const senderAgentId = optionalString(v["sender-agent-id"]);
+      if (senderAgentId) args.sender_agent_id = senderAgentId;
       return args;
     },
   },
@@ -565,6 +573,7 @@ const VERBS: Record<string, VerbSpec> = {
       status: { type: "string" },
       limit: { type: "string" },
       offset: { type: "string" },
+      "assigned-agent-id": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {};
@@ -576,6 +585,8 @@ const VERBS: Record<string, VerbSpec> = {
       if (lim) args.limit = Number(lim);
       const off = optionalString(v.offset);
       if (off) args.offset = Number(off);
+      const assignedAgentId = optionalString(v["assigned-agent-id"]);
+      if (assignedAgentId) args.assigned_agent_id = assignedAgentId;
       return args;
     },
   },

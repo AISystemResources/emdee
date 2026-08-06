@@ -21,7 +21,7 @@ const CROSS_DOC_CODES = new Set([
 ]);
 
 const ARG_SPEC = {
-  allowed: ["path", "heading", "section_id", "body", "expected_content_hash", "gate_on_warnings"],
+  allowed: ["path", "heading", "section_id", "body", "expected_content_hash", "gate_on_warnings", "force_relationship_write"],
   required: ["path", "body", "expected_content_hash"],
 } as const;
 
@@ -70,6 +70,27 @@ export async function patchSection(ctx: ToolContext, args: Record<string, unknow
   }
   const target: SectionLoc = resolved.loc;
 
+  // SPRINT-180: hard-refuse hierarchy / association section writes unless
+  // the caller explicitly opts in. Promotes the SPRINT-136 soft-warning
+  // (2026-07-25) to a machine-enforced rule so drift stops being possible
+  // to introduce silently. The atomic tools (`move_doc`, `create_child`,
+  // `add_association`) patch both sides in one transaction — use them
+  // instead. `force_relationship_write: true` is the escape hatch for
+  // legit dual-side repairs (e.g. re-parenting a truly orphaned doc where
+  // move_doc has no old_parent to point at).
+  const relKind = relationshipSectionKind(target.heading);
+  if (relKind && args.force_relationship_write !== true) {
+    return json({
+      error: "hierarchy_section_write_refused",
+      section: target.heading,
+      kind: relKind,
+      hint: relKind === "hierarchy"
+        ? "This is a `## Child of` / `## Parent of` section — patching one side leaves the graph asymmetric. Use `move_doc` (existing parent) or `create_child` (new parent) instead. If you must patch by hand, pass `force_relationship_write: true` AND patch the other side in the same turn."
+        : "This is a `## Associated with` section — patching one side leaves the association asymmetric. Use `add_association` instead. If you must patch by hand, pass `force_relationship_write: true` AND patch the other side in the same turn.",
+      atomic_tool: relKind === "hierarchy" ? ["move_doc", "create_child"] : ["add_association"],
+    });
+  }
+
   const currentBody = extractBody(content, target);
   const currentHash = hashBody(currentBody);
   if (currentHash !== expected) {
@@ -113,33 +134,33 @@ export async function patchSection(ctx: ToolContext, args: Record<string, unknow
   };
   if (lint.warnings.length > 0) payload.warnings = lint.warnings;
 
-  // SPRINT-136: soft-guard on relationship sections. patch_section on
-  // Child of / Parent of / Associated with is a common source of
-  // asymmetric edges (patcher forgets the other side). Nudge toward
-  // atomic tools without blocking the write.
-  const relationshipHint = relationshipSectionHint(target.heading);
-  if (relationshipHint) {
+  // SPRINT-180: reaching here on a relationship section means the caller
+  // passed `force_relationship_write: true`. Keep the reminder in the
+  // response so the two-sided obligation is visible in logs.
+  if (relKind) {
     const existing = Array.isArray(payload.warnings) ? payload.warnings : [];
     payload.warnings = [
       ...existing,
-      { code: "relationship_section_patched", message: relationshipHint },
+      {
+        code: "relationship_section_forced_write",
+        message: relKind === "hierarchy"
+          ? "Forced hierarchy-section write. You MUST patch the reciprocal side (parent's Parent of / child's Child of) in the same turn, or run `reconcile` after."
+          : "Forced association write. You MUST patch the reciprocal side (other doc's Associated with) in the same turn.",
+      },
     ];
   }
 
   return json(payload);
 }
 
-// SPRINT-136: return a suggestion string when patch_section targeted a
-// relationship section, or null otherwise. Kept intentionally short so
-// callers (both MCP-side response consumers and CLI human readers) can
-// scan quickly.
-function relationshipSectionHint(headingRaw: string): string | null {
+// SPRINT-180: classify a section heading. Returns "hierarchy" for
+// Child of / Parent of, "assoc" for Associated with, null otherwise.
+// Case-insensitive on the leading keyword since users occasionally
+// author `## child of`. Same detection previously drove the SPRINT-136
+// soft-warning.
+function relationshipSectionKind(headingRaw: string): "hierarchy" | "assoc" | null {
   const h = headingRaw.trim().toLowerCase();
-  if (h === "child of" || h === "parent of") {
-    return "You patched a hierarchy section. Both sides (child's Child of AND parent's Parent of) must stay in sync. Consider `move_doc` or `create_child` for atomic multi-side updates. If you must use patch_section, patch the other side in the same turn.";
-  }
-  if (h === "associated with") {
-    return "You patched an association section. Both docs' Associated with must stay in sync. Consider `add_association` for atomic two-side updates. If you must use patch_section, patch the other doc in the same turn.";
-  }
+  if (h === "child of" || h === "parent of") return "hierarchy";
+  if (h === "associated with") return "assoc";
   return null;
 }
