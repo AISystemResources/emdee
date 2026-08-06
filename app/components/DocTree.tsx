@@ -52,10 +52,16 @@ export function buildDocTree(index: DocIndex): BuiltTree {
   // Matches Edmund's convention of using 01/02/... for content and 99
   // for archive/deprecated.
   const sortKey = (title: string): [number, number, string] => {
-    const m = title.match(/^(\d+)-/);
-    if (!m) return [1, 0, title.toLowerCase()];
+    // SPRINT-184: sort on the LAST " — " segment so nested titles like
+    // "03-PROJECTS — 99-ARCHIVE" key off "99-ARCHIVE" (not "03-PROJECTS")
+    // and correctly sink to the bottom of the sibling group. The visible
+    // label is already the stripped form; sort key must match.
+    const segments = title.split(" — ");
+    const leaf = segments[segments.length - 1];
+    const m = leaf.match(/^(\d+)-/);
+    if (!m) return [1, 0, leaf.toLowerCase()];
     const n = parseInt(m[1], 10);
-    return [n >= 99 ? 2 : 0, n, title.toLowerCase()];
+    return [n >= 99 ? 2 : 0, n, leaf.toLowerCase()];
   };
   const sortPaths = (paths: string[]) =>
     [...paths].sort((a, b) => {
