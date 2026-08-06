@@ -241,21 +241,37 @@ export async function syncDocEdges(
   }
 
   // computeAllEdges will derive edges from docPath's newContent (and
-  // system nodes) since OTHER docs have empty content. Filter to
-  // from-docPath edges — the ONLY edges this sync is authoritative for.
+  // system nodes) since OTHER docs have empty content.
   const all = computeAllEdges(namespace, injectSystemNodes(filteredDocs));
   const fromDocPathEdges: EdgeRow[] = [];
   for (const r of all.hierMap.values()) if (r.from_path === docPath) fromDocPathEdges.push(r);
   for (const r of all.assocMap.values()) if (r.from_path === docPath) fromDocPathEdges.push(r);
 
-  // Preserve inbound edges to docPath — these come from OTHER docs'
-  // outgoing edges (already persisted in doc_edges from when those docs
-  // were synced). We re-include them so the atomic RPC's DELETE-touching-
-  // docPath + INSERT-desired doesn't lose them.
+  // SPRINT-181: reciprocal hierarchy edges derived from docPath's own
+  // `## Child of` bullets. Every such bullet produces an edge with
+  // from_path=parent, to_path=docPath. Prior to this sprint these were
+  // filtered out (only from_path === docPath survived), which meant a
+  // per-doc reconcile of a child could NEVER heal an orphan — the
+  // reciprocal edge only appeared when the PARENT was independently
+  // synced. Root cause of every "sidebar orphan comes back after
+  // reconcile" bug (see 2026-08-04 diagnosis in LEARNINGS). Now the
+  // child is authoritative for its own parent link.
+  const childOfInbound: EdgeRow[] = [];
+  for (const r of all.hierMap.values()) {
+    if (r.to_path === docPath && r.from_path !== docPath) childOfInbound.push(r);
+  }
+
+  // Preserve inbound edges to docPath from OTHER docs' assoc / parent-of
+  // bullets that are already persisted (we don't re-derive them because
+  // OTHER docs have empty content). If the same edge appears in both
+  // `childOfInbound` and `inboundRows`, the persisted row wins so we
+  // don't disturb the position field the parent recorded.
   const inboundRows = await db.getEdges(namespace, { to_path: docPath });
   const inboundFromOthers = inboundRows.filter((r) => r.from_path !== docPath);
+  const inboundKeys = new Set(inboundFromOthers.map(rowKey));
+  const newReciprocals = childOfInbound.filter((r) => !inboundKeys.has(rowKey(r)));
 
-  const desiredRows: EdgeRow[] = [...fromDocPathEdges, ...inboundFromOthers];
+  const desiredRows: EdgeRow[] = [...fromDocPathEdges, ...inboundFromOthers, ...newReciprocals];
 
   // Short-circuit no-op writes.
   const curFrom = await db.getEdges(namespace, { from_path: docPath });
