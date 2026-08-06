@@ -1,4 +1,4 @@
-import { validatePath, writeVaultFile, loadVaultIndex } from "./vault";
+import { validatePath, readVaultFile, writeVaultFile, loadVaultIndex } from "./vault";
 import { lintDocContent } from "./lint";
 import { evaluateLintGate } from "./lint_gate";
 import { buildLintVaultContext } from "./lint_doc";
@@ -9,7 +9,7 @@ import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 import { scopeCheckPathWrite } from "../scopes";
 
 const ARG_SPEC = {
-  allowed: ["path", "content", "gate_on_warnings", "expected_content_hash"],
+  allowed: ["path", "content", "gate_on_warnings", "expected_content_hash", "allow_empty"],
   required: ["path", "content"],
 } as const;
 
@@ -74,6 +74,27 @@ async function _writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promi
   if (conflict) return json(conflict);
 
   const content = String(args.content ?? "");
+
+  // SPRINT-186: refuse an empty-content write that would blank an
+  // existing non-empty doc. Two hub docs (03-DOUBLELEAD, 02-WHATELZ_AI)
+  // were found empty in the same week without any caller admitting to
+  // the write — some path is silently zeroing content. Guard at the
+  // write boundary catches the corruption at the point of write.
+  // Escape hatch: `allow_empty: true` for the rare legit case (e.g.
+  // resetting a scratch doc). Applies to non-first-write only — creating
+  // a new empty doc is allowed as before.
+  if (content.trim().length === 0 && args.allow_empty !== true) {
+    const existing = await readVaultFile(ctx, rel);
+    if (existing !== null && existing.trim().length > 0) {
+      return json({
+        error: "empty_write_would_delete_content",
+        path: rel,
+        existing_length: existing.length,
+        hint: "Refusing to overwrite non-empty doc with empty content. If this is intentional (e.g. resetting a scratch doc), pass `allow_empty: true`. Otherwise, this is likely a bug — check the caller for stringify/join failures before the write.",
+      });
+    }
+  }
+
   const gateCodes = parseGateCodes(args.gate_on_warnings);
 
   if (gateCodes.length > 0) {

@@ -288,6 +288,7 @@ const VERBS: Record<string, VerbSpec> = {
       content: { type: "string" },
       "gate-on": { type: "string", multiple: true },
       "expected-hash": { type: "string" },
+      "allow-empty": { type: "boolean" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -296,6 +297,7 @@ const VERBS: Record<string, VerbSpec> = {
       };
       if (Array.isArray(v["gate-on"])) args.gate_on_warnings = v["gate-on"];
       if (v["expected-hash"]) args.expected_content_hash = asString(v["expected-hash"]);
+      if (v["allow-empty"]) args.allow_empty = true;
       return args;
     },
   },
