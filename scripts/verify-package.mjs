@@ -31,6 +31,7 @@ const ALLOWED_PREFIXES = [
   "src/mcp/",
   "skills/",
   "templates/",
+  "seed-vault/",
   ".claude-plugin/",
   ".claude/commands/",
 ];
