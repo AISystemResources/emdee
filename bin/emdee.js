@@ -647,6 +647,7 @@ program
   .requiredOption("--content <text>", "Full markdown content")
   .option("--gate-on <code...>", "Lint codes to hard-block on")
   .option("--expected-hash <hash>", "Optional doc_content_hash — overwrite rejected on mismatch. Create case is guard-passthrough (SPRINT-141a).")
+  .option("--allow-empty", "SPRINT-186 escape hatch: allow empty content to overwrite a non-empty doc. Refused by default to catch silent content-wiping bugs.")
   .option("-d, --docs <dir>", "docs directory (local mode)")
   .option("--remote", "Route through emdee.tech")
   .option("--json", "Machine-parseable output")
@@ -654,6 +655,7 @@ program
     const extra = argsFromOpts(opts, {
       path: "--path", content: "--content", gateOn: "--gate-on",
       expectedHash: "--expected-hash",
+      allowEmpty: "--allow-empty",
       remote: "--remote", json: "--json",
     });
     shellWrite("write-doc", opts, extra);
