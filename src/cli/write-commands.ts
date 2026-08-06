@@ -539,6 +539,8 @@ const VERBS: Record<string, VerbSpec> = {
       type: { type: "string" },
       priority: { type: "string" },
       payload: { type: "string" },
+      "assigned-agent-id": { type: "string" },
+      "sender-agent-id": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {
@@ -555,6 +557,10 @@ const VERBS: Record<string, VerbSpec> = {
           throw new Error(`--payload must be valid JSON: ${(e as Error).message}`);
         }
       }
+      const assignedAgentId = optionalString(v["assigned-agent-id"]);
+      if (assignedAgentId) args.assigned_agent_id = assignedAgentId;
+      const senderAgentId = optionalString(v["sender-agent-id"]);
+      if (senderAgentId) args.sender_agent_id = senderAgentId;
       return args;
     },
   },
@@ -567,6 +573,7 @@ const VERBS: Record<string, VerbSpec> = {
       status: { type: "string" },
       limit: { type: "string" },
       offset: { type: "string" },
+      "assigned-agent-id": { type: "string" },
     },
     buildArgs: (v) => {
       const args: Record<string, unknown> = {};
@@ -578,6 +585,8 @@ const VERBS: Record<string, VerbSpec> = {
       if (lim) args.limit = Number(lim);
       const off = optionalString(v.offset);
       if (off) args.offset = Number(off);
+      const assignedAgentId = optionalString(v["assigned-agent-id"]);
+      if (assignedAgentId) args.assigned_agent_id = assignedAgentId;
       return args;
     },
   },

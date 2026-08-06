@@ -43,6 +43,16 @@ export async function listTickets(ctx: ToolContext, args: Record<string, unknown
     statusFilter = status;
   }
 
+  // SPRINT-185: optional agent-address filter. The primary shape for an
+  // agent's own inbox: list_tickets(assigned_agent_id = me, status = "open").
+  let assignedAgentFilter: string | null = null;
+  if (args.assigned_agent_id !== undefined && args.assigned_agent_id !== null) {
+    if (typeof args.assigned_agent_id !== "string" || args.assigned_agent_id.trim().length === 0) {
+      return json({ error: "invalid_assigned_agent_id" });
+    }
+    assignedAgentFilter = args.assigned_agent_id.trim();
+  }
+
   const rawLimit = Number(args.limit ?? DEFAULT_LIMIT);
   const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(MAX_LIMIT, Math.floor(rawLimit))) : DEFAULT_LIMIT;
   const rawOffset = Number(args.offset ?? 0);
@@ -50,10 +60,11 @@ export async function listTickets(ctx: ToolContext, args: Record<string, unknown
 
   let query = adminClient()
     .from("tickets")
-    .select("id, namespace, pillar, type, status, priority, payload, created_at, updated_at, resolved_at, first_resolved_at")
+    .select("id, namespace, pillar, type, status, priority, payload, assigned_agent_id, sender_agent_id, created_at, updated_at, resolved_at, first_resolved_at")
     .eq("namespace", ctx.userId);
   if (pillarFilter) query = query.eq("pillar", pillarFilter);
   if (statusFilter) query = query.eq("status", statusFilter);
+  if (assignedAgentFilter) query = query.eq("assigned_agent_id", assignedAgentFilter);
   query = query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
 
   const { data, error } = await query;

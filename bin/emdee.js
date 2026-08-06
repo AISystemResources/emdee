@@ -373,6 +373,19 @@ program
 
 // SPRINT-094: install the EMDEE Claude Code skills into ~/.claude/skills/
 program
+  .command("seed-agents")
+  .description("SPRINT-185: seed the AGENTS hub + 4 role templates + agent-loop skill into your cloud vault. Idempotent — skips paths that already exist (user edits win). Cloud-only; requires prior `emdee login`.")
+  .action(() => {
+    const exec = resolveExecutor("src/cli/seed-agents.ts");
+    const child = spawn(
+      exec.cmd,
+      [...exec.args],
+      { cwd: pkgRoot, stdio: "inherit", env: { ...process.env } },
+    );
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
+program
   .command("skills-install")
   .description("Copy packaged skills/*.md into a Claude Code skills directory (default ~/.claude/skills/).")
   .option("--dir <path>", "Target directory")
@@ -1064,11 +1077,13 @@ program
 // external CMO/CPO/COO/CEO agents can hit the same tools via /api/mcp.
 program
   .command("create-ticket")
-  .description("Enqueue a ticket for one of the four pillar agents (CMO/CPO/COO/CEO). Cloud-only.")
+  .description("Enqueue a ticket in the cross-project queue. Pillar picks the coarse role (CMO/CPO/COO/CEO); assigned/sender agent ids (SPRINT-185) are opaque slugs like 'whatelz:cmo' for per-agent routing. Cloud-only.")
   .requiredOption("--pillar <pillar>", "cmo | cpo | coo | ceo")
   .requiredOption("--type <type>", "Free-form event tag, e.g. whatsapp_inbound, pr_opened")
   .option("--priority <priority>", "low | medium | high (default medium)")
   .option("--payload <json>", "JSON object of signal data")
+  .option("--assigned-agent-id <slug>", "SPRINT-185: agent this ticket is addressed to, e.g. whatelz:cmo")
+  .option("--sender-agent-id <slug>", "SPRINT-185: agent that filed this ticket, enables reply routing")
   .option("--remote", "Route through emdee.tech (default when config.default_mode=remote)")
   .option("--json", "Machine-parseable output")
   .action((opts) => {
@@ -1077,6 +1092,8 @@ program
       type: "--type",
       priority: "--priority",
       payload: "--payload",
+      assignedAgentId: "--assigned-agent-id",
+      senderAgentId: "--sender-agent-id",
       remote: "--remote",
       json: "--json",
     });
@@ -1085,9 +1102,10 @@ program
 
 program
   .command("list-tickets")
-  .description("List tickets in your queue, newest first. Filter by pillar and/or status. Cloud-only.")
+  .description("List tickets in your queue, newest first. Filter by pillar, status, and/or assigned_agent_id (SPRINT-185). Cloud-only.")
   .option("--pillar <pillar>", "cmo | cpo | coo | ceo")
   .option("--status <status>", "open | in_progress | done | blocked")
+  .option("--assigned-agent-id <slug>", "SPRINT-185: filter to tickets addressed to this agent slug")
   .option("--limit <n>", "Max rows, 1–200 (default 50)")
   .option("--offset <k>", "Rows to skip (default 0)")
   .option("--remote", "Route through emdee.tech")
@@ -1096,6 +1114,7 @@ program
     const extra = argsFromOpts(opts, {
       pillar: "--pillar",
       status: "--status",
+      assignedAgentId: "--assigned-agent-id",
       limit: "--limit",
       offset: "--offset",
       remote: "--remote",
