@@ -114,23 +114,50 @@ export async function POST(request: Request) {
   // exists before the upsert (a first-time user may not have one yet).
   if (ns !== "public") await ensureProfile(ns);
 
+  // SPRINT-189: skip empty-content writes that would blank a non-empty
+  // existing cloud doc. Same class as the SPRINT-187 editor-autosave
+  // guard — the CLI `emdee sync` push path was another storage-write
+  // bypass we hadn't covered. Failure to sync one file is a warning,
+  // not a full-batch failure; the manifest still records what did sync.
+  const skipped: Array<{ path: string; reason: string }> = [];
+  const toWrite: Array<{ namespacedPath: string; content: string; hash: string }> = [];
   await Promise.all(
-    localFiles.map(({ namespacedPath, content }) =>
-      storage.write(namespacedPath, content)
-    )
+    localFiles.map(async (f) => {
+      if (f.content.trim().length === 0) {
+        try {
+          const existing = await storage.read(f.namespacedPath);
+          if (existing !== null && existing.trim().length > 0) {
+            skipped.push({ path: f.rel, reason: "empty_would_delete_existing_content" });
+            return;
+          }
+        } catch {
+          // Read failure — fall through and accept the write.
+        }
+      }
+      toWrite.push(f);
+    })
   );
+  await Promise.all(toWrite.map(({ namespacedPath, content }) => storage.write(namespacedPath, content)));
 
-  const upsertRows = localFiles.map(({ namespacedPath, hash }) => ({
-    file_path: namespacedPath,
-    content_hash: hash,
-    synced_at: now,
-    clerk_id: ns === "public" ? null : ns,
-  }));
-  await adminClient()
-    .from("sync_manifest")
-    .upsert(upsertRows, { onConflict: "file_path" });
+  // Only manifest-record what actually wrote — skipping an empty push
+  // must not advance the manifest, or the next sync will treat cloud
+  // (which still has the real content) as "unchanged" and never pull.
+  const skippedPaths = new Set(skipped.map((s) => `${ns}/${s.path}`));
+  const upsertRows = localFiles
+    .filter(({ namespacedPath }) => !skippedPaths.has(namespacedPath))
+    .map(({ namespacedPath, hash }) => ({
+      file_path: namespacedPath,
+      content_hash: hash,
+      synced_at: now,
+      clerk_id: ns === "public" ? null : ns,
+    }));
+  if (upsertRows.length > 0) {
+    await adminClient()
+      .from("sync_manifest")
+      .upsert(upsertRows, { onConflict: "file_path" });
+  }
 
-  return Response.json({ synced: files.length, files });
+  return Response.json({ synced: upsertRows.length, skipped, files });
 }
 
 // GET /api/sync — returns whether sync is available (EMDEE_DOCS + Supabase configured)

@@ -30,6 +30,25 @@ export async function POST(request: Request) {
     const resolved = path.resolve(docsDir, rel);
     const content = await readFile(resolved, "utf8");
     const hash = await sha256(content);
+    // SPRINT-189: refuse keep-local when the local doc is empty and the
+    // cloud version has content. "Keep local" over an empty local file
+    // would silently destroy the cloud content the user was trying to
+    // resolve against.
+    if (content.trim().length === 0) {
+      try {
+        const existing = await storage.read(rel);
+        if (existing !== null && existing.trim().length > 0) {
+          return Response.json({
+            error: "empty_local_would_delete_cloud",
+            path: rel,
+            existing_length: existing.length,
+            hint: "Your local copy of this doc is empty but the cloud version has content. Resolve manually — either paste the cloud content locally then re-sync, or use `keep-cloud` to adopt the cloud version.",
+          }, { status: 409 });
+        }
+      } catch {
+        // Read failure — fall through, accept the write.
+      }
+    }
     await storage.write(rel, content);
     await adminClient()
       .from("sync_manifest")
