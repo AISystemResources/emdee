@@ -7,6 +7,7 @@ import type { ToolContext } from "./types";
 import { validateArgs } from "./validate_args";
 import { guardDocContentHash, withHashDeprecation } from "./version_guard";
 import { scopeCheckPathWrite } from "../scopes";
+import { withDefaultParent } from "./default_parent";
 
 const ARG_SPEC = {
   allowed: ["path", "content", "gate_on_warnings", "expected_content_hash", "allow_empty"],
@@ -73,7 +74,14 @@ async function _writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promi
   const conflict = await guardDocContentHash(ctx, rel, expected);
   if (conflict) return json(conflict);
 
-  const content = String(args.content ?? "");
+  let content = String(args.content ?? "");
+
+  // SPRINT-190: default-to-owner. If the incoming content has no Child
+  // of / empty Child of, inject `* [[<owner-title>]]` so the doc chains
+  // up to the user's owner node instead of floating as an orphan.
+  // Backwards-compat: no-op when caller already specified a parent
+  // OR in local mode OR when the profile lookup fails.
+  content = await withDefaultParent(ctx, content);
 
   // SPRINT-186: refuse an empty-content write that would blank an
   // existing non-empty doc. Two hub docs (03-DOUBLELEAD, 02-WHATELZ_AI)
