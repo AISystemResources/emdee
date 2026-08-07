@@ -3,6 +3,8 @@ import { getVaultStorage } from "@/src/lib/storage";
 import { adminClient } from "@/src/lib/supabase/admin";
 import { hashBody } from "@/src/lib/mcp/tools/sections";
 import { isAdminUser, logAdminVaultView } from "@/src/lib/admin";
+import { withDefaultParent } from "@/src/lib/mcp/tools/default_parent";
+import type { ToolContext } from "@/src/lib/mcp/tools/types";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +90,7 @@ export async function PUT(request: Request) {
   if (!rel) return new Response("missing path", { status: 400 });
   if (!rel.endsWith(".md")) return new Response("invalid path", { status: 400 });
 
-  const body = await request.text();
+  let body = await request.text();
   const { storage, prefix, isLocal } = getVaultStorage(ns);
 
   if (!isLocal) {
@@ -98,6 +100,18 @@ export async function PUT(request: Request) {
       const access = await shareAccess(userId, ns, rel, true);
       if (!access) return new Response("forbidden", { status: 403 });
     }
+  }
+
+  // SPRINT-190: default-to-owner. If the editor write lacks a Child of,
+  // inject `[[<owner-title>]]` so new docs chain up instead of drifting
+  // as orphans. The owner-title lookup keys off the vault's OWNER
+  // namespace (ns), not the caller — a grantee writing to a shared
+  // path should still parent under the OWNER's owner-node, not the
+  // grantee's. We use a lightweight cloud-mode ctx purely to satisfy
+  // the helper's shape.
+  if (!isLocal && ns !== "public") {
+    const stubCtx = { mode: "cloud", userId: ns } as unknown as ToolContext;
+    body = await withDefaultParent(stubCtx, body);
   }
 
   // SPRINT-187: editor-autosave was silently zeroing docs in prod (see
