@@ -859,6 +859,21 @@ export function App({ namespace }: { namespace: string }) {
         previousContent = fetched ?? undefined;
       }
     }
+    // SPRINT-187: never autosave empty content over an existing non-empty
+    // doc. This is the client-side companion to the /api/doc PUT guard
+    // (double protection — same class of bug as the ZhiHao 2026-08-07
+    // corruption where 3 docs got zeroed by silent editor writes).
+    if (content.trim().length === 0) {
+      const priorLen = previousContent?.length ?? 0;
+      if (priorLen > 0) {
+        // Drop the autosave silently. Setting state to "idle" (not "error")
+        // avoids alarming the user for what's almost always a transient
+        // editor render race — the real content is still on disk.
+        console.warn(`emdee: skipped empty-content autosave to ${path} (prior length ${priorLen})`);
+        setSaveState("idle");
+        return;
+      }
+    }
     setSaveState("saving");
     try {
       localEdit.current = true;
