@@ -13,6 +13,7 @@ import { ownerTitleFromEmail, normalizeOwnerTitle, ownerNodeScaffold } from "@/s
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ToolContext } from "@/src/lib/mcp/tools/types";
 import { SYSTEM_NODE_PATHS, missingSystemNodeFiles } from "@/src/lib/system-nodes";
+import { isAdminUser, logAdminVaultView } from "@/src/lib/admin";
 
 const SHARED_PREFIX = "__shared:";
 const SHARED_ROOT_PATH = "SHARED.md";
@@ -140,19 +141,27 @@ export async function GET(request: Request) {
     return Response.json(EMPTY, NO_STORE);
   }
 
-  // Auth gate for personal namespaces. `public` is open; everything else must
-  // be owned by the requester. Local mode is single-tenant — skip the gate.
+  // Auth gate for personal namespaces. `public` is open; everything else
+  // must be owned by the requester OR viewed by an admin (SPRINT-188 —
+  // read-only admin bypass; writes remain strictly self-only). Local
+  // mode is single-tenant — skip the gate.
   let canSeedIfEmpty = false;
   if (!isLocal && ns !== "public") {
     const { userId } = await auth();
-    if (!userId || userId !== ns) {
-      return Response.json(EMPTY, NO_STORE);
+    if (!userId) return Response.json(EMPTY, NO_STORE);
+    if (userId !== ns) {
+      // Admin bypass — read allowed, don't seed on their behalf, and
+      // log the view (best-effort; failure doesn't block the read).
+      const admin = await isAdminUser(userId);
+      if (!admin) return Response.json(EMPTY, NO_STORE);
+      await logAdminVaultView(userId, ns, null);
+    } else {
+      canSeedIfEmpty = true;
+      // Await ensureProfile so a Clerk-instance migration (dev→prod ID remap)
+      // can populate vault_files before the seed-if-empty check below runs.
+      // For repeat visitors the call short-circuits immediately (email already set).
+      await ensureProfile(userId).catch(() => {});
     }
-    canSeedIfEmpty = true;
-    // Await ensureProfile so a Clerk-instance migration (dev→prod ID remap)
-    // can populate vault_files before the seed-if-empty check below runs.
-    // For repeat visitors the call short-circuits immediately (email already set).
-    await ensureProfile(userId).catch(() => {});
   }
 
   // SPRINT-144 (Tier 2 egress fix): ETag preflight. Before paying for
