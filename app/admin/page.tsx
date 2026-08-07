@@ -60,6 +60,7 @@ export default async function AdminPage() {
   ];
 
   const pages = [
+    { href: "/admin/vault", label: "User Vaults", desc: "Read-only viewer for every user's vault (SPRINT-188)" },
     { href: "/admin/storage", label: "Storage", desc: "Doc counts and bytes per user" },
     { href: "/admin/publications", label: "Publications", desc: "Shared vaults and engagement events" },
   ];

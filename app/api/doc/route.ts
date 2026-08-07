@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getVaultStorage } from "@/src/lib/storage";
 import { adminClient } from "@/src/lib/supabase/admin";
 import { hashBody } from "@/src/lib/mcp/tools/sections";
+import { isAdminUser, logAdminVaultView } from "@/src/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,14 @@ export async function GET(request: Request) {
     const { userId } = await auth();
     if (!userId) return new Response("unauthorized", { status: 401 });
     if (userId !== ns) {
+      // Share access OR admin bypass (SPRINT-188 — read-only admin view;
+      // writes remain strictly self-only in the PUT/DELETE handlers).
       const access = await shareAccess(userId, ns, rel, false);
-      if (!access) return new Response("forbidden", { status: 403 });
+      if (!access) {
+        const admin = await isAdminUser(userId);
+        if (!admin) return new Response("forbidden", { status: 403 });
+        await logAdminVaultView(userId, ns, rel);
+      }
     }
   }
 

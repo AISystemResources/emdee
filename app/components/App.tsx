@@ -78,10 +78,14 @@ interface ConflictFile {
   manifestSyncedAt: string;
 }
 
-export function App({ namespace }: { namespace: string }) {
+export function App({ namespace, readOnly = false }: { namespace: string; readOnly?: boolean }) {
   const { user, isSignedIn } = useUser();
   const { signOut } = useClerk();
-  const isOwnNamespace = isSignedIn && user?.id === namespace;
+  // SPRINT-188: `readOnly` (set by /admin/vault/[userId]/page.tsx) forces
+  // `isOwnNamespace` to false even if the auth check would say otherwise
+  // — every gate that keys off `isOwnNamespace` (edit UI, sync, MCP
+  // command box, activity subscription) then correctly disables.
+  const isOwnNamespace = !readOnly && isSignedIn && user?.id === namespace;
   const isPublicNamespace = namespace === "public";
 
   const [index, setIndex] = useState<DocIndex | null>(null);
@@ -1533,7 +1537,7 @@ export function App({ namespace }: { namespace: string }) {
                 // Synthetic SHARED branch nodes (the root and any non-doc
                 // sentinels) have no underlying SharedDoc, so they stay
                 // read-only. Real shared docs honour the granted permission.
-                const isReadOnly = isSharedView && (!activeSharedDoc || activeSharedDoc.permission !== "write");
+                const isReadOnly = readOnly || (isSharedView && (!activeSharedDoc || activeSharedDoc.permission !== "write"));
                 const displayPath = isSharedDoc
                   ? `${activeSharedDoc.ownerEmail ?? activeSharedDoc.ownerId.slice(0, 12)} / ${activeSharedDoc.path}`
                   : activeDoc.path;
