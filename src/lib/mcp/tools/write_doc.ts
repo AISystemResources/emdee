@@ -106,7 +106,9 @@ async function _writeDoc(ctx: ToolContext, args: Record<string, unknown>): Promi
     }
   }
 
-  await writeVaultFile(ctx, rel, content);
+  // SPRINT-187: pass the caller's allow_empty intent down so it doesn't
+  // get trapped in the writeVaultFile belt-and-braces guard.
+  await writeVaultFile(ctx, rel, content, { allowEmpty: args.allow_empty === true });
 
   const lint = lintDocContent(content);
   const payload: Record<string, unknown> = { ok: true, path: rel, message: `wrote ${rel}` };

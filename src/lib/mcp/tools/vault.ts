@@ -472,7 +472,40 @@ export async function readVaultFile(ctx: ToolContext, rel: string): Promise<stri
   return ctx.storage.read(`${ctx.userId}/${rel}`);
 }
 
-export async function writeVaultFile(ctx: ToolContext, rel: string, content: string): Promise<void> {
+export class EmptyWriteRefusedError extends Error {
+  readonly code = "empty_write_would_delete_content";
+  readonly path: string;
+  readonly existingLength: number;
+  constructor(path: string, existingLength: number) {
+    super(`refusing to overwrite non-empty doc ${path} (${existingLength} chars) with empty content`);
+    this.path = path;
+    this.existingLength = existingLength;
+  }
+}
+
+/**
+ * Write a doc to the caller's vault (or an allowed share). SPRINT-187
+ * added the third argument `opts.allowEmpty` — refuses `content` that is
+ * effectively empty (`trim().length === 0`) when the target already has
+ * non-empty content. Belt-and-braces against the class of drift that
+ * silently emptied 3 docs in prod on 2026-08-07. Callers that legitimately
+ * write empty content (rare: reset of a scratch doc) must pass
+ * `{ allowEmpty: true }`. The higher-level MCP tools (`write_doc`) have
+ * their own guard with a cleaner error envelope; this helper's guard
+ * catches every other MCP tool + any future caller.
+ */
+export async function writeVaultFile(
+  ctx: ToolContext,
+  rel: string,
+  content: string,
+  opts?: { allowEmpty?: boolean },
+): Promise<void> {
+  if (content.trim().length === 0 && opts?.allowEmpty !== true) {
+    const existing = await readVaultFile(ctx, rel);
+    if (existing !== null && existing.trim().length > 0) {
+      throw new EmptyWriteRefusedError(rel, existing.length);
+    }
+  }
   const shared = parseSharedPath(rel);
   if (shared) {
     if (ctx.mode === "local") {

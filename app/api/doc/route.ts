@@ -77,6 +77,7 @@ export async function PUT(request: Request) {
   const url = new URL(request.url);
   const rel = url.searchParams.get("path");
   const ns = url.searchParams.get("ns") ?? "public";
+  const allowEmpty = url.searchParams.get("allow_empty") === "1";
   if (!rel) return new Response("missing path", { status: 400 });
   if (!rel.endsWith(".md")) return new Response("invalid path", { status: 400 });
 
@@ -89,6 +90,36 @@ export async function PUT(request: Request) {
     if (userId !== ns) {
       const access = await shareAccess(userId, ns, rel, true);
       if (!access) return new Response("forbidden", { status: 403 });
+    }
+  }
+
+  // SPRINT-187: editor-autosave was silently zeroing docs in prod (see
+  // ZhiHao investigation, 2026-08-07 — 3 astrail/ docs emptied without
+  // matching mcp_activity writes). This is the guard at the endpoint the
+  // browser editor actually hits (autosave PUT bypasses every MCP tool).
+  // If the incoming body is empty AND the doc already exists with
+  // non-empty content, refuse with 409. Escape hatch: `?allow_empty=1`
+  // for legit resets.
+  if (body.trim().length === 0 && !allowEmpty) {
+    try {
+      const existing = await storage.read(`${prefix}${rel}`);
+      if (existing !== null && existing.trim().length > 0) {
+        return new Response(
+          JSON.stringify({
+            error: "empty_write_would_delete_content",
+            path: rel,
+            existing_length: existing.length,
+            hint: "Refusing empty overwrite of non-empty doc. If intentional (reset), retry with ?allow_empty=1. Otherwise this is likely an editor autosave race — refresh the page and try again.",
+          }),
+          {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          }
+        );
+      }
+    } catch {
+      // Read errors don't block the write — worst case we accept the
+      // empty write, which is the pre-SPRINT-187 behaviour.
     }
   }
 
